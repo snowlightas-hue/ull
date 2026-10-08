@@ -127,7 +127,8 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
     ? (await tx.query(`SELECT ${INTENT_COLS} FROM intents i WHERE i.vertical_id = $1 AND i.id = ANY($2::bigint[])`, [args.verticalId, [...ids]])).rows as IntentRow[]
     : [];
   const titleOf = new Map<string, string>([[me.id, row.title_ar]]);
-  for (const c of candidates) titleOf.set(String(c.id), c.title_ar);
+  const publicOf = new Map<string, string>([[me.id, row.public_id]]);
+  for (const c of candidates) { titleOf.set(String(c.id), c.title_ar); publicOf.set(String(c.id), c.public_id); }
 
   // ── evaluate everything in memory (pure), then write in a fixed number of batched statements
   const totals = { confirmed: 0, possible: 0, excluded: 0, candidates: candidates.length };
@@ -209,10 +210,11 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
         bodyAr: `«${titleOf.get(theirs.id) ?? ''}» يناسب «${titleOf.get(mine.id) ?? ''}»`,
         payload: { matchId: w.publicId, verticalId: args.verticalId },
         dedupeKey: `match:${args.verticalId}:${pw.a.id}:${pw.b.id}`,
+        forIntent: mine.id,
       });
     }
   }
-  const notified = await notifyMany(tx, notes);
+  const notified = await notifyMany(tx, await coalesceMatchNotes(tx, args.verticalId, notes, titleOf, publicOf));
   await emitEvents(tx, notified, touched);
 
   if (outsideScope > 0) {
@@ -299,16 +301,87 @@ async function registerNewMatches(db: Queryable, verticalId: number, rows: Writt
 }
 
 // Same contract as repo/notifications.ts notify(), batched: one row per (recipient, dedupe_key), ever.
-interface NewNotification { recipientId: string; kind: string; titleAr: string; bodyAr: string; payload: Record<string, unknown>; dedupeKey: string }
-async function notifyMany(db: Queryable, ns: NewNotification[]): Promise<string[]> {
-  if (!ns.length) return [];
+// `forIntent` (internal, never stored): the recipient's own intent the note is about — used to coalesce floods.
+interface NewNotification { recipientId: string; kind: string; titleAr: string; bodyAr: string; payload: Record<string, unknown>; dedupeKey: string; forIntent?: string; upsertCount?: number }
+
+/** Individual match notes per (recipient, own intent) per rolling hour before the rest are summarised. */
+export const MATCH_NOTE_BUDGET = 3;
+const AR_DIGITS = (n: number) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]!);
+
+/**
+ * A shop that lists 200 products (or a seeker matching 19 of them) must not produce 19 separate alerts.
+ * Per recipient and own intent: the first MATCH_NOTE_BUDGET match notes in the last hour stay individual; the rest of
+ * this run become ONE summary row per hour bucket, upserted with a running count («١٦ مطابقة أخرى لطلبك «…»»).
+ * Per-pair guarantees are unchanged (a pair is announced at most once: notes are only built for new pairs).
+ * Ride requests to drivers (`ride_nearby`) are never summarised: each one is time-critical.
+ */
+async function coalesceMatchNotes(db: Queryable, verticalId: number, notes: NewNotification[], titleOf: Map<string, string>, publicOf: Map<string, string>): Promise<NewNotification[]> {
+  const groups = new Map<string, NewNotification[]>();
+  for (const n of notes) {
+    if (!n.forIntent || (n.kind !== 'match_new' && n.kind !== 'match_possible')) continue;
+    const k = `${n.recipientId}:${n.forIntent}`;
+    (groups.get(k) ?? groups.set(k, []).get(k)!).push(n);
+  }
+  const big = [...groups.entries()].filter(([, g]) => g.length > 0);
+  if (!big.length) return notes;
+  const { rows } = await db.query(
+    `SELECT t.rcp::text AS rcp, t.fi::text AS fi,
+       (SELECT count(*) FROM notifications n
+         WHERE n.recipient_id = t.rcp AND n.created_at > now() - interval '1 hour' AND n.kind IN ('match_new', 'match_possible')
+           AND (n.dedupe_key LIKE 'match:' || $1 || ':' || t.fi || ':%' OR n.dedupe_key LIKE 'match:' || $1 || ':%:' || t.fi))::int AS n
+       FROM unnest($2::bigint[], $3::bigint[]) AS t(rcp, fi)`,
+    [String(verticalId), big.map(([, g]) => g[0]!.recipientId), big.map(([, g]) => g[0]!.forIntent!)],
+  );
+  const recent = new Map<string, number>(rows.map((r) => [`${r.rcp}:${r.fi}`, Number(r.n)]));
+  const drop = new Set<NewNotification>();
+  const summaries: NewNotification[] = [];
+  const bucket = Math.floor(Date.now() / 3_600_000);
+  for (const [k, g] of big) {
+    const allowed = Math.max(0, MATCH_NOTE_BUDGET - (recent.get(k) ?? 0));
+    if (g.length <= allowed) continue;
+    // confirmed matches keep their individual alert first
+    const ordered = [...g].sort((x, y) => (x.kind === y.kind ? 0 : x.kind === 'match_new' ? -1 : 1));
+    const rest = ordered.slice(allowed);
+    for (const n of rest) drop.add(n);
+    const fi = g[0]!.forIntent!;
+    summaries.push({
+      recipientId: g[0]!.recipientId, kind: 'match_more', titleAr: 'مطابقات جديدة أخرى',
+      bodyAr: `${AR_DIGITS(rest.length)} مطابقة أخرى لطلبك «${titleOf.get(fi) ?? ''}»`,
+      payload: { count: rest.length, intentId: publicOf.get(fi) ?? null, intentTitleAr: titleOf.get(fi) ?? '', verticalId },
+      dedupeKey: `match-more:${verticalId}:${fi}:${bucket}`,
+      upsertCount: rest.length,
+    });
+  }
+  return [...notes.filter((n) => !drop.has(n)), ...summaries];
+}
+async function notifyMany(db: Queryable, all: NewNotification[]): Promise<string[]> {
+  if (!all.length) return [];
+  const ns = all.filter((n) => n.upsertCount === undefined);
+  const sums = all.filter((n) => n.upsertCount !== undefined);
+  const out: string[] = [];
+  if (sums.length) {
+    // running count in one row per (recipient, intent, hour); re-surfaces as unread with the new total
+    const r = await db.query(
+      `INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key)
+       SELECT t.rcp, 'match_more', t.ttl, t.bdy, t.pl::jsonb, t.dk FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[]) AS t(rcp, ttl, bdy, pl, dk)
+       ON CONFLICT (recipient_id, dedupe_key) DO UPDATE SET
+         payload = jsonb_set(notifications.payload, '{count}', to_jsonb((notifications.payload->>'count')::int + (EXCLUDED.payload->>'count')::int)),
+         body_ar = translate(((notifications.payload->>'count')::int + (EXCLUDED.payload->>'count')::int)::text, '0123456789', '٠١٢٣٤٥٦٧٨٩')
+                   || ' مطابقة أخرى لطلبك «' || (EXCLUDED.payload->>'intentTitleAr') || '»',
+         read_at = NULL, created_at = now()
+       RETURNING recipient_id`,
+      [sums.map((n) => n.recipientId), sums.map((n) => n.titleAr), sums.map((n) => n.bodyAr), sums.map((n) => JSON.stringify(n.payload)), sums.map((n) => n.dedupeKey)],
+    );
+    out.push(...r.rows.map((x) => String(x.recipient_id)));
+  }
+  if (!ns.length) return [...new Set(out)];
   const { rows } = await db.query(
     `INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key)
      SELECT t.rcp, t.knd, t.ttl, t.bdy, t.pl::jsonb, t.dk FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS t(rcp, knd, ttl, bdy, pl, dk)
      ON CONFLICT (recipient_id, dedupe_key) DO NOTHING RETURNING recipient_id`,
     [ns.map((n) => n.recipientId), ns.map((n) => n.kind), ns.map((n) => n.titleAr), ns.map((n) => n.bodyAr), ns.map((n) => JSON.stringify(n.payload)), ns.map((n) => n.dedupeKey)],
   );
-  return [...new Set(rows.map((r) => String(r.recipient_id)))];
+  return [...new Set([...out, ...rows.map((r) => String(r.recipient_id))])];
 }
 
 /** One pg_notify per user and event type (delivered at commit; the SSE layer pushes fresh counts). */

@@ -167,6 +167,12 @@ column: `git show bc888ed:ultra-link/src/matching/engine.ts`, point its `../` im
 - **Decision (REVIEW m1):** a pair that was invalidated and later becomes valid again is *not* notified a second time.
   It reappears in the lists live (SSE `match_update`); a second alert per pair would turn every back-and-forth edit or
   pause/resume into a notification storm. `matching-engine.test.ts` and `flows-matching.test.ts` keep this rule.
+- **Notification coalescing:** per recipient and own request, the first `MATCH_NOTE_BUDGET` (3) match alerts in a rolling
+  hour are individual. The rest of a run become ONE `match_more` row per hour bucket, upserted with a running count
+  («١٦ مطابقة أخرى لطلبك «…»», unread again on each update; it opens the matches of that request). A shop listing 200
+  products, or a seeker matching 19 of them, no longer means 19 alerts. Ride alerts to drivers (`ride_nearby`) are
+  never summarised. Under concurrent runs the budget is soft (two runs may each see 2 and both send one).
+  Tests: `test/integration/matching-notes.test.ts`.
 - Leaf foreign keys (migration 0006): each `matches` partition references its own `intents` partition; first-evaluation
   p50 1,972 → 744 ms in Role 5's measurement. A migration that adds a partition pair must add both leaf FKs.
 - Point-less counterparts are only sampled (200) when *I* have no point either; reported through `truncated`.

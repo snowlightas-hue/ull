@@ -199,7 +199,7 @@ export function renderMatchPage(el, page, handlers = {}) {
 }
 
 const NOTIF_ICON = {
-  match_new: 'link', new_match: 'link', match: 'link', match_possible: 'question',
+  match_new: 'link', new_match: 'link', match: 'link', match_possible: 'question', match_more: 'link',
   match_invalidated: 'alert', invalidated: 'alert',
   contact_request: 'phone', contact_requested: 'phone',
   contact_accepted: 'check', contact_declined: 'info',

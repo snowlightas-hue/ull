@@ -8,7 +8,7 @@ import { withTx } from '../../src/db/pool.ts';
 import type { Registry } from '../../src/domain/registry.ts';
 import type { IntentSpec, PriceSpec } from '../../src/domain/types.ts';
 import { createIntent, intentToSpec, loadIntent, rowToMatchable, setIntentStatus, updateIntent, type StatusAction } from '../../src/repo/intents.ts';
-import { invalidatePairs, matchIntent, matchIntentTx, nextEvalSeq, retrieveCandidates, upsertPairs, type PairWrite } from '../../src/matching/engine.ts';
+import { invalidatePairs, MATCH_NOTE_BUDGET, matchIntent, matchIntentTx, nextEvalSeq, retrieveCandidates, upsertPairs, type PairWrite } from '../../src/matching/engine.ts';
 import { evaluatePair } from '../../src/matching/evaluate.ts';
 import { runJob } from '../../src/worker/main.ts';
 
@@ -283,11 +283,15 @@ test('repeated and concurrent runs never duplicate matches or notifications', as
   assert.equal(await count("SELECT count(*) n FROM matches WHERE a_intent_id = $1 AND state = 'confirmed'", [s.id]), offers.length);
   const dup = await db.pool.query('SELECT recipient_id, dedupe_key, count(*) c FROM notifications GROUP BY 1, 2 HAVING count(*) > 1');
   assert.equal(dup.rowCount, 0);
-  assert.equal(await count('SELECT count(*) n FROM notifications WHERE recipient_id = $1', [seeker]), offers.length);
-  for (const o of offers) assert.equal(await count('SELECT count(*) n FROM notifications WHERE dedupe_key = $1', [`match:${s.verticalId}:${s.id}:${o.id}`]), 2);
+  // the seeker: MATCH_NOTE_BUDGET individual alerts + one summary carrying the rest (coalescing, matching-notes.test.ts)
+  const seekerRows = MATCH_NOTE_BUDGET + 1;
+  assert.equal(await count('SELECT count(*) n FROM notifications WHERE recipient_id = $1', [seeker]), seekerRows);
+  assert.equal(await count("SELECT (count(*) FILTER (WHERE kind <> 'match_more') + coalesce(sum((payload->>'count')::int) FILTER (WHERE kind = 'match_more'), 0)) n FROM notifications WHERE recipient_id = $1", [seeker]), offers.length, 'every pair announced exactly once to the seeker');
+  // every owner hears about their pair exactly once
+  for (const o of offers) assert.equal(await count('SELECT count(*) n FROM notifications WHERE dedupe_key = $1 AND recipient_id <> $2', [`match:${s.verticalId}:${s.id}:${o.id}`, seeker]), 1);
   // concurrent runs of the same intent inside caller transactions also serialize (advisory lock)
   await Promise.all([1, 2, 3].map(() => withTx(db.pool, (tx) => matchIntentTx(tx, reg, { verticalId: s.verticalId, intentId: s.id, trigger: 'job' }))));
-  assert.equal(await count('SELECT count(*) n FROM notifications WHERE recipient_id = $1', [seeker]), offers.length);
+  assert.equal(await count('SELECT count(*) n FROM notifications WHERE recipient_id = $1', [seeker]), seekerRows);
 });
 
 // ───────────── retrieval completeness against brute force ─────────────

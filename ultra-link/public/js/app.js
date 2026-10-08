@@ -221,7 +221,10 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         onPage,
         onRead: async (n) => { await api.post(`/api/notifications/${n.id}/read`); refreshCounts(); },
         onReadAll: async () => { await api.post('/api/notifications/read-all'); refreshCounts(); loadTab('notifications'); },
-        onOpen: (n) => { if (n.payload?.matchId) { state.lists.matches = { filter: 'active', intent: null }; state.shell.setActiveTab('matches'); } },
+        onOpen: (n) => {
+          if (n.payload?.matchId) { state.lists.matches = { filter: 'active', intent: null }; state.shell.setActiveTab('matches'); }
+          else if (n.payload?.intentId) { state.lists.matches = { filter: 'active', intent: n.payload.intentId }; state.shell.setActiveTab('matches'); } // «N مطابقة أخرى لطلبك»
+        },
       });
     }
     restoreFocus(el, focus);
