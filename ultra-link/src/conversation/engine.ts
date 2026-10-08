@@ -8,7 +8,8 @@ import { attributesFor } from '../domain/registry.ts';
 import { priceText } from '../domain/format.ts';
 import type { AttrConstraint, AttrFact, Currency, DealCode, IntentSpec, PlaceSpec, PriceSpec, PriceUnit, Question, Side, SlotName, Strength, TimeWindow } from '../domain/types.ts';
 import { normalizeAr } from '../nlu/arabic.ts';
-import { assignAttributes, parseUtterance } from '../nlu/parse.ts';
+import { assignAttributes, parseUtterance, tokensOf } from '../nlu/parse.ts';
+import { findNumbers } from '../nlu/numbers.ts';
 import type { AttrMention, JevResolution, RuleParse } from '../nlu/types.ts';
 import { CHIP, conflictQuestion, dealOptions, makeQuestion, type TemplateKey } from './questions.ts';
 
@@ -55,6 +56,7 @@ export interface TurnOutput {
 }
 
 const JEV_MIN: Record<string, number> = { side: 0.6, category: 0.6, deal: 0.85, priceOp: 0.6, placeStrength: 0.6 };
+const GREETING_RE = /^(?:مرحبا|مرحبتين|مرحبه|اهلا|اهلين|هلا|هاي|السلام عليكم|سلام|صباح الخير|مسا الخير|مساء الخير|شكرا|يسلمو|تسلم|الله يعطيك العافيه)(?: .{0,25})?$/;
 const CORRECTION_RE = /^(?:لا|لأ|لاء|عفوا|عفوًا)?\s*(?:قصدي|بقصد|اقصد|عفوا|غلطت|صحح|بالاحري|اقصد|لا مو|لا قصدي|مو هيك)/;
 
 export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: TurnInput): TurnOutput {
@@ -106,7 +108,8 @@ export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: Turn
   }
   // category: explicit keywords only once known (attribute-implied categories don't override)
   const catC = pickCategory(reg, parse, input.jev, appliedJev);
-  if (catC && (!draft.category || (catC.explicit && catC.confidence >= 0.7 && !isWithinCategory(reg, catC.value, draft.category.value)))) {
+  const mayChangeCategory = !ans || ans.field === 'category' || correction;
+  if (catC && (!draft.category || (mayChangeCategory && catC.explicit && catC.confidence >= 0.7 && !isWithinCategory(reg, catC.value, draft.category.value)))) {
     offer('category', catC.value, catAr(reg, catC.value), draft.category ? catAr(reg, draft.category.value) : '', () => {
       draft.category = { value: catC.value, source: catC.source, confidence: catC.confidence, evidence: catC.evidence, turn };
       // a category change can make an earlier deal invalid
@@ -164,6 +167,17 @@ export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: Turn
     if (p0.currency) offer('price.currency', p0.currency, p0.currency, draft.currency?.value ?? '', () => { draft.currency = { value: p0.currency!, source: 'rules', confidence: 0.95, turn }; });
     if (p0.unit) offer('price.unit', p0.unit, p0.unit, draft.unit?.value ?? '', () => { draft.unit = { value: p0.unit!, source: 'rules', confidence: 0.95, turn }; });
   }
+  // currency / unit stated without an amount ("دولار بالساعة") complete the existing price
+  if (draft.price && !p0) {
+    if (!draft.currency) {
+      const cur = /(?:^| )(?:دولار|\$|usd)(?: |$)/.test(norm) ? 'USD' : /(?:^| )(?:تركي|تركيه)(?: |$)/.test(norm) ? 'TRY' : /(?:^| )(?:سوري|سوريه)(?: |$)/.test(norm) ? 'SYP' : /(?:^| )يورو(?: |$)/.test(norm) ? 'EUR' : null;
+      if (cur) { draft.currency = { value: cur, source: 'answer', confidence: 0.95, turn }; markResolved(draft, 'price.currency'); }
+    }
+    if (!draft.unit) {
+      const unit = /(?:^| )(?:بالشهر|شهري|شهريا)(?: |$)/.test(norm) ? 'month' : /(?:^| )(?:بالسنه|سنوي|سنويا)(?: |$)/.test(norm) ? 'year' : /(?:^| )(?:بالساعه|للساعه)(?: |$)/.test(norm) ? 'hour' : /(?:^| )(?:للحصه|بالحصه|للدرس)(?: |$)/.test(norm) ? 'session' : /(?:^| )(?:باليوم|يوميا)(?: |$)/.test(norm) ? 'day' : /(?:^| )(?:بالاسبوع|اسبوعيا)(?: |$)/.test(norm) ? 'week' : null;
+      if (unit) { draft.unit = { value: unit, source: 'answer', confidence: 0.95, turn }; markResolved(draft, 'price.unit'); }
+    }
+  }
   // when
   if (parse.when) {
     const w = parse.when;
@@ -180,6 +194,10 @@ export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: Turn
   if (conflict) draft.pendingConflict = conflict;
 
   // ── 4) decide
+  const nothingYet = !draft.side && !draft.category && !draft.place && !draft.price && !draft.when && !draft.mentions.length;
+  if (nothingYet && !ans && GREETING_RE.test(norm)) {
+    return { draft, parse, next: { kind: 'unclear', messageAr: 'أهلًا وسهلًا! احكيلي شو بدك أو شو عندك تقدّمه، مثلاً: «بدي شقة للإيجار بإعزاز» أو «عندي سيارة للبيع».' }, appliedJev };
+  }
   const question = nextQuestion(reg, draft);
   if (question) return { draft, parse, next: { kind: 'ask', question }, appliedJev };
   if (!draft.side && !draft.category) {
@@ -205,6 +223,12 @@ export function nextQuestion(reg: Registry, d: ConversationDraft): Question | nu
   if (!d.side && !d.category) return tryAsk(ask('side', 'side', CHIP.side));
   const cat = d.category ? reg.categoryByCode.get(d.category.value) : undefined;
   if (!d.category) return tryAsk(ask('category', 'category', CHIP.category));
+  // too vague to match well ("بدي شي نشاط", "بدي خدمة") — ask which kind, with the sub-categories as chips
+  if (cat && cat.depth === 0 && !(['real_estate', 'vehicles'].includes(cat.verticalCode) && d.side?.value !== 'provide')) {
+    const kids = reg.categories.filter((c) => c.parent === cat.code).map((c) => ({ value: c.code, label: c.nameAr }));
+    const q = ask('category', 'category', kids.slice(0, 8));
+    if (q) return q;
+  }
   if (!d.side) {
     if (cat?.relation === 'peer') d.side = { value: 'join', source: 'default', confidence: 1, turn: d.turns };
     else return tryAsk(ask('side', 'side', CHIP.side.filter((c) => c.value !== 'join')));
@@ -399,7 +423,7 @@ function applyDirectAnswer(reg: Registry, d: ConversationDraft, field: SlotName,
   const v = raw.trim();
   switch (field) {
     case 'side': {
-      const chip = (['seek', 'provide', 'join'] as Side[]).find((s) => v === s);
+      const chip = (['seek', 'provide', 'join'] as Side[]).find((s) => v === s) ?? (parse.side?.explicit && parse.side.confidence >= 0.9 ? parse.side.value : undefined);
       const s = chip ?? (/(ناس|يشاركوني|سوا|نطلع|نلعب|مشاركه)/.test(norm) ? 'join' : /(عندي|بقدم|اقدم|بعرض|ببيع|باجر|بعطي)/.test(norm) ? 'provide' : /(بدور|عم دور|بدي|محتاج|دور)/.test(norm) ? 'seek' : parse.side?.value);
       if (!s) return false;
       d.side = { value: s, source: 'answer', confidence: 1, evidence: raw, turn };
@@ -429,7 +453,16 @@ function applyDirectAnswer(reg: Registry, d: ConversationDraft, field: SlotName,
       return true;
     }
     case 'when': return !!parse.when; // merged below by the generic path
-    case 'price': return !!parse.prices[0];
+    case 'price': {
+      if (parse.prices[0]) return true;
+      // a bare amount answering "قديش السعر؟" is the price ("٦٠٠٠")
+      const n = findNumbers(tokensOf(norm))[0];
+      if (!n || n.cents <= 0n) return false;
+      const amount = n.cents.toString();
+      const side = d.side?.value;
+      d.price = { value: side === 'seek' ? { op: null, lo: null, hi: amount, strength: null, negotiable: false } : { op: 'eq', lo: amount, hi: amount, strength: 'required', negotiable: false }, source: 'answer', confidence: 1, evidence: raw, turn };
+      return true;
+    }
     case 'price.currency': {
       const chip = (['USD', 'TRY', 'SYP', 'EUR'] as Currency[]).find((c) => v === c);
       const cur = chip ?? (/(دولار|\$|usd)/.test(norm) ? 'USD' : /(تركي|تركيه)/.test(norm) ? 'TRY' : /(سوري|سوريه)/.test(norm) ? 'SYP' : /يورو/.test(norm) ? 'EUR' : null);
@@ -508,6 +541,13 @@ function chooseConflict(norm: string, raw: string, pc: NonNullable<ConversationD
   const i = normalizeAr(pc.incomingAr);
   if (i && norm.includes(i) && !norm.includes(e)) return 'take';
   if (e && norm.includes(e) && !norm.includes(i)) return 'keep';
+  // a distinctive word or number from one side only ("السبت", "٥٥٠٠")
+  const words = (x: string) => new Set(x.split(' ').filter((w) => w.length >= 2 && !/^(يوم|في|من|ب|او)$/.test(w)));
+  const ew = words(e), iw = words(i), aw = words(norm);
+  const onlyI = [...iw].filter((w) => !ew.has(w)), onlyE = [...ew].filter((w) => !iw.has(w));
+  const hitI = onlyI.some((w) => aw.has(w)), hitE = onlyE.some((w) => aw.has(w));
+  if (hitI && !hitE) return 'take';
+  if (hitE && !hitI) return 'keep';
   if (/(التاني|الثاني|الجديد|الاخير|هلق|التانيه)/.test(norm)) return 'take';
   if (/(الاول|القديم|قبل|الاولي)/.test(norm)) return 'keep';
   return null;

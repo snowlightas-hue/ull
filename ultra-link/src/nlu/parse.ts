@@ -60,7 +60,7 @@ const has = (norm: string, re: RegExp) => re.test(norm);
 const W = (alts: string) => new RegExp(`(?:^| )(?:${alts})(?= |$)`);
 
 // ───────────── role (side) cues ─────────────
-const WANT = '[وف]?(?:بدي|بدنا|بدو|بدها|محتاج|محتاجه|محتاجين|بحاجه|ابغي|ابي|اريد|نريد|لازمني|لازمنا|بلزمني|بيلزمني|عايز|عاوز|حابب|حابه|حاب|ناوي|نفسي|ارغب|نرغب|اود|نود|اتمني)';
+const WANT = '[وف]?(?:بدي|بدنا|بدو|بدها|محتاج|محتاجه|محتاجين|بحاجه|بحتاج|منحتاج|ابغي|ابي|اريد|نريد|لازمني|لازمنا|بلزمني|بيلزمني|عايز|عاوز|حابب|حابه|حاب|ناوي|نفسي|ارغب|نرغب|اود|نود|اتمني)';
 const PROFESSIONS = 'سباك|كهربجي|كهربائي|ميكانيكي|دهان|نجار|حداد|عزال|مدرس|مدرسه|استاذ|استاذه|معلم|معلمه|فني|خياط|خياطه|مصور|مترجم|مدرب|مدربه|سايق|سواق|عامل|عامله|ممرض|ممرضه';
 const SIDE_RULES: { re: RegExp; side: Side; conf: number; tag: string }[] = [
   // companionship: "بدي حدا يمشي معي", "بدي رفقة بالطريق", "أبحث عن مجموعة لممارسة الجري"
@@ -128,7 +128,7 @@ function detectDeal(reg: Registry, norm: string, categoryCode: string | null): C
 
 // ───────────── strictness cues ─────────────
 const REQUIRED_CUES = new Set(['فقط', 'بس', 'حصرا', 'حصري', 'حصريا', 'لازم', 'ضروري', 'شرط', 'بشرط', 'تحديدا', 'بالذات', 'اكيد', 'ضرورى', 'الزامي']);
-const PRE_REQUIRED = new Set(['فقط', 'حصرا', 'حصريا', 'لازم', 'ضروري', 'شرط', 'بشرط', 'الزامي', 'اكيد', 'تحديدا']);
+const PRE_REQUIRED = new Set(['فقط', 'حصرا', 'حصريا', 'لازم', 'ضروري', 'شرط', 'بشرط', 'الزامي', 'اكيد', 'تحديدا', 'المهم']);
 const POST_REQUIRED = new Set(['فقط', 'بس', 'حصرا', 'حصريا', 'تحديدا', 'بالذات']);
 const PREFERRED_CUES = new Set(['يفضل', 'بفضل', 'افضل', 'مفضل', 'ياريت', 'حبذا', 'احسن', 'يستحسن', 'بحب', 'منيح', 'لو']);
 const CLAUSE_START = /^(لازم|تكون|يكون|مو|مش|ما|بدي|بدنا|يجي|يكونو|ضروري|الله|المهم|يعني)$/;
@@ -148,6 +148,7 @@ function strengthNear(tokens: string[], start: number, end: number, before = 3, 
   if (post0 && POST_REQUIRED.has(post0) && !(post0 === 'بس' && CLAUSE_START.test(postToks[1] ?? ''))) return 'required';
   if (preToks.length && preToks[preToks.length - 1] === 'بس') return 'required'; // "بس بإعزاز"
   if (preToks.some((t) => PRE_REQUIRED.has(t))) return 'required';
+  if (/(?:^| )بس (?:تكون|يكون|بتكون|بيكون)(?: |$)/.test(preToks.join(' '))) return 'required';
   // "اذا في/اذا ممكن" (if possible) before, or "إذا بيصير" right after
   const pre = preToks.join(' ');
   const post = postToks.join(' ');
@@ -225,8 +226,9 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   const mark = (s: number, e: number) => { for (let k = s; k < e; k++) consumed.add(k); };
 
   // ── categories
-  const catHits = matchPhrases(tokens, reg.categoryPhrases, 4);
-  const repairCue = /(?:^| )(?:يصلح\S*|بصلح|تصليح|صيانه|خربان\S*|معطل\S*|عطلان\S*|عطل|بتصلح|يزبط\S*|تزبيط|فني)(?= |$)/.test(norm) && !SALE_RE.test(norm) && !RENT_RE.test(norm);
+  // "الأرضي" (ground floor) must not become "أرض" (land)
+  const catHits = matchPhrases(tokens, reg.categoryPhrases, 4, (h) => /^(ال|بال)?ارضي(ه)?$/.test(tokens[h.start]!) && h.end - h.start === 1);
+  const repairCue = /(?:^| )(?:يصلح\S*|بيصلح\S*|بصلح|تصليح|صيانه|خربان\S*|معطل\S*|عطلان\S*|عطل|بتصلح|يزبط\S*|تزبيط|فني)(?= |$)/.test(norm) && !SALE_RE.test(norm) && !RENT_RE.test(norm);
   // hiring a person ("بدي حدا ينضّف البيت") — the house is the object, not the request
   const wantsPerson = /(?:^| )[وف]?(?:بدي|بدنا|محتاج|بحاجه|مطلوب) (?:حدا|احد|شخص|واحد|فني|معلم|كهربجي|سباك)(?= |$)/.test(norm) || /^(?:بنضف|بنظف|بصلح|بركب|بعمل|بدهن)(?= |$)/.test(norm);
   const scored = new Map<string, { score: number; evidence: string; pos: number }>();
@@ -283,6 +285,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
 
   // ── places
   const placeHits = matchPhrases(tokens, reg.placePhrases, 4, (h) => {
+    if (opts.answering === 'place') return false;
     if (!AMBIGUOUS_PLACES.has(h.phrase) && !AMBIGUOUS_PLACES.has(tokens[h.start]!)) return false;
     const prev = tokens[h.start - 1];
     const locative = /^(ب|في|من|ل|مدينه|منطقه|بمدينه|ريف|عند|قرب|جنب|سوق|بسوق|حي|بحي)$/.test(prev ?? '') || /^(ب|بال|في|فال|من)/.test(tokens[h.start]!);
@@ -324,7 +327,14 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
     }
     if (/^(متر|م|مربع|م2|مترمربع|دونم|دنم)$/.test(next)) {
       const factor = /دونم|دنم/.test(next) ? 1000n : 1n;
-      attrMentions.push({ key: 'area_m2', op: 'gte', value: Number(whole * factor), strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
+      const pre = tokens.slice(Math.max(0, n.start - 4), n.start).join(' ');
+      const prevNum = nums[ni - 1];
+      if (prevNum && !usedNum.has(ni - 1) && /^(و|الي|ل)?$/.test(tokens.slice(prevNum.end, n.start).join(' ')) && /(^| )بين( |$)/.test(tokens.slice(Math.max(0, prevNum.start - 2), prevNum.start).join(' '))) {
+        attrMentions.push({ key: 'area_m2', op: 'between', lo: Number((prevNum.cents / 100n) * factor), hi: Number(whole * factor), strength: strengthNear(tokens, prevNum.start, n.end + 1), evidence: tokens.slice(prevNum.start - 1, n.end + 1).join(' '), about: 'either' });
+        usedNum.add(ni - 1); usedNum.add(ni); mark(prevNum.start, n.end + 1); continue;
+      }
+      const atLeast = /(علي الاقل|ما تقل عن|ما يقل عن|مو اقل من|لا تقل عن|لا يقل عن|اقل شي)\s*\S{0,3}$/.test(pre);
+      attrMentions.push({ key: 'area_m2', op: atLeast ? 'gte' : 'eq', value: Number(whole * factor), strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
       usedNum.add(ni); mark(n.start, n.end + 1); continue;
     }
     if (/^(كم|كيلو|كيلومتر|km)$/.test(next) && vertical === 'vehicles') {
@@ -430,7 +440,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   if (makeMention && vertical === 'vehicles') {
     const idx = tokens.findIndex((t, k) => !consumed.has(k + 1) && tokenVariants(t).some((v) => normalizeAr(String(makeMention.evidence)) === v));
     const model = idx >= 0 ? tokens[idx + 1] : undefined;
-    if (model && /^[\p{L}\d-]{2,}$/u.test(model) && !reg.placePhrases.has(model) && !/^(موديل|للبيع|للايجار|بحاله|نظيفه|حلوه|او|و)$/.test(model) && !/^\d+$/.test(model)) {
+    if (model && /^[\p{L}\d-]{2,}$/u.test(model) && !reg.placePhrases.has(model) && !/^(موديل|للبيع|للايجار|بحاله|نظيفه|حلوه|او|و|بيكون|يكون|تكون|بتكون|كان|بس|اذا|مستعمل|مستعمله|جديد|جديده|نظيف|رخيص|رخيصه|غالي|منيحه|منيح|احسن|افضل)$/.test(model) && !/^\d+$/.test(model)) {
       attrMentions.push({ key: 'model', op: 'eq', value: model, strength: null, evidence: `${makeMention.evidence} ${model}`, about: 'either' });
       mark(idx + 1, idx + 2);
     }
@@ -438,7 +448,8 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   for (let k = 0; k < tokens.length; k++) {
     const t = tokens[k]!;
     if (/^(غرفتين|اوضتين|غرفتان)$/.test(t) && (vertical === 'real_estate' || topCat === null) && !attrMentions.some((m) => m.key === 'rooms')) {
-      attrMentions.push({ key: 'rooms', op: 'eq', value: 2, strength: strengthNear(tokens, k, k + 1), evidence: t, about: 'either' });
+      const atLeast = /(علي الاقل|ما تقل عن|ما يقل عن|مو اقل من|مش اقل من|لا تقل عن|اقل شي)$/.test(tokens.slice(Math.max(0, k - 3), k).join(' '));
+      attrMentions.push({ key: 'rooms', op: atLeast ? 'gte' : 'eq', value: 2, strength: strengthNear(tokens, k, k + 1), evidence: t, about: 'either' });
       mark(k, k + 1);
       continue;
     }
@@ -453,10 +464,12 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
         k += 3;
         continue;
       }
-      attrMentions.push({ key: 'floor', op: 'eq', value: first, strength: strengthNear(tokens, k, k + 2), evidence: `${t} ${tokens[k + 1]}`, about: 'either' });
+      const neg = tokens.slice(Math.max(0, k - 2), k).some((x) => /^(مو|مش|غير|بلا|بدون|ومو)$/.test(x));
+      attrMentions.push({ key: 'floor', op: neg ? 'neq' : 'eq', value: first, strength: neg ? null : strengthNear(tokens, k, k + 2), evidence: tokens.slice(Math.max(0, k - (neg ? 1 : 0)), k + 2).join(' '), about: 'either' });
       mark(k, k + 2);
-    } else if (/^(ارضي|ارضيه)$/.test(t) && (vertical === 'real_estate' || topCat === null) && !attrMentions.some((m) => m.key === 'floor')) {
-      attrMentions.push({ key: 'floor', op: 'eq', value: 0, strength: strengthNear(tokens, k, k + 1), evidence: t, about: 'either' });
+    } else if (/^(ارضي|ارضيه|الارضي|بالارضي)$/.test(t) && (vertical === 'real_estate' || topCat === null) && !attrMentions.some((m) => m.key === 'floor')) {
+      const neg = tokens.slice(Math.max(0, k - 2), k).some((x) => /^(مو|مش|غير|بلا|بدون|ومو)$/.test(x));
+      attrMentions.push({ key: 'floor', op: neg ? 'neq' : 'eq', value: 0, strength: neg ? null : strengthNear(tokens, k, k + 1), evidence: tokens.slice(Math.max(0, k - 2), k + 1).join(' '), about: 'either' });
       mark(k, k + 1);
     } else if (/^(مفروشه|مفروش|بفرشها|بفرشه|فرش)$/.test(t) && (vertical === 'real_estate' || topCat === null)) {
       const neg = /^(بدون|بلا|غير|مو|مش)$/.test(tokens[k - 1] ?? '');
@@ -474,6 +487,21 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   }
   // a sale price is a total amount unless the user said otherwise
   if (deal?.value === 'sale') for (const pr of prices) pr.unit ??= 'total';
+  // home visit: "يجي لعندي / يجي عالبيت" (seeker), "بروح عالبيوت" (provider)
+  if ((vertical === 'services' || vertical === 'education') && /(?:^| )(?:يجي|بيجي|تجي|يجيني|ييجي|بروح|منروح|بزور) (?:لعندي|عالبيت|للبيت|عالبيوت|للبيوت|لعنا|عندي|البيت|لعند)(?: |$)|زياره منزليه|بالبيت(?: |$)/.test(norm) && !attrMentions.some((m) => m.key === 'home_visit') && vertical === 'services') {
+    const m = /(?:يجي|بيجي|تجي|يجيني|ييجي|بروح|منروح|بزور) \S+|زياره منزليه|بالبيت/.exec(norm)!;
+    attrMentions.push({ key: 'home_visit', op: 'eq', value: true, strength: strengthNear(tokens, Math.max(0, tokens.indexOf(m[0].split(' ')[0]!)), tokens.indexOf(m[0].split(' ')[0]!) + 1), evidence: m[0], about: 'either' });
+  }
+  const grade = /(?:^| )(?:الصف|للصف|صف|بالصف) (\S+)/.exec(norm);
+  if (grade && vertical === 'education' && !attrMentions.some((m) => m.key === 'level')) {
+    const g = grade[1]!;
+    const lvl = /^(الاول|التاني|الثاني|التالت|الثالث|الرابع|الخامس|السادس|[1-6])$/.test(g) ? 'primary' : /^(السابع|التامن|الثامن|التاسع|[7-9])$/.test(g) ? 'middle' : /^(العاشر|الحادي عشر|التاني عشر|البكالوريا|1[0-2])$/.test(g) ? 'secondary' : null;
+    if (lvl) attrMentions.push({ key: 'level', op: 'eq', value: lvl, strength: null, evidence: grade[0].trim(), about: 'either' });
+  }
+  // "أونلاين" is already the place (point = online); don't double-count it as a mode preference
+  if (places.some((p) => reg.placeById.get(p.placeId)?.kind === 'virtual')) {
+    for (let i = attrMentions.length - 1; i >= 0; i--) if (attrMentions[i]!.key === 'mode' && attrMentions[i]!.value === 'online') attrMentions.splice(i, 1);
+  }
   const negotiable = NEGOTIABLE_RE.test(norm);
   if (negotiable && prices[0]) prices[0].evidence += ' (قابل للتفاوض)';
 
@@ -563,7 +591,11 @@ const SEEKER_DEFAULT_STRENGTH: Record<string, Strength> = {
 export function assignAttributes(mentions: AttrMention[], side: Side | null): { attrs: Record<string, { value: AttrFact; evidence: string }>; constraints: AttrConstraint[] } {
   const attrs: Record<string, { value: AttrFact; evidence: string }> = {};
   const constraints: AttrConstraint[] = [];
-  for (const m of mentions) {
+  for (const m0 of mentions) {
+    let m = m0;
+    if (m.key === 'tenant_type' && m.about !== 'self' && side === 'provide') m = { ...m, about: 'counterpart', op: m.op === 'eq' ? 'in' : m.op, values: m.op === 'eq' && m.value !== undefined ? [m.value] : m.values, value: m.op === 'eq' ? undefined : m.value };
+    else if (m.key === 'tenant_type' && side === 'seek' && m.about !== 'counterpart') m = { ...m, about: 'self' };
+    else if (m.key === 'tenant_type' && side === 'seek') m = { ...m, about: 'self' };
     const selfFact = m.about === 'self' || (m.about === 'either' && (side === 'provide' || side === 'join'));
     if (selfFact && m.op === 'eq' && m.value !== undefined) {
       const prev = attrs[m.key];
@@ -597,7 +629,7 @@ export function assignAttributes(mentions: AttrMention[], side: Side | null): { 
 }
 
 // ───────────── time ─────────────
-const WEEKDAYS: Record<string, number> = { الاحد: 0, الحد: 0, الاثنين: 1, الاتنين: 1, التنين: 1, اثنين: 1, تنين: 1, الثلاثاء: 2, الثلاثا: 2, التلات: 2, التلاتا: 2, الاربعاء: 3, الاربعا: 3, اربعا: 3, الخميس: 4, خميس: 4, الجمعه: 5, جمعه: 5, الجمعة: 5, السبت: 6, سبت: 6 };
+const WEEKDAYS: Record<string, number> = { الاحد: 0, الحد: 0, الاثنين: 1, الاتنين: 1, التنين: 1, اثنين: 1, تنين: 1, اتنين: 1, الثلاثاء: 2, الثلاثا: 2, التلات: 2, التلاتا: 2, تلاتاء: 2, تلاتا: 2, ثلاثاء: 2, التلاتاء: 2, الاربعاء: 3, الاربعا: 3, اربعا: 3, اربعاء: 3, الخميس: 4, خميس: 4, الجمعه: 5, جمعه: 5, السبت: 6, سبت: 6 };
 const DAY_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const TZ_OFFSET_MIN = 180; // Syria: UTC+3 all year (since 2022)
 
@@ -617,7 +649,7 @@ export function parseWhen(tokens: string[], now: Date, activity: boolean): TimeW
   const mk = (from: Date, to: Date, label: string, evidence: string): TimeWindow => ({ from: from.toISOString(), to: to.toISOString(), strength, label, evidence });
   if (/(^| )بعد (بكرا|بكره|بكرة|غدا)( |$)/.test(norm)) return mk(localMidnightUtc(now, 2), localMidnightUtc(now, 3), 'بعد بكرا', 'بعد بكرا');
   if (/(^| )(بكرا|بكره|غدا|غدوه|بكير بكرا)( |$)/.test(norm)) return mk(localMidnightUtc(now, 1), localMidnightUtc(now, 2), 'بكرا', 'بكرا');
-  if (/(^| )(اليوم|هلق|هلا|الليله|هالمسا|المسا)( |$)/.test(norm) && activity) return mk(localMidnightUtc(now, 0), localMidnightUtc(now, 1), 'اليوم', 'اليوم');
+  if (/(^| )(اليوم|الليله|هالمسا|المسا)( |$)/.test(norm) && !/(^| )(ليوم|باليوم|لليوم|عاليوم|يوميا)( |$)/.test(norm) && (activity || /(^| )اليوم( |$)/.test(norm))) return mk(localMidnightUtc(now, 0), localMidnightUtc(now, 1), 'اليوم', 'اليوم');
   if (/(^| )(الاسبوع|الجمعه|جمعه) (الجاي|القادم|الماي|الجايه|الجايي)( |$)/.test(norm) && /الاسبوع/.test(norm)) return mk(localMidnightUtc(now, 7 - localDow(now)), localMidnightUtc(now, 14 - localDow(now)), 'الأسبوع الجاي', 'الأسبوع الجاي');
   if (/(^| )(هالاسبوع|هاد الاسبوع|هذا الاسبوع)( |$)/.test(norm)) return mk(localMidnightUtc(now, 0), localMidnightUtc(now, 7 - localDow(now)), 'هالأسبوع', 'هالأسبوع');
   if (/(^| )(الويكند|ويكند|نهايه الاسبوع|العطله)( |$)/.test(norm)) {
@@ -625,7 +657,9 @@ export function parseWhen(tokens: string[], now: Date, activity: boolean): TimeW
     return mk(localMidnightUtc(now, d), localMidnightUtc(now, d + 2), 'نهاية الأسبوع', 'نهاية الأسبوع');
   }
   for (let k = 0; k < tokens.length; k++) {
-    const variants = tokenVariants(tokens[k]!);
+    const tok = tokens[k]!;
+    // only the token itself or a real clitic-stripped remainder ("بالجمعة" → "الجمعه"), never a synthesized form
+    const variants = [tok, tok.replace(/^[وبل](?=ال)/, ''), tok.replace(/^(?:يوم|بيوم)$/, '')];
     const dayTok = variants.find((v) => WEEKDAYS[v] !== undefined);
     if (dayTok === undefined) continue;
     // avoid "يوم" ambiguity: weekday names are explicit enough

@@ -14,7 +14,7 @@ Measurement: `node scripts/corpus-report.ts` against the labeled corpus in `test
 | attrs (الصفات) | 54.9% | 56.3% | 57.7% | 62.5% | 66.7% |
 | when (الزمن) | 74.5% | 74.5% | 74.5% | 74.5% | 82.2% |
 | first question = essential (السؤال الأول ضروري) | 66.6% | 74.2% | 76.2% | 79.6% | **86.4%** |
-| dialogues fully correct | 70.5% | 73.8% | 75.4% | 77.0% | 77.0% |
+| dialogues fully correct | 70.5% | 73.8% | 75.4% | 77.0% | 77.0% → **96.7%** (cycle 6) |
 | repeated-question violations | 0 | 0 | 0 | 0 | 0 |
 
 > **تنبيه منهجي:** هذه أرقام «داخل العيّنة» — التحسينات بُنيت بقراءة أخطاء نفس المدوّنة، لذا تبالغ في تقدير الأداء على كلام جديد. لقياس صادق طُلبت مدوّنة **محجوزة** جديدة (`holdout-utterances.json`) تُكتب دون رؤية المحلّل، ولا تُقرأ أخطاؤها فرديًا أثناء التطوير. نتيجتها في القسم الأخير.
@@ -35,6 +35,12 @@ Found: «طاقة شمسية» pulled housing into electrical services; service 
 
 ### Cycle 5 — latency when the AI provider is down (impact: response speed, cost)
 Found (measured over HTTP): with the Jev key configured but the host blocked, each ambiguous turn waited ~2.2 s for retries before falling back; the circuit breaker re-opened the penalty every minute. Fix: `src/conversation/jev-gate.ts` — conversations call Jev only after a non-blocking background probe (`GET /v1/models`) succeeded; a turn-time failure closes the gate until the next good probe. Effect: turn latency 2.13–2.22 s → 4–20 ms with Jev unreachable; status label stays honest.
+
+### Cycle 6 — clarification dialogues (impact: fewer repeated/needless questions)
+Found (61 labeled dialogues): a bare amount answering «قديش السعر؟» («٦٠٠٠») was ignored → the same question came back; a bare place answer that is also a common word («الباب») was ignored; conflict choices by a distinctive word/number («السبت», «٥٥٠٠») not recognized; «دولار بالساعة» inside an answer dropped; «بدي بيعو» answering the role question read as a request; «يجي عالبيت» inside an answer opened a false category conflict; vague roots («بدي شي نشاط») not asked about; a greeting got a formal question. Fix: answer-aware parsing for each. Effect: dialogues 77.0% → 96.7%; first-question accuracy 86.4% → 87.7%; repeated-question violations stay 0.
+
+### Cycle 7 — conditions and time (impact: correct exclusion & ranking)
+Found: «واحد» became Sunday through a synthesized «الاحد»; «اليوم» ignored outside activities; a seeker's «لعائلة» stored as a condition on the landlord; «مو بالطابق الأرضي», «مو أقل من غرفتين», «بين ٢٠٠ و٤٠٠ متر» lost their operators; «بس تكون / المهم» not read as binding; «يجي عالبيت» (home visit) and «الصف الخامس» (grade) unrecognized; verbs taken as car models. Effect: constraints 58.0% → 87.3%, time 82.2% → 95.3%, attrs 66.7% → 77.1%.
 
 ### Next candidates (by expected impact)
 1. Held-out evaluation (see methodology note) to confirm cycles 1–4 generalize.

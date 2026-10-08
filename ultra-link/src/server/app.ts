@@ -1,8 +1,12 @@
 // HTTP API + static frontend. Every data route is scoped to the session user (isolation by construction).
+// Hardening: CSRF guard, token-bucket rate limits, strict query/param validation, privacy-safe logging,
+// SSE hub with LISTEN auto-reconnect and per-user caps, health/metrics, lazy session cleanup.
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import type { Writable } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import pg from 'pg';
+import type pg from 'pg';
 import { z } from 'zod';
 import { ROOT } from '../lib/env.ts';
 import { withTx } from '../db/pool.ts';
@@ -16,19 +20,76 @@ import { counterpartFor, PERSONAS } from '../seed/demo.ts';
 import { createIntent, intentToSpec, listIntents, loadIntent, resolveIntentRef, setIntentStatus, toCard, updateIntent, type StatusAction } from '../repo/intents.ts';
 import { enqueue } from '../repo/jobs.ts';
 import { emitUserEvent, listNotifications, markAllRead, markRead, notify } from '../repo/notifications.ts';
-import { clampLimit } from '../repo/paging.ts';
 import { counts, createSession, deleteSession, personaUser, registerUser, userForToken, type SessionUser } from '../repo/users.ts';
 import { hydrateMatches, latestRun, listMatches, matchIntent } from '../matching/engine.ts';
+import { EventHub } from './events.ts';
+import { health, isLocalRequest, metrics, newCounters, safeErr, SessionJanitor, type Counters } from './ops.ts';
+import { rateLimitConfig, TokenBuckets, type RateLimitConfig } from './ratelimit.ts';
+import { IntentsQuery, MatchesQuery, MatchRunQuery, NotificationsQuery, parseQuery, UUID_RE, uuidParam } from './validate.ts';
 
 const COOKIE = 'ul_session';
-declare module 'fastify' { interface FastifyRequest { user: SessionUser | null } }
 
-export interface AppDeps { pool: pg.Pool; reg: Registry; databaseUrl: string; version: string; listen?: boolean }
+export interface UlRuntime {
+  counters: Counters;
+  events: EventHub;
+  janitor: SessionJanitor;
+  limiter: TokenBuckets;
+  limits: RateLimitConfig;
+  /** set by main.ts on SIGTERM/SIGINT: health answers 503 so a balancer stops sending traffic */
+  draining: boolean;
+}
+
+declare module 'fastify' {
+  interface FastifyRequest { user: SessionUser | null; sessionKey: string | null }
+  interface FastifyInstance { ul: UlRuntime }
+}
+
+export interface AppDeps {
+  pool: pg.Pool; reg: Registry; databaseUrl: string; version: string;
+  /** open the LISTEN connection for live events (default true) */
+  listen?: boolean;
+  /** rate-limit overrides (null disables one bucket); defaults from env, see ratelimit.ts */
+  rateLimits?: Partial<RateLimitConfig>;
+  sse?: { maxPerUser?: number; heartbeatMs?: number; reconnectMinMs?: number; reconnectMaxMs?: number };
+  /** logs go here instead of stdout (tests capture them) */
+  logStream?: Writable;
+  logLevel?: string;
+  sessionCleanupMs?: number;
+}
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { pool, reg } = deps;
-  const app = Fastify({ logger: { level: process.env.UL_LOG_LEVEL ?? 'info', redact: ['req.headers.cookie', 'req.headers.authorization'] }, bodyLimit: 64 * 1024, trustProxy: false });
+  const app = Fastify({
+    logger: {
+      level: deps.logLevel ?? process.env.UL_LOG_LEVEL ?? 'info',
+      ...(deps.logStream ? { stream: deps.logStream } : {}),
+      // Never log bodies, cookies, auth headers or query strings (utterances and tokens stay out of logs).
+      redact: { paths: ['req.headers', 'req.body', 'req.query', 'res.headers', 'headers', 'body'], censor: '[redacted]' },
+      serializers: {
+        req: (r: { method?: string; url?: string; ip?: string }) => ({ method: r.method, url: String(r.url ?? '').split('?')[0]!.slice(0, 200), remoteAddress: r.ip }),
+        res: (r: { statusCode?: number }) => ({ statusCode: r.statusCode }),
+        err: (e: unknown) => { const s = safeErr(e); return { ...s, stack: s.stack ?? '' }; },
+      },
+    },
+    bodyLimit: 64 * 1024,
+    trustProxy: false,
+    return503OnClosing: true,
+  });
   app.decorateRequest('user', null);
+  app.decorateRequest('sessionKey', null);
+
+  const counters = newCounters();
+  const limits = rateLimitConfig(deps.rateLimits);
+  const limiter = new TokenBuckets();
+  const events = new EventHub({
+    pool, databaseUrl: deps.databaseUrl, log: app.log, listen: deps.listen !== false,
+    maxPerUser: deps.sse?.maxPerUser ?? Number(process.env.UL_SSE_MAX_PER_USER ?? 5),
+    heartbeatMs: deps.sse?.heartbeatMs ?? Number(process.env.UL_SSE_HEARTBEAT_MS ?? 25_000),
+    reconnectMinMs: deps.sse?.reconnectMinMs ?? 500, reconnectMaxMs: deps.sse?.reconnectMaxMs ?? 30_000,
+  });
+  const janitor = new SessionJanitor(pool, counters, (e) => app.log.warn({ err: safeErr(e) }, 'session cleanup failed'), deps.sessionCleanupMs);
+  const ul: UlRuntime = { counters, events, janitor, limiter, limits, draining: false };
+  app.decorate('ul', ul);
 
   await app.register(fastifyStatic, { root: join(ROOT, 'public'), prefix: '/', index: ['index.html'], cacheControl: true, maxAge: 0 });
 
@@ -39,30 +100,68 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.header('X-Frame-Options', 'DENY');
     reply.header('Permissions-Policy', 'microphone=(self)');
     reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    if (reply.request.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
     return payload;
   });
+  app.addHook('onResponse', async (_req, reply) => {
+    const k = `${Math.floor(reply.statusCode / 100)}xx`;
+    if (k in counters.http) counters.http[k]!++;
+  });
 
-  // ── session + CSRF (mutations must be JSON from our own origin)
-  app.addHook('preHandler', async (req, reply) => {
+  // ── CSRF guard → rate limits → session (all before the body is parsed)
+  const OPEN = new Set(['/api/health', '/api/metrics', '/api/personas', '/api/ai/status', '/api/taxonomy', '/api/session']);
+  const tooMany = (reply: FastifyReply, bucket: keyof RateLimitConfig, retryAfterMs: number) => {
+    counters.rateLimited[bucket] = (counters.rateLimited[bucket] ?? 0) + 1;
+    return reply.code(429).header('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))))
+      .send({ error: 'rate_limited', messageAr: 'طلبات كثيرة خلال وقت قصير. انتظر قليلًا ثم حاول مجددًا.' });
+  };
+  app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
-    const token = parseCookies(req.headers.cookie)[COOKIE];
-    req.user = await userForToken(pool, token);
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      const ct = String(req.headers['content-type'] ?? '');
+    const route = req.routeOptions.url ?? '';
+    const mutation = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
+    if (mutation) {
+      const ct = String(req.headers['content-type'] ?? '').toLowerCase();
       if (!ct.startsWith('application/json')) return reply.code(415).send({ error: 'json_required', messageAr: 'يجب إرسال JSON' });
-      const origin = req.headers.origin;
-      if (origin && new URL(origin).host !== req.headers.host) return reply.code(403).send({ error: 'bad_origin', messageAr: 'مصدر غير مسموح' });
+      if (!sameOrigin(req)) return reply.code(403).send({ error: 'bad_origin', messageAr: 'مصدر غير مسموح' });
     }
-    const open = ['/api/health', '/api/personas', '/api/ai/status', '/api/taxonomy', '/api/session'].includes(req.routeOptions.url ?? '') || req.url.startsWith('/api/auth/');
-    if (!open && !req.user) return reply.code(401).send({ error: 'unauthorized', messageAr: 'سجّل الدخول أولًا' });
+    const token = parseCookies(req.headers.cookie)[COOKIE];
+    req.sessionKey = token ? createHash('sha256').update(token).digest('base64url').slice(0, 22) : null;
+    const who = req.sessionKey ? `s:${req.sessionKey}` : `ip:${req.ip}`;
+    if (route.startsWith('/api/auth/') && limits.auth) {
+      const r = limiter.take(`auth|ip:${req.ip}`, limits.auth);
+      if (!r.ok) return tooMany(reply, 'auth', r.retryAfterMs);
+    } else if (route === '/api/conversations/:id/turns' && mutation && limits.turns) {
+      const r = limiter.take(`turns|${who}`, limits.turns);
+      if (!r.ok) return tooMany(reply, 'turns', r.retryAfterMs);
+    } else if (route === '/api/demo/simulate' && limits.simulate) {
+      const r = limiter.take(`simulate|${who}`, limits.simulate);
+      if (!r.ok) return tooMany(reply, 'simulate', r.retryAfterMs);
+    }
+    req.user = await userForToken(pool, token);
+    janitor.maybeRun();
+    if (!OPEN.has(route) && !route.startsWith('/api/auth/') && !req.url.startsWith('/api/auth/') && !req.user) {
+      return reply.code(401).send({ error: 'unauthorized', messageAr: 'سجّل الدخول أولًا' });
+    }
   });
 
   app.setErrorHandler((err: any, req, reply) => {
     if (err instanceof HttpError) return reply.code(err.status).send({ error: err.code, messageAr: err.message });
     if (err.validation) return reply.code(400).send({ error: 'bad_request', messageAr: 'طلب غير صالح' });
-    req.log.error({ err: { message: err.message, code: err.code } }, 'unhandled');
+    const fst = String(err.code ?? '');
+    if (fst === 'FST_ERR_CTP_BODY_TOO_LARGE') return reply.code(413).send({ error: 'too_large', messageAr: 'الطلب كبير جدًا' });
+    if (fst === 'FST_ERR_CTP_INVALID_MEDIA_TYPE') return reply.code(415).send({ error: 'json_required', messageAr: 'يجب إرسال JSON' });
+    if (fst.startsWith('FST_ERR_CTP_') || (err.statusCode === 400)) return reply.code(400).send({ error: 'bad_json', messageAr: 'تعذّرت قراءة الطلب' });
+    // PostgreSQL: data exceptions are bad input (never 500); contention is retryable; outages are 503.
+    if (/^22[0-9A-Z]{3}$/.test(fst)) return reply.code(400).send({ error: 'bad_request', messageAr: 'طلب غير صالح' });
+    if (fst === '40001' || fst === '40P01' || fst === '55P03') return reply.code(409).send({ error: 'busy', messageAr: 'في طلب آخر قيد المعالجة، حاول مرة ثانية' });
+    if (fst === '57014' || fst === '57P01' || fst === '57P03' || fst.startsWith('08') || fst === 'ECONNREFUSED' || fst === 'ECONNRESET' || /timeout exceeded when trying to connect/i.test(String(err.message))) {
+      req.log.error({ err: safeErr(err) }, 'database unavailable');
+      return reply.code(503).header('Retry-After', '5').send({ error: 'unavailable', messageAr: 'الخدمة مشغولة مؤقتًا. حاول بعد قليل.' });
+    }
+    req.log.error({ err: safeErr(err) }, 'unhandled');
     return reply.code(500).send({ error: 'internal', messageAr: 'صار خطأ عندنا. حاول مرة ثانية.' });
   });
+  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: 'not_found', messageAr: req.url.startsWith('/api/') ? 'غير موجود' : 'الصفحة غير موجودة' }));
 
   const u = (req: FastifyRequest) => req.user!;
   const body = <T extends z.ZodTypeAny>(schema: T, req: FastifyRequest): z.infer<T> => {
@@ -73,10 +172,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const setCookie = (reply: FastifyReply, token: string) => reply.header('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 86400}`);
 
   // ── public
-  app.get('/api/health', async () => {
-    const db = await pool.query('SELECT 1 AS ok').then(() => true).catch(() => false);
-    const hb = await pool.query('SELECT max(beat_at) AS beat FROM worker_heartbeats').then((r) => r.rows[0]?.beat ?? null).catch(() => null);
-    return { ok: db, db, worker: { lastBeatAt: hb, alive: hb ? Date.now() - new Date(hb).getTime() < 30_000 : false }, version: deps.version, registry: reg.version };
+  app.get('/api/health', async (_req, reply) => {
+    const r = await health({ pool, version: deps.version, registry: reg.version, startedAt: counters.startedAt, draining: ul.draining, events: deps.listen === false ? null : { connected: events.stats.connected, reconnects: events.stats.reconnects } });
+    return reply.code(r.code).send(r.body);
+  });
+  // local-only operational counters (no secrets, but not for the outside world)
+  app.get('/api/metrics', async (req, reply) => {
+    if (!isLocalRequest(req)) return reply.code(404).send({ error: 'not_found', messageAr: 'غير موجود' });
+    const jev = getJevStatus();
+    return metrics(pool, counters, {
+      sse: { ...events.open, listener: { ...events.stats } },
+      jev: { mode: jev.mode, verified: jev.verified, lastLatencyMs: jev.lastLatencyMs, lastError: jev.lastError },
+      rateLimiterKeys: limiter.size,
+    });
   });
   app.get('/api/ai/status', async () => getJevStatus());
   app.get('/api/taxonomy', async () => ({
@@ -97,7 +205,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { user: publicUser(user) };
   });
   app.post('/api/auth/register', async (req, reply) => {
-    const { displayName, phone } = body(z.object({ displayName: z.string().trim().min(1).max(80), phone: z.string().trim().max(30).optional() }), req);
+    const { displayName, phone } = body(z.object({ displayName: z.string().trim().min(1).max(80), phone: z.string().trim().max(30).regex(/^[0-9+()\-\s.]*$/).optional() }), req);
     const user = await registerUser(pool, displayName, phone || null);
     setCookie(reply, await createSession(pool, user.id));
     return { user: publicUser(user) };
@@ -114,25 +222,42 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/me', async (req) => ({ user: publicUser(u(req)), counts: await counts(pool, u(req).id) }));
 
   // ── conversations
+  const TurnBody = z.object({
+    text: z.string().max(1000),
+    modality: z.enum(['voice', 'text']).default('text'),
+    clientTurnId: z.union([z.literal(''), z.string().regex(UUID_RE)]).default(''),
+  });
   app.post('/api/conversations', async (req) => ({ conversation: await startConversation(pool, u(req)) }));
   app.get('/api/conversations/current', async (req) => ({ conversation: await currentConversation(pool, reg, u(req)) }));
   app.post<{ Params: { id: string } }>('/api/conversations/:id/turns', async (req) => {
-    const b = body(z.object({ text: z.string().max(1000), modality: z.enum(['voice', 'text']).default('text'), clientTurnId: z.string().max(40).default('') }), req);
-    return handleTurn(pool, reg, u(req), req.params.id, b);
+    const id = uuidParam(req.params.id);
+    const b = body(TurnBody, req);
+    try {
+      const r = await handleTurn(pool, reg, u(req), id, b);
+      counters.turns.ok++;
+      counters.turns.latencyMsTotal += r.understanding.latencyMs;
+      counters.turns.byEngine[r.understanding.engine] = (counters.turns.byEngine[r.understanding.engine] ?? 0) + 1;
+      if (r.action === 'saved') counters.turns.saved++;
+      else if (r.action === 'ask') counters.turns.asked++;
+      else if (r.action === 'unclear') counters.turns.unclear++;
+      return r;
+    } catch (e) {
+      counters.turns.failed++;
+      throw e;
+    }
   });
-  app.post<{ Params: { id: string } }>('/api/conversations/:id/cancel', async (req) => ({ conversation: await cancelConversation(pool, u(req), req.params.id) }));
+  app.post<{ Params: { id: string } }>('/api/conversations/:id/cancel', async (req) => ({ conversation: await cancelConversation(pool, u(req), uuidParam(req.params.id)) }));
 
   // ── intents
   const ownIntent = async (req: FastifyRequest<{ Params: { id: string } }>) => {
-    const ref = await resolveIntentRef(pool, req.params.id);
+    const ref = await resolveIntentRef(pool, uuidParam(req.params.id));
     if (!ref || ref.userId !== u(req).id) throw new HttpError(404, 'not_found', 'غير موجود'); // never reveal others' ids
     return ref;
   };
-  app.get<{ Querystring: Record<string, string> }>('/api/intents', async (req) => {
-    const q = req.query;
+  app.get('/api/intents', async (req) => {
+    const q = parseQuery(IntentsQuery, req.query);
     const sides = q.side === 'offers' || q.side === 'provide' ? ['provide'] : q.side === 'seek' ? ['seek'] : q.side === 'join' ? ['join'] : ['seek', 'join'];
-    const statuses = q.status ? q.status.split(',').filter((s) => ['active', 'paused', 'fulfilled', 'closed', 'expired'].includes(s)) : undefined;
-    return listIntents(pool, reg, u(req).id, { sides: sides as any, statuses, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: clampLimit(q.limit) });
+    return listIntents(pool, reg, u(req).id, { sides: sides as ('seek' | 'provide' | 'join')[], statuses: q.status, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 });
   });
   app.get<{ Params: { id: string } }>('/api/intents/:id', async (req) => {
     const ref = await ownIntent(req);
@@ -141,7 +266,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   app.patch<{ Params: { id: string } }>('/api/intents/:id', async (req) => {
     const ref = await ownIntent(req);
-    const b = body(z.object({ expectedVersion: z.number().int().positive(), changes: z.record(z.string(), z.unknown()) }), req);
+    const b = body(z.object({ expectedVersion: z.number().int().positive().max(2_147_483_647), changes: z.record(z.string().max(40), z.unknown()) }), req);
     const row = await loadIntent(pool, ref.verticalId, ref.id);
     const current = intentToSpec(reg, row!);
     const merged = { ...current, ...b.changes } as IntentSpec;
@@ -168,8 +293,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const row = await loadIntent(pool, ref.verticalId, ref.id);
     return { intent: toCard(reg, row!), run };
   });
-  app.post<{ Params: { id: string }; Querystring: Record<string, string> }>('/api/intents/:id/match', async (req) => {
+  app.post<{ Params: { id: string } }>('/api/intents/:id/match', async (req) => {
     const ref = await ownIntent(req);
+    const q = parseQuery(MatchRunQuery, req.query);
     const row = await loadIntent(pool, ref.verticalId, ref.id);
     let run = await latestRun(pool, ref.verticalId, ref.id, row!.version);
     let status: 'done' | 'queued' = 'done';
@@ -178,9 +304,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       if (r.status === 'superseded') status = 'queued';
       run = await latestRun(pool, ref.verticalId, ref.id, row!.version);
     }
-    const page = await listMatches(pool, reg, u(req).id, { intent: { verticalId: ref.verticalId, id: ref.id }, states: ['confirmed', 'possible'], limit: clampLimit(req.query.limit, 10) });
+    const page = await listMatches(pool, reg, u(req).id, { intent: { verticalId: ref.verticalId, id: ref.id }, states: ['confirmed', 'possible'], limit: q.limit ?? 10 });
     return {
-      intentId: req.params.id, version: row!.version, status,
+      intentId: row!.public_id, version: row!.version, status,
       totals: run ? { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates } : { confirmed: 0, possible: 0, excluded: 0, candidates: 0 },
       exclusions: run?.exclusions ?? [], truncated: run?.truncated ?? false, page,
       suggestionsAr: suggestionsFor(reg, row!, run),
@@ -188,8 +314,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // ── matches
-  app.get<{ Querystring: Record<string, string> }>('/api/matches', async (req) => {
-    const q = req.query;
+  app.get('/api/matches', async (req) => {
+    const q = parseQuery(MatchesQuery, req.query);
     let intent: { verticalId: number; id: string } | null = null;
     if (q.intent) {
       const ref = await resolveIntentRef(pool, q.intent);
@@ -197,13 +323,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       intent = { verticalId: ref.verticalId, id: ref.id };
     }
     const states = q.state === 'invalidated' ? ['invalidated'] : q.state === 'confirmed' ? ['confirmed'] : q.state === 'possible' ? ['possible'] : q.state === 'all' ? ['confirmed', 'possible', 'invalidated'] : ['confirmed', 'possible'];
-    return listMatches(pool, reg, u(req).id, { intent, states, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: clampLimit(q.limit) });
+    return listMatches(pool, reg, u(req).id, { intent, states, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 });
   });
   const ownMatch = async (req: FastifyRequest<{ Params: { id: string } }>) => {
-    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) throw new HttpError(404, 'not_found', 'غير موجود');
+    const id = uuidParam(req.params.id);
     const { rows } = await pool.query(
       `SELECT m.* FROM match_refs r JOIN matches m ON m.vertical_id = r.vertical_id AND m.id = r.match_id
-        WHERE r.public_id = $1 AND (m.a_user_id = $2 OR m.b_user_id = $2)`, [req.params.id, u(req).id]);
+        WHERE r.public_id = $1 AND (m.a_user_id = $2 OR m.b_user_id = $2)`, [id, u(req).id]);
     if (!rows[0]) throw new HttpError(404, 'not_found', 'غير موجود');
     return rows[0];
   };
@@ -224,13 +350,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { contactRequest: { id: rows[0].public_id, status: rows[0].status } };
   });
   app.post<{ Params: { id: string } }>('/api/contact-requests/:id/respond', async (req) => {
-    if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) throw new HttpError(404, 'not_found', 'غير موجود');
+    const id = uuidParam(req.params.id);
     const { accept } = body(z.object({ accept: z.boolean() }), req);
     const { rows } = await pool.query(
       `UPDATE contact_requests c SET status = $3, responded_at = now() FROM match_refs r
         WHERE c.public_id = $1 AND c.recipient_id = $2 AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
         RETURNING c.public_id, c.status, c.requester_id, r.public_id AS match_public_id`,
-      [req.params.id, u(req).id, accept ? 'accepted' : 'declined'],
+      [id, u(req).id, accept ? 'accepted' : 'declined'],
     );
     if (!rows[0]) throw new HttpError(404, 'not_found', 'الطلب غير موجود أو تمت الإجابة عليه');
     await notify(pool, { recipientId: String(rows[0].requester_id), kind: accept ? 'contact_accepted' : 'contact_declined', titleAr: accept ? 'تمت الموافقة على التواصل' : 'تم رفض طلب التواصل', bodyAr: accept ? 'افتح المطابقة لترى الاسم ورقم التواصل.' : undefined, payload: { matchId: rows[0].match_public_id }, dedupeKey: `contact-reply:${rows[0].public_id}` });
@@ -239,9 +365,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // ── notifications (recipient-only)
-  app.get<{ Querystring: Record<string, string> }>('/api/notifications', async (req) => listNotifications(pool, u(req).id, { cursor: req.query.cursor, dir: req.query.dir === 'prev' ? 'prev' : 'next', limit: clampLimit(req.query.limit), unreadOnly: req.query.unread === '1' }));
+  app.get('/api/notifications', async (req) => {
+    const q = parseQuery(NotificationsQuery, req.query);
+    return listNotifications(pool, u(req).id, { cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20, unreadOnly: q.unread === '1' || q.unread === 'true' });
+  });
   app.post<{ Params: { id: string } }>('/api/notifications/:id/read', async (req) => {
-    if (!(await markRead(pool, u(req).id, req.params.id))) throw new HttpError(404, 'not_found', 'غير موجود');
+    if (!(await markRead(pool, u(req).id, uuidParam(req.params.id)))) throw new HttpError(404, 'not_found', 'غير موجود');
     await emitUserEvent(pool, u(req).id, 'counts');
     return { ok: true };
   });
@@ -265,7 +394,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const spec = counterpartFor(reg, intentToSpec(reg, row!));
     const v = spec ? validateSpec(reg, spec) : null;
     if (!v || !v.ok) throw new HttpError(422, 'cannot_simulate', 'تعذّر إنشاء عرض مطابق لهذا الطلب');
-    const owner = (await pool.query("SELECT id FROM users WHERE handle = 'syn_owner_001'")).rows[0];
+    const owner = (await pool.query("SELECT id FROM users WHERE handle = 'syn_owner_001' AND realm = 'synthetic'")).rows[0];
+    if (!owner) throw new HttpError(503, 'demo_not_seeded', 'بيانات العرض التجريبي غير مهيأة (npm run db:seed)');
     const created = await withTx(pool, async (tx) => {
       const c = await createIntent(tx, reg, { userId: String(owner.id), realm: 'synthetic', spec: v.spec, titleAr: `${titleOf(reg, { side: v.spec.side, category: v.spec.categoryCode, deal: v.spec.deal, placeIds: v.spec.place.pointPlaceId ? [v.spec.place.pointPlaceId] : [], whenLabel: v.spec.when?.label })} (تجريبي — محاكاة)`, sourceText: null, conversationId: null });
       await enqueue(tx, 'match_intent', { verticalId: c.verticalId, intentId: c.id, version: c.version, trigger: 'job' }, { dedupeKey: `match:${c.verticalId}:${c.id}:${c.version}`, priority: 10 });
@@ -274,44 +404,30 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { created: { id: created.publicId }, noteAr: 'أُضيف عرض تجريبي جديد. سيصلك تنبيه عندما يطابقه العامل في الخلفية.' };
   });
 
-  // ── server-sent events: live notifications/counts per user
-  const streams = new Map<string, Set<FastifyReply>>();
+  // ── server-sent events: live notifications/counts per user (capped per user, closed on shutdown)
   app.get('/api/events', async (req, reply) => {
     const me = u(req);
+    if (!events.admit(me.id)) {
+      reply.header('Retry-After', '30');
+      throw new HttpError(429, 'too_many_streams', 'الصفحة مفتوحة في نوافذ كثيرة. أغلق بعضها ثم أعد المحاولة.');
+    }
     reply.hijack();
-    reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-    reply.raw.write(`event: counts\ndata: ${JSON.stringify(await counts(pool, me.id))}\n\n`);
-    const set = streams.get(me.id) ?? new Set();
-    set.add(reply);
-    streams.set(me.id, set);
-    const hb = setInterval(() => reply.raw.write(': ping\n\n'), 25_000);
-    req.raw.on('close', () => { clearInterval(hb); set.delete(reply); if (!set.size) streams.delete(me.id); });
+    await events.attach(reply.raw, me.id, (cb) => reply.raw.on('close', cb));
   });
-  let listener: pg.Client | null = null;
-  if (deps.listen !== false) {
-    listener = new pg.Client({ connectionString: deps.databaseUrl });
-    await listener.connect();
-    await listener.query('LISTEN ul_events');
-    listener.on('notification', async (n) => {
-      try {
-        const ev = JSON.parse(n.payload ?? '{}') as { userId?: string; type?: string };
-        const set = ev.userId ? streams.get(String(ev.userId)) : undefined;
-        if (!set?.size) return;
-        const c = await counts(pool, String(ev.userId));
-        for (const r of set) {
-          r.raw.write(`event: ${ev.type ?? 'counts'}\ndata: ${JSON.stringify(c)}\n\n`);
-          if (ev.type !== 'counts') r.raw.write(`event: counts\ndata: ${JSON.stringify(c)}\n\n`);
-        }
-      } catch { /* ignore malformed */ }
-    });
-    listener.on('error', (e) => app.log.error({ err: e.message }, 'listener error'));
-  }
-  app.addHook('onClose', async () => {
-    for (const set of streams.values()) for (const r of set) r.raw.end();
-    await listener?.end().catch(() => {});
-  });
+  await events.start();
+  app.addHook('preClose', async () => { events.endStreams(); });
+  app.addHook('onClose', async () => { await events.stop(); });
 
   return app;
+}
+
+/** Mutations must come from our own origin (Origin, else Referer; Sec-Fetch-Site when the browser sends it). */
+function sameOrigin(req: FastifyRequest): boolean {
+  const site = req.headers['sec-fetch-site'];
+  if (site === 'cross-site') return false;
+  const src = req.headers.origin ?? (req.headers.referer ? String(req.headers.referer) : undefined);
+  if (src === undefined) return site === undefined || site === 'same-origin' || site === 'none';
+  try { return new URL(String(src)).host === req.headers.host; } catch { return false; } // includes Origin: null
 }
 
 function publicUser(u: SessionUser) { return { publicId: u.publicId, displayName: u.displayName, realm: u.realm }; }
@@ -320,7 +436,9 @@ function parseCookies(h: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (h ?? '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    const raw = part.slice(i + 1).trim();
+    try { out[part.slice(0, i).trim()] = decodeURIComponent(raw); } catch { out[part.slice(0, i).trim()] = raw; }
   }
   return out;
 }

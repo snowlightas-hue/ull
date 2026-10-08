@@ -61,10 +61,12 @@ test('conflict asks only about the conflicting field; a correction cue overrides
   if (corr.last.next.kind === 'ready') assert.deepEqual(corr.last.next.spec.place.scopePlaceIds, [reg.placeByCode.get('sy.aleppo.afrin')!.id]);
 });
 
-test('"I don\'t know" resolves a place question instead of looping', () => {
+test('"I don\'t know" resolves a place question instead of looping; greetings are welcomed', () => {
   const r = run(['مرحبا', 'بدي سيارة', 'شراء', 'ما بعرف']);
-  assert.deepEqual(r.asked, ['side', 'deal', 'place']);
+  assert.deepEqual(r.asked, ['deal', 'place']); // a greeting gets a warm prompt, not a formal question
   assert.equal(r.last.next.kind, 'ready');
+  const g = applyTurn(reg, emptyDraft(), { text: 'مرحبا', answering: null, now });
+  assert.equal(g.next.kind, 'unclear');
 });
 
 test('peer activity requires a day and a place; chip labels work as answers', () => {
@@ -83,4 +85,17 @@ test('Jev can fill only non-explicit fields, above its threshold', () => {
   assert.deepEqual(r.last.appliedJev, ['deal']);
   const low = run(['بدي شقة بإعزاز'], { ...jev, deal: { value: 'rent', confidence: 0.6, evidence: 'x', explicit: false } });
   assert.equal(low.last.next.kind, 'ask'); // below threshold → ask the user instead of guessing
+});
+
+test('a bare amount answers the price question; currency and unit inside an answer are kept', () => {
+  const r = run(['عندي غرفة للإيجار بإعزاز', '٥٠', 'دولار بالشهر']);
+  assert.deepEqual(r.asked, ['price', 'price.currency']);
+  assert.equal(r.last.next.kind, 'ready');
+  if (r.last.next.kind === 'ready') assert.deepEqual([r.last.next.spec.price?.lo, r.last.next.spec.price?.currency, r.last.next.spec.price?.unit], ['5000', 'USD', 'month']);
+});
+
+test('an answer that mentions a house does not reopen the category ("يجي عالبيت")', () => {
+  const r = run(['بدي حدا يصلحلي البراد', 'أنا بعفرين، وبدي ياه يجي عالبيت']);
+  assert.deepEqual(r.asked, ['place']);
+  assert.equal(r.last.next.kind, 'ready');
 });

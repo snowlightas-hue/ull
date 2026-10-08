@@ -75,7 +75,13 @@ test('preference vs requirement for attributes', () => {
   assert.deepEqual(b.constraints.map((c) => [c.key, c.value, c.strength]), [['floor', 1, 'required']]);
   const c = p('عندي شقة للإيجار 3 غرف مفروشة للعائلات فقط');
   assert.equal(c.attrs.rooms?.value, 3); assert.equal(c.attrs.furnished?.value, true);
-  assert.deepEqual(c.constraints.map((x) => [x.key, x.value, x.strength]), [['tenant_type', 'family', 'required']]);
+  assert.deepEqual(c.constraints.map((x) => [x.key, x.op, x.values, x.strength]), [['tenant_type', 'in', ['family'], 'required']]);
+  // a seeker saying "لعائلة" describes themselves (a fact), not a condition on the landlord
+  assert.equal(p('بدي شقة للإيجار بالباب لعائلة').attrs.tenant_type?.value, 'family');
+  // negation and at-least cues
+  assert.deepEqual(p('بدي شقة للإيجار مو بالطابق الأرضي').constraints.map((x) => [x.key, x.op, x.value]), [['floor', 'neq', 0]]);
+  assert.deepEqual(p('بدي شقة مو أقل من غرفتين').constraints.map((x) => [x.key, x.op, x.value]), [['rooms', 'gte', 2]]);
+  assert.equal(p('بدي استأجر بيك آب ليوم واحد').when, null); // "واحد" is not Sunday
 });
 
 test('multi-valued facts and alternatives', () => {
