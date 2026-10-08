@@ -21,7 +21,10 @@ const res = await build({
   define: { 'process.env.NODE_ENV': '"production"' },
 });
 const js = res.outputFiles[0]!.text.replace(/<\/script/gi, '<\\/script');
-const css = readFileSync(join(root, 'public/css/app.css'), 'utf8');
+// every stylesheet the real app links (app.css + feature sheets), in the same order
+const indexHtml = readFileSync(join(root, 'public/index.html'), 'utf8');
+const sheets = [...indexHtml.matchAll(/<link rel="stylesheet" href="([^"]+\.css)">/g)].map((m) => m[1]!);
+const css = sheets.map((href) => readFileSync(join(root, 'public', href), 'utf8')).join('\n');
 const html = readFileSync(join(root, 'public/index.html'), 'utf8');
 const app = /<div id="app"[\s\S]*?<\/div>\s*<\/div>/.exec(html)![0];
 

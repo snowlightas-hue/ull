@@ -1,4 +1,5 @@
-// npm run db:seed [-- --test] [-- --no-demo]
+// npm run db:seed [-- --test] [-- --no-demo] [-- --reset-demo] [-- --reference-only]
+// --reference-only: migrate + sync categories/places/attributes (idempotent), no demo data — run on every app start
 import { loadEnv } from '../lib/env.ts';
 import { closePools, getPool } from '../db/pool.ts';
 import { migrate } from '../db/migrate.ts';
@@ -13,6 +14,7 @@ try {
   await syncReference(pool);
   const reg = await loadRegistry(pool);
   console.log(`reference data synced: ${reg.version}`);
+  if (process.argv.includes('--reference-only')) process.exit(0);
   if (process.argv.includes('--reset-demo')) {
     // deletes ONLY synthetic users (cascade: their intents, matches, notifications, conversations); real users untouched
     const before = await pool.query("SELECT count(*)::int AS n FROM users WHERE realm = 'real'");

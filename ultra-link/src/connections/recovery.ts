@@ -10,9 +10,10 @@
 // UL_RECOVERY_PEPPER) lives outside the database: a database dump alone does not let anyone test candidate codes.
 // Changing the pepper invalidates every stored code (users then regenerate from inside a session).
 //
-// Comparison: the lookup is by HMAC value, and the matched row is compared again with crypto.timingSafeEqual; an
-// unknown or malformed code still computes one HMAC and one timingSafeEqual against a dummy, so a miss costs the same
-// work as a hit. An attacker cannot steer the HMAC (no pepper), so index-lookup timing leaks nothing usable.
+// Comparison: the lookup is by HMAC value, and the matched row is compared again with crypto.timingSafeEqual; a
+// well-formed but unknown code does the same work as a hit (one HMAC, one index probe, one timingSafeEqual against a
+// dummy). A malformed code is refused before the probe (its shape is visible to the caller anyway). An attacker cannot
+// steer the HMAC (no pepper), so index-lookup timing leaks nothing usable.
 // Brute force is bounded by the per-IP limits on /api/auth/recover (docs/CONNECTIONS.md §Recovery).
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Queryable } from '../db/pool.ts';
@@ -96,7 +97,7 @@ const DUMMY = Buffer.alloc(32);
 
 /**
  * The real account owning this code, or null (wrong/malformed code, name given but different, or not a real
- * account). Same work on hit and miss: one HMAC, one index lookup, one timingSafeEqual.
+ * account). A well-formed miss does the same work as a hit: one HMAC, one index lookup, one timingSafeEqual.
  */
 export async function userForRecoveryCode(db: Queryable, code: string, displayName?: string | null): Promise<SessionUser | null> {
   const norm = normalizeRecoveryCode(code);

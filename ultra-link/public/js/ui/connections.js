@@ -579,7 +579,15 @@ export function createConnections({ api }) {
       } else if (type === 'conn_location') {
         await chat?.onLocation();
       } else if (type === 'conn_update') {
-        await chat?.refresh();
+        if (chat) { await chat.refresh(); return; }
+        // a location share that started/ended has a notification: show IT (with «فتح المحادثة») instead of a generic toast
+        try {
+          const page = await api.get('/api/notifications?unread=1&limit=1');
+          const n = page.items[0];
+          if (n && /^location_share_/.test(n.kind) && n.payload?.connectionId && Date.now() - Date.parse(n.createdAt) < 30_000) {
+            toast(ar(n.titleAr), { kind: 'info', actionLabel: 'فتح المحادثة', onAction: () => openChat(n.payload.connectionId) });
+          }
+        } catch { /* ignore */ }
       }
     },
     stopAllSharing() { for (const id of [...sharing.keys()]) stopWatching(id); },
@@ -589,7 +597,7 @@ export function createConnections({ api }) {
 // ───────────────────────── account recovery screens ─────────────────────────
 
 /** «احفظ هذا الرمز»: shown once after registration (or a regeneration). Resolves when the user confirms. */
-export function showRecoveryCode(code, { titleAr = 'احفظ رمز الاسترداد', introAr } = {}) {
+export function showRecoveryCode(code, { titleAr = 'احفظ هذا الرمز', introAr } = {}) {
   return new Promise((resolve) => {
     const titleId = uid('rc-title');
     const descId = uid('rc-desc');
@@ -612,7 +620,7 @@ export function showRecoveryCode(code, { titleAr = 'احفظ رمز الاستر
       labelledBy: titleId, describedBy: descId, className: 'cx-sheet cx-code-sheet', dismissible: false,
       children: [
         h('header', { class: 'sheet-head' }, h('h2', { class: 'sheet-title', id: titleId }, titleAr)),
-        h('p', { class: 'sheet-sub', id: descId }, introAr ?? 'هذا الرمز هو طريقتك الوحيدة للرجوع إلى حسابك بعد الخروج أو على جهاز آخر. لن نعرضه مرة ثانية.'),
+        h('p', { class: 'sheet-sub', id: descId }, introAr ?? 'هذا رمز الاسترداد: طريقتك الوحيدة للرجوع إلى حسابك بعد الخروج أو على جهاز آخر. لن نعرضه مرة ثانية.'),
         codeEl,
         h('div', { class: 'cx-actions' }, copyBtn),
         copied,

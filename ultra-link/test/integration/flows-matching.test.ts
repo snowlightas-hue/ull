@@ -94,15 +94,15 @@ function oracle(seek: any, prov: any): Oracle {
     else { const r = relate(point, seek.scope_place_ids); if (r === 'disjoint') violations.push('place_out_of_scope'); else if (r === 'partial') unknowns.push('place'); }
   }
   if (seek.price_op) {
-    // MATCHING semantics (evaluate.ts header, PRODUCT §6.2-2): amounts in different or unknown currencies/units are
-    // never compared and never confirmed, whatever the strength; a missing price blocks only a required condition.
+    // MATCHING semantics (PRODUCT §6.2-2 and §6.2-4): amounts in different or unknown currencies/units are never
+    // compared; that leaves the pair unconfirmed only for a REQUIRED price (an incomparable preference never blocks).
     const required = seek.price_op !== 'approx' && (seek.price_strength ?? 'required') === 'required';
     const saleId = db.reg.dealByCode.get('sale')!.id;
     const wantUnit = seek.price_unit ?? (seek.deal_type_id === saleId ? 'total' : null);
     const haveUnit = prov.price_unit ?? (prov.deal_type_id === saleId ? 'total' : null);
     if (!prov.price_op || (prov.price_lo === null && prov.price_hi === null)) { if (required) unknowns.push('price'); }
-    else if (!seek.currency || !prov.currency || seek.currency.trim() !== prov.currency.trim()) unknowns.push('price.currency');
-    else if (!wantUnit || !haveUnit || wantUnit !== haveUnit) unknowns.push('price.unit');
+    else if (!seek.currency || !prov.currency || seek.currency.trim() !== prov.currency.trim()) { if (required) unknowns.push('price.currency'); }
+    else if (!wantUnit || !haveUnit || wantUnit !== haveUnit) { if (required) unknowns.push('price.unit'); }
     else if (required) {
       assert.equal(prov.price_op, 'eq', 'generator: offers are asking prices');
       const x = BigInt(prov.price_lo); // pg returns BIGINT as a string: exact

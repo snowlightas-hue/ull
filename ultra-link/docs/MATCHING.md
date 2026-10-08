@@ -16,7 +16,7 @@ SQL only pre-selects candidates; every verdict comes from the pure function `eva
 | `بالضبط` | `eq`: equality in minor units; ±1 ⇒ `price_not_exact`. |
 | `حد أقصى` | `lte`: equal to the max is fine; max + 1 minor unit ⇒ `price_above_max`. `gte`/`between` are inclusive. |
 | `حوالي` | `approx` is always a preference (±10 % = `price_near`). |
-| Money | BigInt minor units end to end (tested beyond 2^53). Different currency or price unit (or unknown) ⇒ never compared, `currency_mismatch` / `unit_mismatch`, at best `possible` — whatever the strength. |
+| Money | BigInt minor units end to end (tested beyond 2^53). Different currency or price unit (or unknown) ⇒ never compared, `currency_mismatch` / `unit_mismatch`. For a **required** price that leaves the pair at best `possible`; for a preferred price it is shown as an unknown reason but does not block confirmation (PRODUCT §6.2-4; changed after REVIEW m7). A free offer (0, «مجانًا») is within any ceiling or target (`price_within_max`). |
 | Never widen | No automatic widening of place, price or date. Suggestions are text only (`suggestionsAr`). A peer without an area uses its own point as its area, never "anywhere". |
 | Sides | Exchange = `seek ↔ provide` (order-independent: a seeker's condition vs the provider's facts and vice versa). Peer = `join ↔ join`, evaluated in canonical id order so `f(a,b)` and `f(b,a)` are identical objects. |
 | Dates | Half-open `[from, to)`; touching windows do not overlap. Both required + no overlap ⇒ `date_no_overlap`; one flexible ⇒ minus reason. Peers need a known shared time (`date_unknown` ⇒ `possible`). |
@@ -163,7 +163,11 @@ column: `git show bc888ed:ultra-link/src/matching/engine.ts`, point its `../` im
 `--engine before=/abs/path/engine.ts`.
 
 ## 8. Known limits / follow-ups
-- Status changes (`POST /api/intents/:id/status`) run matching right after the commit but enqueue no safety-net job
-  (Role 7): a crash in between leaves the counterpart's view stale until the next run. Edits and expiry are covered.
+- Status changes now enqueue the same safety-net `match_intent` job as edits (Role 7), in the status transaction.
+- **Decision (REVIEW m1):** a pair that was invalidated and later becomes valid again is *not* notified a second time.
+  It reappears in the lists live (SSE `match_update`); a second alert per pair would turn every back-and-forth edit or
+  pause/resume into a notification storm. `matching-engine.test.ts` and `flows-matching.test.ts` keep this rule.
+- Leaf foreign keys (migration 0006): each `matches` partition references its own `intents` partition; first-evaluation
+  p50 1,972 → 744 ms in Role 5's measurement. A migration that adds a partition pair must add both leaf FKs.
 - Point-less counterparts are only sampled (200) when *I* have no point either; reported through `truncated`.
 - Proximity (`geo`, `radiusKm`, `nearest`, live positions): evaluated and retrieved by the GEO directions — docs/GEO.md.

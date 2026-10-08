@@ -229,3 +229,21 @@ exists), a reproduction and a proposed patch for the owning role.
 | `test/integration/flows-conversation.test.ts` | corpus repeated-question guard, reload, retries, races, give-up, provider fallback |
 | `test/integration/flows-matching.test.ts` | constraint fuzz with DB-row oracle, 2^53 precision, stale-evaluation race, realm isolation |
 | `test/integration/flows-api.test.ts` | HTTP isolation, auth/CSRF, privacy before consent, wire-level idempotency, two devices, no-5xx robustness |
+
+## Integrator response (after this review)
+| Finding | Outcome | Where / evidence |
+|---|---|---|
+| MAJOR-1/2/3 give-up crash, invented deal, silent widening | **Fixed**: `essentialGap()` never builds a spec while side/category/deal or a seeker's place is unknown; the user is told what is missing (with quick answers) | `src/conversation/engine.ts`; flows 18/18 |
+| MAJOR-4/5 focus loss | **Fixed**: chips inside `focusRescue`, busy buttons use `aria-disabled`, list refreshes restore focus and ignore stale responses | `home.js`, `cards.js`, `app.js`; a11y 43/43 |
+| MAJOR-6 no way back for real accounts | **In progress** with the V2.2 connections agent (recovery code + confirm on logout) | `docs/CONNECTIONS.md` when it lands |
+| MAJOR-7 «بدي بيعو» | **Fixed**: Levantine `-و` forms | `src/nlu/parse.ts`; dialogues 98.4% |
+| m1 re-notify restored match | **Decided: keep** (no second alert per pair; avoids notification storms) | `docs/MATCHING.md` §8 |
+| m2 409 busy on racing turns | **Fixed client-side**: idempotent turns are retried up to twice on `busy` | `public/js/api.js` |
+| m3 cookie Secure behind proxy | **Fixed** by Role 7 (`UL_TRUST_PROXY`) | `docs/OPERATIONS.md` |
+| m6 missing docs | **Fixed**: DATABASE.md, MATCHING.md, OPERATIONS.md exist | `docs/` |
+| m7 preferred price in another currency blocked confirmation | **Fixed** to follow PRODUCT §6.2-4; property tests and the fuzz oracle updated to the product rule | `src/matching/evaluate.ts` |
+| m8 typecheck red | **Fixed** | `npx tsc --noEmit` |
+| m9 touch targets < 44 px | **Fixed** for coarse pointers (`.btn-sm` 44 px) | `public/css/app.css` |
+| m10 voice spec wrote into the live demo | **Fixed**: the base URL is now required | `test/e2e/integration-voice.spec.ts` |
+| m11 Jev budget overrun | **Fixed**: abortable backoff; budget tests promoted from `todo` | `src/ai/jev-client.ts`; server-jev 19/19 |
+| m4 CSP `'unsafe-inline'` styles, m5 rate limit on edits | Open | — |

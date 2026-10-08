@@ -296,7 +296,10 @@ function oracle(x: MatchableIntent, y: MatchableIntent): { violations: Cat[]; un
     else {
       const wu = w.unit ?? (s.deal === 'sale' ? 'total' : null);
       const hu = h.unit ?? (p.deal === 'sale' ? 'total' : null);
-      if (!w.currency || w.currency !== h.currency || !wu || wu !== hu) U.push('price.meaning');
+      const free = h.lo === '0' && h.hi === '0' && (w.op === 'lte' || w.op === 'approx'); // free is within any ceiling
+      if (free) { /* satisfied */ }
+      // PRODUCT §6.2: an incomparable REQUIRED price leaves the pair possible; an incomparable preference never blocks
+      else if (!w.currency || w.currency !== h.currency || !wu || wu !== hu) { if (req) U.push('price.meaning'); }
       else if (req) {
         const [hlo, hhi] = offerRange(h);
         const [wlo, whi] = wantRange(w);
@@ -378,7 +381,7 @@ test('properties: exchange is order-independent and peer evaluation is symmetric
   assert.ok(ex > 1000 && pe > 500, `exchange ${ex}, peer ${pe}`);
 });
 
-test('properties: a currency or unit mismatch (or unknown) is never confirmed, whatever the strength', () => {
+test('properties: a currency or unit mismatch (or unknown) on a REQUIRED price is never confirmed; on a preference it is shown but does not block', () => {
   const h = new Gen(SEED + 1);
   let checked = 0;
   for (let i = 0; i < 500; i++) {
@@ -398,9 +401,13 @@ test('properties: a currency or unit mismatch (or unknown) is never confirmed, w
     const a = mk(h, 'seek', cat, deal, { price: want });
     const b = mk(h, 'provide', cat, deal, { price: offer, pointPlaceId: 1102 });
     const v = evaluatePair(reg, a, b, { now: NOW });
-    assert.notEqual(v.verdict, 'match', show(a, b));
     assert.ok(v.reasons.some((r) => r.code === 'currency_mismatch' || r.code === 'unit_mismatch'), show(a, b));
-    assert.ok(v.missing.includes('price.currency') || v.missing.includes('price.unit'));
+    if (want.op !== 'approx' && want.strength === 'required') {
+      assert.notEqual(v.verdict, 'match', show(a, b));
+      assert.ok(v.missing.includes('price.currency') || v.missing.includes('price.unit'));
+    } else {
+      assert.ok(!v.missing.includes('price.currency') && !v.missing.includes('price.unit'), `a preference never blocks: ${show(a, b)}`);
+    }
     checked++;
   }
   // and inside the random corpus
@@ -410,6 +417,8 @@ test('properties: a currency or unit mismatch (or unknown) is never confirmed, w
     const su = s.price.unit ?? (s.deal === 'sale' ? 'total' : null);
     const pu = p.price.unit ?? (p.deal === 'sale' ? 'total' : null);
     if (s.price.currency && s.price.currency === p.price.currency && su && su === pu) return;
+    if (s.price.op === 'approx' || s.price.strength !== 'required') return; // preferences never block (PRODUCT §6.2-4)
+    if (p.price.lo === '0' && p.price.hi === '0' && s.price.op === 'lte') return; // free is within any ceiling
     assert.notEqual(verdicts[i]!.verdict, 'match', `#${i}`);
     checked++;
   });

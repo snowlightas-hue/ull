@@ -236,13 +236,11 @@ test('an applied migration is immutable: a checksum mismatch stops the runner', 
   }
 });
 
-test('proposed draft migrations/proposed/role5_leaf_fk_matches_intents.sql applies; integrity and cascades hold', async () => {
-  const { readFileSync } = await import('node:fs');
+test('0006 leaf FKs: EVERY matches partition references its own intents partition (also partitions added later); integrity and cascades hold', async () => {
   const pool = await blankDb(`ultralink_t_${TAG}_leaf`.slice(0, 60), '9999');
   try {
     await syncReference(pool);
     const reg = await loadRegistry(pool);
-    await withTx(pool, (tx) => tx.query(readFileSync(join(ROOT, 'migrations', 'proposed', 'role5_leaf_fk_matches_intents.sql'), 'utf8')));
     const n = (await pool.query(`SELECT (SELECT count(*) FROM pg_partition_tree('matches') WHERE isleaf)::int AS leaves,
         (SELECT count(*) FROM pg_constraint k WHERE k.contype = 'f' AND k.convalidated AND k.confrelid IN (SELECT relid FROM pg_partition_tree('intents') WHERE isleaf)
             AND k.conrelid IN (SELECT relid FROM pg_partition_tree('matches') WHERE isleaf) AND k.conparentid = 0)::int AS leaf_fks,

@@ -115,6 +115,11 @@ async function mustLoad(db: Queryable, publicId: string, userId: string, lock = 
   return { c, me: sideOf(c, userId)! };
 }
 
+async function matchPublicId(db: Queryable, verticalId: number, matchId: string): Promise<string | null> {
+  const { rows } = await db.query('SELECT public_id FROM match_refs WHERE vertical_id = $1 AND match_id = $2', [verticalId, matchId]);
+  return rows[0]?.public_id ?? null;
+}
+
 async function displayName(db: Queryable, userId: string): Promise<string> {
   const { rows } = await db.query('SELECT display_name FROM users WHERE id = $1', [userId]);
   return rows[0]?.display_name ?? 'الطرف الآخر';
@@ -374,7 +379,7 @@ export async function sendMessage(pool: pg.Pool, publicId: string, userId: strin
     const them = other(me);
     const theirUnread = seq - up.rows[0][`${them}_last_read_seq`];
     const recipient = userOf(c, them);
-    const matchPublic = (await tx.query('SELECT public_id FROM match_refs WHERE vertical_id = $1 AND match_id = $2', [c.vertical_id, c.match_id])).rows[0]?.public_id;
+    const matchPublic = await matchPublicId(tx, c.vertical_id, c.match_id);
     await tx.query(
       `INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key) VALUES ($1, 'connection_message', $2, $3, $4, $5)
        ON CONFLICT (recipient_id, dedupe_key) DO UPDATE
@@ -451,27 +456,28 @@ export async function startLocationShare(pool: pg.Pool, publicId: string, userId
     const s = rows[0];
     await scheduleLocationEnd(tx, s.share_id, new Date(s.expires_at));
     const recipient = userOf(c, other(me));
+    // conn_update BEFORE the notification: the client then shows its own toast instead of the generic one
+    await emitUserEvent(tx, recipient, 'conn_update');
     await notify(tx, {
       recipientId: recipient, kind: 'location_share_started',
       titleAr: `${await displayName(tx, userId)} يشارك موقعه المباشر معك`,
       bodyAr: `لمدة ${minutesAr(durationMs)}. افتح المحادثة لترى موقعه.`,
-      payload: { connectionId: c.public_id }, dedupeKey: `loc-start:${s.share_id}`,
+      payload: { connectionId: c.public_id, matchId: await matchPublicId(tx, c.vertical_id, c.match_id) }, dedupeKey: `loc-start:${s.share_id}`,
     });
-    await emitUserEvent(tx, recipient, 'conn_update');
     return { active: true, startedAt: iso(s.started_at), expiresAt: iso(s.expires_at) };
   });
 }
 
-async function notifyShareEnded(db: Queryable, c: Pick<ConnRow, 'a_user_id' | 'b_user_id' | 'public_id'>, sharerId: string, shareId: string, reason: 'stopped' | 'expired'): Promise<void> {
+async function notifyShareEnded(db: Queryable, c: Pick<ConnRow, 'a_user_id' | 'b_user_id' | 'public_id' | 'vertical_id' | 'match_id'>, sharerId: string, shareId: string, reason: 'stopped' | 'expired'): Promise<void> {
   const recipient = String(c.a_user_id) === String(sharerId) ? String(c.b_user_id) : String(c.a_user_id);
+  await emitUserEvent(db, recipient, 'conn_update'); // before the notification (see startLocationShare)
+  await emitUserEvent(db, sharerId, 'conn_update');
   await notify(db, {
     recipientId: recipient, kind: 'location_share_ended',
     titleAr: `انتهت مشاركة موقع ${await displayName(db, sharerId)}`,
     bodyAr: reason === 'stopped' ? 'أوقف مشاركة موقعه.' : 'انتهت المدة المحددة للمشاركة.',
-    payload: { connectionId: c.public_id }, dedupeKey: `loc-end:${shareId}`,
+    payload: { connectionId: c.public_id, matchId: await matchPublicId(db, c.vertical_id, c.match_id) }, dedupeKey: `loc-end:${shareId}`,
   });
-  await emitUserEvent(db, recipient, 'conn_update');
-  await emitUserEvent(db, sharerId, 'conn_update');
 }
 
 /** Stop my share now; the stored position is erased. Idempotent (no active share → ok). */
@@ -513,7 +519,7 @@ export async function endExpiredShares(db: Queryable, shareId?: string): Promise
     `UPDATE connection_location_shares s SET ended_at = s.expires_at, end_reason = 'expired', ${ENDED_COLS}
        FROM connections c
       WHERE s.ended_at IS NULL AND s.expires_at <= now() AND c.id = s.connection_id ${shareId ? 'AND s.share_id = $1' : ''}
-      RETURNING s.share_id, s.sharer_id, c.public_id, c.a_user_id, c.b_user_id, c.status`, shareId ? [shareId] : []);
+      RETURNING s.share_id, s.sharer_id, c.public_id, c.a_user_id, c.b_user_id, c.status, c.vertical_id, c.match_id`, shareId ? [shareId] : []);
   for (const r of rows) {
     if (r.status === 'open') await notifyShareEnded(db, r, String(r.sharer_id), r.share_id, 'expired');
   }

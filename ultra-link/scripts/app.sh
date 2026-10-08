@@ -123,7 +123,9 @@ prepare_db() {
   name="${url##*/}"; name="${name%%\?*}"
   # migrate/seed the same database the server will use (loadEnv never overrides an exported variable)
   ( cd "$ROOT" && DATABASE_URL="$url" node src/db/migrate.ts )
-  if [ "$(bash "$ROOT/scripts/db.sh" psql -d "$name" -c "SELECT count(*) FROM categories")" = "0" ]; then ( cd "$ROOT" && DATABASE_URL="$url" node src/seed/seed.ts ); fi
+  # first start: reference data + demo; later starts: reference data only (new categories/words appear, demo untouched)
+  if [ "$(bash "$ROOT/scripts/db.sh" psql -d "$name" -c "SELECT count(*) FROM categories")" = "0" ]; then ( cd "$ROOT" && DATABASE_URL="$url" node src/seed/seed.ts );
+  else ( cd "$ROOT" && DATABASE_URL="$url" node src/seed/seed.ts --reference-only ); fi
 }
 
 show_logs() {

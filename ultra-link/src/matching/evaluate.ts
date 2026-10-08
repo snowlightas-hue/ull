@@ -297,19 +297,25 @@ export function evaluatePair(reg: Registry, x: MatchableIntent, y: MatchableInte
     const wantUnit: PriceUnit | null = want.unit ?? (seek.deal === 'sale' ? 'total' : null);
     const haveUnit: PriceUnit | null = have.unit ?? (prov.deal === 'sale' ? 'total' : null);
     const haveShown = moneyText(have.lo ?? have.hi!, have.currency, haveUnit);
-    // amounts with a different (or unknown) meaning are never compared — and never confirmed
+    // free of charge (0, no currency): within any ceiling or target, whatever its currency or unit
+    if (have.lo === '0' && have.hi === '0' && (want.op === 'lte' || want.op === 'approx')) {
+      plus('price_within_max', 'مجانًا — ضمن حدك', strength, 0);
+      return;
+    }
+    // amounts with a different (or unknown) meaning are never compared. A required price stays unconfirmed;
+    // a preferred one is shown as unknown but does not block confirmation (PRODUCT §6.2: preferences never block)
     if (!want.currency || !have.currency || want.currency !== have.currency) {
       const t = have.currency && want.currency
         ? `السعر بعملة مختلفة (${haveShown}) — لا نقارن عملات مختلفة`
         : 'العملة غير محددة — يحتاج تأكيد';
-      unknown('currency_mismatch', t, 'price.currency', strength, true);
+      unknown('currency_mismatch', t, 'price.currency', strength);
       return;
     }
     if (!wantUnit || !haveUnit || wantUnit !== haveUnit) {
       const t = wantUnit && haveUnit
         ? `وحدة السعر مختلفة (${haveShown}) — لا نقارن مبالغ مختلفة المعنى`
         : `وحدة السعر غير محددة (${haveShown}) — يحتاج تأكيد`;
-      unknown('unit_mismatch', t, 'price.unit', strength, true);
+      unknown('unit_mismatch', t, 'price.unit', strength);
       return;
     }
     const cur = want.currency;

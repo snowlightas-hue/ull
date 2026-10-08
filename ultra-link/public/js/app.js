@@ -10,6 +10,7 @@ import { toast } from './ui/toast.js';
 import { createVoice } from './conversation/voice.js';
 import { createConversationMachine } from './conversation/machine.js';
 import { createConnections, showRecoveryCode, confirmLogout, recoverSection } from './ui/connections.js';
+import { decorateIntentCards, decorateMatchCards, stopAllLiveSharing } from './ui/geo.js';
 
 const root = document.getElementById('app');
 const state = { me: null, shell: null, home: null, machine: null, taxonomy: null, lists: {}, events: null, lastIntent: null };
@@ -128,7 +129,7 @@ function renderMachine(st, ctx) {
   else if (!['listening', 'reviewing', 'processing'].includes(st) || !ctx.question) home.hideQuestion();
   if (ctx.lastTurn?.summary) home.showSummary(ctx.lastTurn.summary);
   if (ctx.intent) state.lastIntent = ctx.intent;
-  if (st === 'results') home.showResults(ctx.matchRun);
+  if (st === 'results') { home.showResults(ctx.matchRun); decorateMatchCards(state.shell.views.home, ctx.matchRun?.page?.items ?? []); }
   if (st === 'saved_no_results') home.showSavedNoResults(ctx.intent, ctx.matchRun?.suggestionsAr ?? [], ctx.matchRun);
   if (st === 'error' && ctx.error) home.showError(ctx.error.messageAr);
   if (['results', 'saved_no_results'].includes(st)) refreshCounts();
@@ -194,6 +195,7 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         emptyActionLabelAr: 'ابدأ من الرئيسية', onEmptyAction: () => state.shell.setActiveTab('home'),
       });
       if (state.me.user.realm === 'synthetic' && tab === 'requests') el.prepend(demoTools());
+      decorateIntentCards(el, page.items, { api }); // live-location toggle on ride offers, distance chips
     } else if (tab === 'matches') {
       renderMatchPage(el, page, {
         onPage, filter: ls.filter, onFilter: (f) => { ls.filter = f; loadTab(tab); },
@@ -202,6 +204,7 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         onOpenChat: (m, opener) => { if (m.connection?.id) conn().openChat(m.connection.id, { opener }); },
         emptyTextAr: ls.intent ? 'لا مطابقات لهذا الطلب حاليًا.' : 'لا مطابقات بعد. سنخبرك فور ظهور طرف مناسب.',
       });
+      decorateMatchCards(el, page.items);
       if (ls.intent) el.prepend(h('div', { class: 'notice' }, h('span', { class: 'notice-body' }, 'تعرض مطابقات طلب واحد. '), h('button', { type: 'button', class: 'link-btn', onClick: () => { ls.intent = null; loadTab('matches'); } }, 'عرض كل المطابقات')));
     } else if (tab === 'notifications') {
       renderNotificationPage(el, page, {
@@ -313,7 +316,7 @@ function connectEvents() {
   let cardsTimer = null;
   const refreshCards = () => { clearTimeout(cardsTimer); cardsTimer = setTimeout(() => { if (state.shell.getActiveTab() === 'matches' && !conn().isOpen()) loadTab('matches'); }, 600); };
   es.addEventListener('conn_message', () => { quietCounts = true; void conn().onEvent('conn_message'); refreshCards(); });
-  es.addEventListener('conn_update', () => { void conn().onEvent('conn_update'); refreshCards(); });
+  es.addEventListener('conn_update', () => { quietCounts = true; void conn().onEvent('conn_update'); refreshCards(); });
   es.addEventListener('conn_location', () => { void conn().onEvent('conn_location'); });
   es.onerror = () => { /* EventSource reconnects automatically */ };
 }
@@ -321,7 +324,7 @@ function connectEvents() {
 // ───────────── account & demo tools ─────────────
 function addAccountTools() {
   const header = state.shell.header;
-  const doLogout = async () => { state.conn?.stopAllSharing(); await api.post('/api/auth/logout').catch(() => {}); location.reload(); };
+  const doLogout = async () => { state.conn?.stopAllSharing(); await stopAllLiveSharing().catch(() => {}); await api.post('/api/auth/logout').catch(() => {}); location.reload(); };
   // a real account can only come back with its recovery code: warn first, offer a fresh code (REVIEW MAJOR-6)
   const newCode = async () => {
     const r = await api.post('/api/account/recovery-code', {});

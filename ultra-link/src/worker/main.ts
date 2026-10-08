@@ -12,6 +12,7 @@ import { notify } from '../repo/notifications.ts';
 import { latestRun, matchIntent, type MatchTrigger } from '../matching/engine.ts';
 import { runConnectionJob } from '../connections/jobs.ts';
 import type { Registry } from '../domain/registry.ts';
+import { purgeStaleLive } from '../geo/live.ts';
 
 /** Max intents one expire_sweep job expires (the next sweep continues). */
 export const SWEEP_MAX = Number(process.env.UL_SWEEP_MAX ?? 2000);
@@ -115,7 +116,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   await beat();
   const hb = setInterval(() => void beat(), 10_000);
-  const sweep = async () => { await enqueue(pool, 'expire_sweep', {}, { dedupeKey: 'expire_sweep', priority: 200 }).catch(() => {}); };
+  const sweep = async () => {
+    await enqueue(pool, 'expire_sweep', {}, { dedupeKey: 'expire_sweep', priority: 200 }).catch(() => {});
+    await purgeStaleLive(pool).catch(() => {}); // live positions nobody refreshed for a day (privacy + table size)
+  };
   await sweep();
   const sweepTimer = setInterval(() => void sweep(), 60_000);
   console.log(`[worker] ${workerId} started`);

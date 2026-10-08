@@ -12,6 +12,7 @@ import { assignAttributes, parseUtterance, tokensOf } from '../nlu/parse.ts';
 import { findNumbers } from '../nlu/numbers.ts';
 import type { AttrMention, JevResolution, RuleParse } from '../nlu/types.ts';
 import { CHIP, conflictQuestion, dealOptions, makeQuestion, type TemplateKey } from './questions.ts';
+import { defaultNearestKm } from '../geo/semantics.ts';
 
 export type Source = 'rules' | 'jev' | 'jev-sim' | 'answer' | 'default';
 export interface Slot<T> { value: T; source: Source; confidence: number; evidence?: string; turn: number }
@@ -401,7 +402,8 @@ export function buildSpec(reg: Registry, d: ConversationDraft): IntentSpec {
     if (place.pointPlaceId == null) place.pointPlaceId = nearestCity(reg, d.geo.value.lat, d.geo.value.lng);
   }
   if (d.radius) place.radiusKm = d.radius.value;
-  if (d.nearest) place.nearest = true;
+  // a ride request means "the nearest car", inside the declared default limit (never widened silently)
+  if (d.nearest || (cat.code === 'transport.ride' && side === 'seek' && !d.radius)) place.nearest = true;
   return { side, categoryCode: cat.code, deal, place, price, when: d.when?.value ?? null, attrs, constraints: cons };
 }
 
@@ -436,8 +438,10 @@ export function summarize(reg: Registry, d: ConversationDraft): { titleAr: strin
   if (d.when) chips.push({ labelAr: 'الموعد', valueAr: d.when.value.label ?? '', slot: 'when' });
   if (d.geo) chips.push({ labelAr: 'موقعك', valueAr: 'محدد بدقة (لا يظهر لأحد قبل موافقتك)', slot: 'geo' });
   if (d.radius) chips.push({ labelAr: 'المسافة', valueAr: `ضمن ${d.radius.value.value} كم${d.radius.value.strength === 'preferred' ? ' (تقريبًا)' : ''}`, slot: 'geo' });
-  else if (d.nearest) chips.push({ labelAr: 'الترتيب', valueAr: 'الأقرب أولًا', slot: 'geo' });
   const cat = d.category ? reg.categoryByCode.get(d.category.value) : undefined;
+  if (!d.radius && (d.nearest || (cat?.code === 'transport.ride' && d.side?.value === 'seek'))) {
+    chips.push({ labelAr: 'الترتيب', valueAr: `الأقرب أولًا (ضمن ${cat ? defaultNearestKm(reg, cat.code) : 50} كم)`, slot: 'geo' });
+  }
   const defs = cat ? attributesFor(reg, cat.code) : [];
   for (const m of d.mentions) {
     const def = defs.find((a) => a.key === m.key);

@@ -74,6 +74,7 @@ function createIntent(userId: string, realm: 'real' | 'synthetic', spec: IntentS
     price_strength: c.price_strength, negotiable: c.negotiable, when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar,
     attrs: c.attrs as IntentRow['attrs'], constraints: c.constraints as IntentRow['constraints'], expires_at: expiryFor(spec, createdAt).toISOString(),
     created_at: iso, updated_at: iso, created_key: `${iso}#${id.padStart(9, '0')}`,
+    geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
   };
   S.intents.push(row);
   return row;
@@ -290,6 +291,7 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
       side: c.side, category_id: c.category_id, deal_type_id: c.deal_type_id, point_place_id: c.point_place_id, scope_strength: c.scope_strength, scope_place_ids: c.scope_place_ids,
       price_op: c.price_op, price_lo: c.price_lo, price_hi: c.price_hi, currency: c.currency, price_unit: c.price_unit, price_strength: c.price_strength, negotiable: c.negotiable,
       when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar, attrs: c.attrs, constraints: c.constraints,
+      geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
       title_ar: row.realm === 'synthetic' && user.persona ? `${title} (تجريبي)` : title, version: row.version + 1, updated_at: nowIso(),
     });
     const run = matchIntent(row.id, 'edit');

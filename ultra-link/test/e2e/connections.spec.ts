@@ -17,7 +17,7 @@ import { freshDb } from '../helpers/testdb.ts';
 
 const ART = path.join(ROOT, 'test/e2e/artifacts/connections');
 mkdirSync(ART, { recursive: true });
-const shot = (page: Page, name: string) => page.screenshot({ path: path.join(ART, `${name}.png`) }).catch(() => {});
+const shot = async (page: Page, name: string) => { await sleep(450); await page.screenshot({ path: path.join(ART, `${name}.png`) }).catch(() => {}); }; // after sheet/toast entrance
 
 const { buildApp } = await import('../../src/server/app.ts');
 const connectionsRoutes = (await import('../../src/server/routes/connections.ts')).default;
@@ -56,7 +56,7 @@ async function registerThroughUi(page: Page, vp: Viewport, name: string, phone: 
   await page.locator('#reg-name').fill(name);
   if (phone) await page.locator('#reg-phone').fill(phone);
   await press(page.getByRole('button', { name: 'ابدأ' }), vp.mobile);
-  const dlg = page.getByRole('dialog', { name: 'احفظ رمز الاسترداد' });
+  const dlg = page.getByRole('dialog', { name: 'احفظ هذا الرمز' });
   await dlg.waitFor({ timeout: 10_000 });
   const code = (await dlg.locator('.cx-code').textContent())?.trim() ?? '';
   s.check(`${tag}: the recovery code is shown once after registering (4×4)`, /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/.test(code), code.replace(/\w/g, '•'));
@@ -211,11 +211,16 @@ try {
     await shot(A, `${MOBILE.name}-A-logout-confirm`);
     await press(dlg.getByRole('button', { name: 'خروج', exact: true }), true);
     await A.locator('#reg-name').waitFor({ timeout: 10_000 });
-    const codeInput = A.getByLabel('رمز الاسترداد');
+    const codeInput = A.getByRole('textbox', { name: 'رمز الاسترداد' });
+    const before = noiseA.errors.length;
     await codeInput.fill('WRONG-CODE-0000-0000');
     await press(A.getByRole('button', { name: 'ارجع إلى حسابي' }), true);
     await A.getByText('رمز الاسترداد غير صحيح').waitFor();
     s.check('a wrong code is refused with a clear message', true);
+    // Chromium logs every non-2xx fetch; the deliberate wrong code's 401 is expected, not noise
+    const added = noiseA.errors.splice(before);
+    noiseA.ignored.push(...added.filter((e) => /status of 401/.test(e)));
+    noiseA.errors.push(...added.filter((e) => !/status of 401/.test(e)));
     await codeInput.fill(codeA.toLowerCase());
     await press(A.getByRole('button', { name: 'ارجع إلى حسابي' }), true);
     await A.waitForSelector('.composer-input', { timeout: 15_000 });

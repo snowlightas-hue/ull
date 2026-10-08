@@ -101,3 +101,54 @@ type MatchRunResult = {
 | 7 Server & ops | `src/server/*`, `scripts/app.sh`, `scripts/db.sh` |
 | 8 Tests & review | `test/integration/*`, `test/e2e/*`, `docs/REVIEW.md` |
 Integrator: `src/domain/*`, `src/nlu/*`, `src/conversation/*`, `src/seed/*`, `public/js/app.js`, `public/js/api.js`, `docs/ARCHITECTURE.md`, `README.md`.
+
+## Connections & chat (V2.2 — owner: connections role; details in `docs/CONNECTIONS.md`)
+Plugins `src/server/routes/connections.ts` and `src/server/routes/account.ts`. Every route needs a session (401) except
+`/api/auth/recover`; every `:id` route answers **404** to anyone who is not one of the connection's two participants.
+Rate limits per session: `conn_messages` 30/min, `conn_location` 20/min, `conn_actions` 30/min; `auth_recover` 5/min per IP.
+
+Changes to existing routes:
+- `POST /api/auth/register` → `{user, recoveryCode}` (shown once; real accounts).
+- `POST /api/matches/:id/contact` → `409 realm_mismatch | contact_unavailable (a block either way) | connection_ended`.
+- `POST /api/contact-requests/:id/respond` → `{contactRequest, connection?: {id, status}}`; accept opens the connection
+  (one per match, idempotent). **Accept reveals the display name only** — `MatchCard.contact.counterpart.phone` is present
+  only while the counterpart shares it in an open connection. `MatchCard` gains `connection?: {id, status, unread}`.
+
+| Method | Path | Body / Query | Response |
+|---|---|---|---|
+| GET | /api/connections | `status=open|closed|archived|all&cursor=&dir=&limit=` | `Page<ConnectionCard>` (newest activity first) |
+| GET | /api/connections/:id | – | `{connection: ConnectionDetail}` |
+| GET | /api/connections/:id/messages | `cursor=&dir=&limit=` (newest first) or `after=<seq>&limit=` | `Page<Message> & {lastReadSeq:{mine,theirs}}` · with `after`: `{items (oldest first), more, total, lastReadSeq}` |
+| POST | /api/connections/:id/messages | `{text ≤1000 chars, clientMsgId: uuid}` | `{message, duplicate}`; 409 `connection_not_open` / `client_msg_id_reused` |
+| POST | /api/connections/:id/read | `{seq}` | `{ok, lastReadSeq, unread}` (forward-only) |
+| POST | /api/connections/:id/phone | `{share: boolean, phone?}` | `{connection}`; 409 `no_phone` |
+| POST | /api/connections/:id/location/start | `{minutes: 15|30|60}` | `{share:{active, startedAt, expiresAt}, minutes}` |
+| POST | /api/connections/:id/location/stop | – | `{ok}` (idempotent; coordinates erased) |
+| POST | /api/connections/:id/location | `{lat, lng, accuracyM?}` | `{ok, expiresAt}`; 409 `share_not_active` |
+| GET | /api/connections/:id/location | – | `{mine: Location, theirs: Location}` |
+| POST | /api/connections/:id/close · /block · /unblock | – | `{connection}` |
+| POST | /api/connections/:id/report | `{reason: spam|scam|abuse|inappropriate|fake|other, note?}` | `{ok, noteAr}` (stored for review; no automatic action) |
+| POST | /api/auth/recover | `{code, displayName?}` | `{user}` + cookie; 401 `bad_recovery_code`; 429 |
+| GET | /api/account | – | `{user, recovery: {hasCode, createdAt, lastUsedAt}|null, phone}` |
+| POST | /api/account/recovery-code | – | `{recoveryCode, createdAt}` (old code invalid at once; 403 `real_only` for demo personas) |
+| POST | /api/account/phone | `{phone|null}` | `{phone}` |
+| GET | /api/events | – | adds `event: conn_message | conn_update | conn_location` (data = counts; clients refetch) |
+
+```ts
+type ConnectionCard = {
+  id: string; status: 'open'|'closed'|'blocked'|'archived';   // viewer-relative: the blocked side sees 'closed'
+  blockedByMe: boolean; synthetic: boolean; matchId: string;
+  counterpart: { displayName: string; phone?: string };        // phone only while shared and open
+  titles: { mineAr: string|null; otherAr: string|null };
+  unread: number; messageCount: number; lastMessageAt: string|null; createdAt: string; updatedAt: string;
+};
+type Location = { active: boolean; startedAt: string|null; expiresAt: string|null;
+                  position?: { lat: number; lng: number; accuracyM: number|null; at: string } | null }; // theirs only, while active
+type ConnectionDetail = ConnectionCard & { canSend: boolean; reportedByMe: boolean;
+  me: { phoneShared: boolean; hasPhone: boolean; lastReadSeq: number; location: Location };
+  them: { phoneShared: boolean; lastReadSeq: number; location: Location } };
+type Message = { seq: number /* 1..n per connection, gap-free */; mine: boolean; text: string; createdAt: string; clientMsgId?: string /* mine only */ };
+```
+Notifications: `contact_accepted` (payload `connectionId`), `connection_message` (one per connection and recipient,
+refreshed, body = unread count, never the text), `location_share_started`, `location_share_ended`.
+Jobs: `conn_sweep`, `conn_location_end` (worker: `job.kind.startsWith('conn_')` → `runConnectionJob`). Env: `UL_RECOVERY_PEPPER`, `UL_CONN_SWEEP_MS`.
