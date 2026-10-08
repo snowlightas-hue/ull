@@ -60,63 +60,79 @@ export function placesWithin(reg: Registry, point: EffectivePoint, boundKm: numb
 
 export interface GeoRetrieval { ids: Set<string>; truncated: boolean; directions: string[]; outsideScope: number }
 
-export async function retrieveNearby(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent, plan: GeoPlan, k = GEO_K): Promise<GeoRetrieval> {
-  const ids = new Set<string>();
-  let truncated = false;
-  const add = (rows: { id: string }[], limit: number) => { for (const r of rows) ids.add(String(r.id)); if (rows.length >= limit) truncated = true; };
-  const counterSide = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
-  const cat = reg.categoryByCode.get(me.categoryCode)!;
-  const catSet = [...new Set([...cat.ancestors, ...cat.descendants])];
-  const common = [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId] as const; // $1..$6
-  const boxM = plan.searchKm * 1000 * SQL_SLACK + SQL_SLACK_M;
+/** Matching keys of a retrieval: (vertical, realm, counter-side, deal, category set, not this user). */
+export interface GeoKeys { verticalId: number; realm: string; side: string; dealTypeId: number; categoryIds: number[]; notUserId: string }
 
-  // geo: stored points, nearest first, inside the search box
-  add((await tx.query(
+const boxMetres = (km: number) => km * 1000 * SQL_SLACK + SQL_SLACK_M;
+
+/** Active intents with a stored point within `radiusKm` of `at`, nearest first (GiST KNN, index-only bounded). */
+export async function knnIntents(db: Queryable, keys: GeoKeys, at: { lat: number; lng: number }, radiusKm: number, k: number): Promise<string[]> {
+  const { rows } = await db.query(
     `SELECT id FROM intents
       WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
         AND status = 'active' AND user_id <> $6 AND geo_lat IS NOT NULL
         AND earth_box(ll_to_earth($7, $8), $9) @> ll_to_earth(geo_lat, geo_lng)
       ORDER BY ll_to_earth(geo_lat, geo_lng) <-> ll_to_earth($7, $8)
       LIMIT $10`,
-    [...common, plan.point.lat, plan.point.lng, boxM, k],
-  )).rows, k);
+    [keys.verticalId, keys.realm, keys.side, keys.dealTypeId, keys.categoryIds, keys.notUserId, at.lat, at.lng, boxMetres(radiusKm), k],
+  );
+  return rows.map((r) => String(r.id));
+}
 
+/** Intents sharing a connected live position within `radiusKm` of `at`, nearest first (one minute of grace). */
+export async function knnLive(db: Queryable, keys: GeoKeys, at: { lat: number; lng: number }, radiusKm: number, k: number): Promise<string[]> {
+  const { rows } = await db.query(
+    `SELECT intent_id AS id FROM live_positions
+      WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
+        AND user_id <> $6 AND expires_at > now() - interval '1 minute'
+        AND earth_box(ll_to_earth($7, $8), $9) @> ll_to_earth(lat, lng)
+      ORDER BY ll_to_earth(lat, lng) <-> ll_to_earth($7, $8)
+      LIMIT $10`,
+    [keys.verticalId, keys.realm, keys.side, keys.dealTypeId, keys.categoryIds, keys.notUserId, at.lat, at.lng, boxMetres(radiusKm), k],
+  );
+  return rows.map((r) => String(r.id));
+}
+
+export async function retrieveNearby(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent, plan: GeoPlan, k = GEO_K): Promise<GeoRetrieval> {
+  const ids = new Set<string>();
+  let truncated = false;
+  const add = (got: string[], limit: number) => { for (const id of got) ids.add(id); if (got.length >= limit) truncated = true; };
+  const counterSide = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
+  const cat = reg.categoryByCode.get(me.categoryCode)!;
+  const catSet = [...new Set([...cat.ancestors, ...cat.descendants])];
+  const keys: GeoKeys = { verticalId: row.vertical_id, realm: me.realm, side: counterSide, dealTypeId: row.deal_type_id, categoryIds: catSet, notUserId: me.userId };
+  const common = [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId] as const; // $1..$6
+
+  // geo: stored points, nearest first, inside the search box
+  add(await knnIntents(tx, keys, plan.point, plan.searchKm, k), k);
   // live: connected positions (a minute of grace for clock skew; the evaluator decides freshness), nearest first
-  if (counterSide !== 'seek') {
-    add((await tx.query(
-      `SELECT intent_id AS id FROM live_positions
-        WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-          AND user_id <> $6 AND expires_at > now() - interval '1 minute'
-          AND earth_box(ll_to_earth($7, $8), $9) @> ll_to_earth(lat, lng)
-        ORDER BY ll_to_earth(lat, lng) <-> ll_to_earth($7, $8)
-        LIMIT $10`,
-      [...common, plan.point.lat, plan.point.lng, boxM, k],
-    )).rows, k);
-  }
+  if (counterSide !== 'seek') add(await knnLive(tx, keys, plan.point, plan.searchKm, k), k);
 
   // near: place-only counterparts at places that may be within reach (or whose distance cannot be known)
   const { near, coordless } = placesWithin(reg, plan.point, plan.bound.km);
   const lfts = [...near, ...coordless];
   if (lfts.length) {
-    add((await tx.query(
+    add(ids_((await tx.query(
       `SELECT id FROM intents
         WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
           AND status = 'active' AND user_id <> $6 AND (geo_lat IS NULL OR geo_accuracy_m > ${PRECISE_FIX_MAX_M})
           AND point_lft = ANY($7::int[])
         ORDER BY created_at DESC LIMIT $8`,
       [...common, lfts, GEO_PLACE_LIMIT],
-    )).rows, GEO_PLACE_LIMIT);
+    )).rows), GEO_PLACE_LIMIT);
   }
 
   // pointless: no place point at all (unknown distance, or a seeker's single scope place)
-  add((await tx.query(
+  add(ids_((await tx.query(
     `SELECT id FROM intents
       WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
         AND status = 'active' AND user_id <> $6 AND (geo_lat IS NULL OR geo_accuracy_m > ${PRECISE_FIX_MAX_M})
         AND point_lft IS NULL
       ORDER BY created_at DESC LIMIT $7`,
     [...common, GEO_PLACE_LIMIT],
-  )).rows, GEO_PLACE_LIMIT);
+  )).rows), GEO_PLACE_LIMIT);
 
   return { ids, truncated, directions: counterSide !== 'seek' ? ['geo', 'live', 'near', 'pointless'] : ['geo', 'near', 'pointless'], outsideScope: 0 };
 }
+
+const ids_ = (rows: { id: string }[]) => rows.map((r) => String(r.id));

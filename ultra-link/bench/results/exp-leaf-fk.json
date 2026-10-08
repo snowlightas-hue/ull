@@ -1,0 +1,40 @@
+{
+  "db": "ultralink_bench",
+  "samples": 30,
+  "fks": [
+    "FOREIGN KEY (vertical_id, a_intent_id) REFERENCES intents(vertical_id, id) ON DELETE CASCADE",
+    "FOREIGN KEY (vertical_id, b_intent_id) REFERENCES intents(vertical_id, id) ON DELETE CASCADE"
+  ],
+  "partitionPairs": 9,
+  "parent": {
+    "n": 30,
+    "p50": 1971.52,
+    "p95": 7390.16,
+    "p99": 7577.38,
+    "max": 7577.38,
+    "mean": 2548.49,
+    "pairsP50": 2447,
+    "pairsMax": 9321
+  },
+  "leaf": {
+    "n": 30,
+    "p50": 743.84,
+    "p95": 2820.77,
+    "p99": 3748.97,
+    "max": 3748.97,
+    "mean": 1066.71,
+    "pairsP50": 2447,
+    "pairsMax": 9321
+  },
+  "parentAgain": {
+    "n": 30,
+    "p50": 1824.21,
+    "p95": 6869.02,
+    "p99": 7421.29,
+    "max": 7421.29,
+    "mean": 2424.43,
+    "pairsP50": 2447,
+    "pairsMax": 9321
+  },
+  "at": "2026-10-08T19:30:03.734Z"
+}

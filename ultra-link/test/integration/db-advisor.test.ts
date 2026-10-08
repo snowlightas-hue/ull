@@ -32,7 +32,7 @@ async function admin<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
 /** Everything DDL could change: relations (+ storage options), index and constraint definitions. */
 async function fingerprint(pool: pg.Pool): Promise<string> {
   const { rows } = await pool.query(`SELECT md5(string_agg(x, '|' ORDER BY x)) AS h FROM (
-      SELECT 'r:' || c.relname || ':' || c.relkind || ':' || coalesce(array_to_string(c.reloptions, ','), '') AS x FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+      SELECT 'r:' || c.relname || ':' || c.relkind::text || ':' || coalesce(array_to_string(c.reloptions, ','), '') AS x FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
       UNION ALL SELECT 'i:' || pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relnamespace = 'public'::regnamespace
       UNION ALL SELECT 'k:' || conname || ':' || pg_get_constraintdef(oid) FROM pg_constraint WHERE connamespace = 'public'::regnamespace) s`);
   return rows[0].h;

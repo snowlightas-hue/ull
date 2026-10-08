@@ -485,16 +485,18 @@ export function createConversationMachine(deps = {}) {
     switch (res.action) {
       case 'ask':
       case 'unclear': {
+        // the server says what exactly is missing (or greets); the generic text is only a fallback
+        const unclearAr = typeof res.messageAr === 'string' && res.messageAr.trim() ? res.messageAr : MESSAGES_AR.unclear;
         const q = res.question || {
           id: 'client.unclear',
           field: 'unclear',
-          text: MESSAGES_AR.unclear,
-          speech: MESSAGES_AR.unclear,
+          text: unclearAr,
+          speech: unclearAr,
           options: [],
           attempt: (ctx.question && ctx.question.attempt ? ctx.question.attempt : 0) + 1,
           client: true,
         };
-        if (!transition('TURN_ASK', 'asking', { question: q, pendingTurn: null, notice: res.action === 'unclear' ? { kind: 'unclear', messageAr: MESSAGES_AR.unclear } : null }, { action: res.action, field: q.field })) return;
+        if (!transition('TURN_ASK', 'asking', { question: q, pendingTurn: null, notice: res.action === 'unclear' ? { kind: 'unclear', messageAr: res.action === 'unclear' && typeof res.messageAr === 'string' && res.messageAr.trim() ? res.messageAr : MESSAGES_AR.unclear } : null }, { action: res.action, field: q.field })) return;
         afterAsk();
         return;
       }

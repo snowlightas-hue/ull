@@ -144,7 +144,7 @@ export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser
         } else if (out.next.kind === 'unclear') {
           // `awaiting` keeps the next answer in context after a give-up, without counting as another question
           await saveConv(tx, conv, out.draft, out.next.awaiting ?? null, 'collecting');
-          result = { conversation: convOut('collecting'), action: 'unclear', messageAr: out.next.messageAr, summary: summarize(reg, out.draft), understanding };
+          result = { conversation: convOut('collecting'), action: 'unclear', messageAr: out.next.messageAr, ...(out.next.awaiting ? { question: out.next.awaiting } : {}), summary: summarize(reg, out.draft), understanding };
         } else {
           const v = validateSpec(reg, out.next.spec);
           if (!v.ok) {
