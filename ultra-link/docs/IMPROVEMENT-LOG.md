@@ -106,6 +106,24 @@ Effect:
 | training | 77.1% → 95.7% | 88.6% → 90.9% | 89.9% → 91.0% |
 | **held-out** | 52.5% → 57.5% | 44.2% → 48.8% | 73.6% → 74.2% |
 
+### Cycle 11 — roles and rentals (impact: fewer needless "are you asking or offering?" and "buy or rent?" questions)
+Found (training failures only):
+- «عندنا ولاد», «ما معي مصاري» and «عندي ٦ سجادات» were read as offers;
+- «بدّي ياها لعيلة» was read as a request;
+- volunteering («متطوعة، بقدر ساعد», «أرغب بالتطوع», «بساعد كبار السن») and asking for help («ساعدوني», «مين بيقدر يساعد») were unknown;
+- a price «بالشهر» or a stay «لمدة ست شهور» on a property still asked "buy or rent?".
+
+Fix: self-describing «عندي/عندنا» and «بدي ياها» are discounted; volunteer and help-request rules added; a monthly or yearly price or a rental duration on real estate states a rental.
+
+Effect:
+
+| | side | deal | first question |
+|---|---|---|---|
+| training | 96.9% → 98.7% | 98.4% → 99.2% | 91.0% → 93.3% |
+| **held-out** | 85.3% → 87.7% | 84.0% (no change) | 74.2% → 76.7% |
+
+Multi-intent sentences («عندي شقة للإيجار وبدي استأجر محل») still take the second clause's role; that is left for the multi-intent work.
+
 ## Held-out evaluation (honest generalization)
 `node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
 

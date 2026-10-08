@@ -43,7 +43,13 @@ async function liveAt(v: number, id: string, p: LatLng, agoMs: number, accuracyM
 }
 
 before(async () => { db = await freshDb(TAG); });
-after(async () => { await db?.close(); });
+after(async () => {
+  await db?.close();
+  const { default: pg } = await import('pg');
+  const a = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await a.connect();
+  try { await a.query(`DROP DATABASE IF EXISTS ${db.name} WITH (FORCE)`); } finally { await a.end(); }
+});
 
 test('KNN on stored points equals brute force over ~500 random points (filters, radius, nearest-first order)', async () => {
   const r = rnd(500);

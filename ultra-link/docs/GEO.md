@@ -91,19 +91,19 @@ app (later). The server turns a silent driver into «غير متصل» after 10 
   `purgeStaleLive()` deletes rows silent for 24 h (to be called from the worker's minute tick — not wired yet).
 
 ## 8. Measured vs projected
-Measured 2026-10-08 on this machine (PostgreSQL 16 local), `test/integration/geo-perf.test.ts`: 100 000 GPS drivers in 6
+Measured 2026-10-08 on this machine (PostgreSQL 16 local), `UL_GEO_PERF=1 node --test test/integration/geo-perf.test.ts`: 100 000 GPS drivers in 6
 clusters (σ ≈ 6 km), 5 000 connected, 30 ride requests (dense: ~30 000 drivers around إعزاز).
 
 | Operation | p50 ms | p95 ms |
 |---|---|---|
-| KNN nearest 10 (stored points, 16 km box) | 1.4 | 2.1 |
-| KNN nearest 200 | 3.4 | 8.6 |
-| KNN nearest 10 within 5 km | 1.5 | 2.9 |
-| KNN nearest 10 live positions | 1.0 | 1.5 |
-| full `matchIntent`, ride request, K = 100 (≈ 195 candidates; cold / warm) | 142 / 35 | 194 / 47 |
-| same with K = 50 / K = 200 (cold) | 77 / 253 | 102 / 313 |
-| `/nearby` (limit 10) | 12 | 19 |
-| same request **without** a distance condition (classic PROBE: 5 000 candidates, truncated) | 2 892 | 2 947 |
+| KNN nearest 10 (stored points, 16 km box) | 1.6 | 2.5 |
+| KNN nearest 200 | 3.9 | 6.2 |
+| KNN nearest 10 within 5 km | 1.6 | 2.5 |
+| KNN nearest 10 live positions | 1.1 | 1.9 |
+| full `matchIntent`, ride request, K = 100 (≈ 195 candidates; cold / warm) | 143 / 28 | 170 / 38 |
+| same with K = 50 / K = 200 (cold, earlier runs) | 77 / 253 | 102 / 313 |
+| `/nearby` (limit 10) | 11 | 16 |
+| same request **without** a distance condition (classic PROBE: 5 000 candidates, truncated) | 2 879 | 2 969 |
 
 The cold cost is dominated by writing the K pairs (≈ 0.7 ms per pair, as in MATCHING.md §7); K is `UL_GEO_K`. Projected,
 not measured: city-scale live fleets beyond one table → shard `live_positions` by geohash/H3 cell (plan only).

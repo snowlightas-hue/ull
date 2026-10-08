@@ -76,6 +76,9 @@ const SIDE_RULES: { re: RegExp; side: Side; conf: number; tag: string }[] = [
   { re: /^(?:للبيع|للايجار|للاجار|للتاجير|بيع|معروض للبيع|معروض|عرض خاص)(?= )/, side: 'provide', conf: 0.9, tag: 'ad_opening' },
   // seekers asking around: "مين بيعرف…", "مين بيعطي…", "في حدا بأجّر…؟", "أحتاج إلى…"
   { re: /(?:^| )(?:مين بيعرف|مين بيعطي|مين بيصلح|مين عنده|مين عندو|في حدا ب\S+|فيه حدا ب\S+|احتاج|نحتاج|احتاج الي)(?= |$)/, side: 'seek', conf: 0.9, tag: 'asking_around' },
+  // volunteering / offering help: "أرغب بالتطوع لتعليم…", "متطوعة، بقدر ساعد…", "بساعد كبار السن…"
+  { re: new RegExp(`(?:^| )(?:(?:${WANT}|ارغب) (?:ب|في )?(?:التطوع|اتطوع|بالتطوع)|متطوع|متطوعه|متطوعين|بتطوع|بقدر ساعد|بقدر اساعد|منقدر نساعد|بساعد|منساعد)(?= |$)`), side: 'provide', conf: 0.9, tag: 'volunteer' },
+  { re: /(?:^| )(?:مين بيقدر|مين فيه|مين بيساعد|مين يساعد|حدا يساعد\S*|ساعدوني|ساعدونا|ساعدني|بحاجه لمساعده|محتاج مساعده|بحتاج مساعده)(?= |$)/, side: 'seek', conf: 0.9, tag: 'asking_help' },
   // a profession introducing itself with availability/experience/price: "سباك بالباب، جاهز ٢٤ ساعة"
   { re: new RegExp(`^(?:${PROFESSIONS})(?: \\S+){0,4} (?:جاهز|جاهزه|خبره|متوفر|متوفره|بروح|بخدم|منخدم|الكشفيه|الحلقه|بشتغل|عالبيوت|للبيوت)`), side: 'provide', conf: 0.9, tag: 'profession_ad' },
 
@@ -99,8 +102,15 @@ function detectSide(norm: string): Candidate<Side> | null {
     const ad = /(?:^| )(?:للبيع|للايجار|للاجار|للتاجير|للكري)(?= |$)/.exec(norm);
     return ad ? { value: 'provide', confidence: 0.65, evidence: ad[0].trim(), explicit: false } : null;
   }
-  const g = generic[0]!;
-  return { value: g.r.side, confidence: generic.length > 1 ? 0.7 : g.r.conf, evidence: g.m![0].trim(), explicit: generic.length === 1 };
+  // "عندنا ولاد", "عندي مصاري" describe the speaker, not an offer; "بدي ياها لعيلة" is about the counterpart, not a request
+  const real = generic.filter((x) => {
+    const after = norm.slice(x.m!.index + x.m![0].length).trim().split(' ').slice(0, 2).join(' ');
+    if (x.r.side === 'provide') return !/^(ولاد|اولاد|ولادي|عيله|اطفال|ولد|بنت|بنات|مشكله|سؤال|حاجه|ظرف|مريض|مريضه|مصاري|فلوس|ميزانيه|مبلغ|\d+ (?:سجاد|قطع|غرض))/.test(after);
+    return !/^(ياها|ياه|اياها|اياه|ياهن)(?: |$)/.test(after);
+  });
+  const pool = real.length ? real : generic;
+  const g = pool[0]!;
+  return { value: g.r.side, confidence: pool.length > 1 ? 0.7 : g.r.conf, evidence: g.m![0].trim(), explicit: pool.length === 1 };
 }
 
 // ───────────── deal cues ─────────────
@@ -120,8 +130,11 @@ function detectDeal(reg: Registry, norm: string, categoryCode: string | null): C
   }
   if (sale && allowed.has('sale')) return { value: 'sale', confidence: 0.95, evidence: sale[0].trim(), explicit: true };
   if (allowed.has('rent') && cat?.verticalCode === 'real_estate') {
-    const m = MONTHLY_RE.exec(norm);
-    if (m) return { value: 'rent', confidence: 0.6, evidence: m[0].trim(), explicit: false };
+    // a price "per month" or a stay "for six months" on a property states a rental (not a guess)
+    const m = /(?:^| )(?:ب|بـ)?\S*\d\S* (?:\S+ )?(?:بالشهر|شهريا|بالسنه|سنويا)(?= |$)/.exec(norm) ?? /(?:^| )(?:لمده|مده|لفتره) (?:\S+ )?(?:شهر|شهرين|شهور|اشهر|سنه|سنتين)(?= |$)/.exec(norm);
+    if (m) return { value: 'rent', confidence: 0.9, evidence: m[0].trim(), explicit: true };
+    const w = MONTHLY_RE.exec(norm);
+    if (w) return { value: 'rent', confidence: 0.6, evidence: w[0].trim(), explicit: false };
   }
   return null;
 }

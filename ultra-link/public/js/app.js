@@ -9,6 +9,7 @@ import { openIntentEditor } from './ui/editor.js';
 import { toast } from './ui/toast.js';
 import { createVoice } from './conversation/voice.js';
 import { createConversationMachine } from './conversation/machine.js';
+import { createConnections, showRecoveryCode, confirmLogout, recoverSection } from './ui/connections.js';
 
 const root = document.getElementById('app');
 const state = { me: null, shell: null, home: null, machine: null, taxonomy: null, lists: {}, events: null, lastIntent: null };
@@ -31,7 +32,7 @@ async function showLogin() {
   root.classList.remove('boot');
   const personas = await api.get('/api/personas').catch(() => ({ items: [] }));
   const nameInput = h('input', { class: 'input', id: 'reg-name', autocomplete: 'nickname', maxLength: 80, placeholder: 'اسمك', required: true });
-  const phoneInput = h('input', { class: 'input', id: 'reg-phone', inputMode: 'tel', maxLength: 30, placeholder: 'رقم للتواصل (اختياري — لا يظهر إلا بعد موافقتك)' });
+  const phoneInput = h('input', { class: 'input', id: 'reg-phone', inputMode: 'tel', maxLength: 30, placeholder: 'رقم للتواصل (اختياري — لا يظهر لأحد إلا إذا شاركته بنفسك)' });
   const err = h('p', { class: 'form-error', role: 'alert' });
   const login = async (fn) => { err.textContent = ''; try { await fn(); location.reload(); } catch (e) { err.textContent = e.messageAr ?? 'تعذّر الدخول'; } };
   root.replaceChildren(
@@ -47,11 +48,13 @@ async function showLogin() {
             h('button', { type: 'button', class: 'btn btn-primary btn-sm', onClick: () => login(() => api.post('/api/auth/demo-login', { handle: p.handle })) }, `ادخل كـ ${p.displayName}`))))),
       h('section', { class: 'panel', 'aria-labelledby': 'reg-h' },
         h('h2', { class: 'panel-title', id: 'reg-h' }, 'أو أنشئ حسابًا محليًا'),
-        h('form', { class: 'editor-form', onSubmit: (ev) => { ev.preventDefault(); if (!nameInput.value.trim()) { nameInput.focus(); return; } login(() => api.post('/api/auth/register', { displayName: nameInput.value.trim(), phone: phoneInput.value.trim() || undefined })); } },
+        // a real account gets a recovery code ONCE: «احفظ هذا الرمز» before entering the app (REVIEW MAJOR-6)
+        h('form', { class: 'editor-form', onSubmit: (ev) => { ev.preventDefault(); if (!nameInput.value.trim()) { nameInput.focus(); return; } login(async () => { const r = await api.post('/api/auth/register', { displayName: nameInput.value.trim(), phone: phoneInput.value.trim() || undefined }); if (r.recoveryCode) await showRecoveryCode(r.recoveryCode); }); } },
           h('label', { class: 'field-label', for: 'reg-name' }, 'الاسم'), nameInput,
           h('label', { class: 'field-label', for: 'reg-phone' }, 'رقم التواصل'), phoneInput,
           err,
           h('button', { type: 'submit', class: 'btn btn-primary' }, 'ابدأ'))),
+      recoverSection({ onRecover: async (b) => { await api.post('/api/auth/recover', b); location.reload(); } }),
     ),
   );
 }
@@ -196,6 +199,7 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         onPage, filter: ls.filter, onFilter: (f) => { ls.filter = f; loadTab(tab); },
         onContact: (m) => requestContact(m, () => loadTab('matches')),
         onRespond: (m, accept) => respondContact(m, accept, () => loadTab('matches')),
+        onOpenChat: (m, opener) => { if (m.connection?.id) conn().openChat(m.connection.id, { opener }); },
         emptyTextAr: ls.intent ? 'لا مطابقات لهذا الطلب حاليًا.' : 'لا مطابقات بعد. سنخبرك فور ظهور طرف مناسب.',
       });
       if (ls.intent) el.prepend(h('div', { class: 'notice' }, h('span', { class: 'notice-body' }, 'تعرض مطابقات طلب واحد. '), h('button', { type: 'button', class: 'link-btn', onClick: () => { ls.intent = null; loadTab('matches'); } }, 'عرض كل المطابقات')));
@@ -266,10 +270,13 @@ async function changeStatus(intent, action, tab) {
   } catch (e) { toast(e.messageAr ?? 'تعذّر التنفيذ', { kind: 'error' }); }
 }
 
+// connections («ربط»): chat sheet + live location, created on first use (src/server/routes/connections.ts)
+const conn = () => (state.conn ??= createConnections({ api }));
+
 async function requestContact(m, after) {
   try {
     await api.post(`/api/matches/${m.id}/contact`, {});
-    toast('أُرسل طلب التواصل. لن تظهر بياناتكما إلا بعد موافقة الطرف الآخر.', { kind: 'success' });
+    toast('أُرسل طلب التواصل. لا يظهر اسمك إلا بعد موافقة الطرف الآخر، ورقمك لا يظهر إلا إذا شاركته.', { kind: 'success' });
     after?.();
   } catch (e) { toast(e.messageAr ?? 'تعذّر إرسال الطلب', { kind: 'error' }); throw e; }
 }
@@ -277,8 +284,10 @@ async function requestContact(m, after) {
 async function respondContact(m, accept, after) {
   try {
     if (!m.contact?.requestId) return;
-    await api.post(`/api/contact-requests/${m.contact.requestId}/respond`, { accept });
-    toast(accept ? 'تمت الموافقة. يمكنكما الآن رؤية بيانات التواصل.' : 'رُفض الطلب.', { kind: accept ? 'success' : 'info' });
+    const r = await api.post(`/api/contact-requests/${m.contact.requestId}/respond`, { accept });
+    const connId = r.connection?.id;
+    toast(accept ? 'تمت الموافقة. صار بإمكانكما المحادثة داخل التطبيق؛ الرقم لا يظهر إلا إذا شاركه صاحبه.' : 'رُفض الطلب.',
+      { kind: accept ? 'success' : 'info', ...(connId ? { actionLabel: 'فتح المحادثة', onAction: () => conn().openChat(connId) } : {}) });
     after?.();
   } catch (e) { toast(e.messageAr ?? 'تعذّر الرد', { kind: 'error' }); throw e; }
 }
@@ -288,22 +297,37 @@ function connectEvents() {
   if (!('EventSource' in window)) { setInterval(refreshCounts, 15_000); return; }
   const es = (state.events = new EventSource('/api/events'));
   let lastUnread = state.me.counts.unread;
+  let quietCounts = false; // a chat message has its own toast/sheet; skip the generic one for its counts
   es.addEventListener('counts', (ev) => {
     const c = JSON.parse(ev.data);
     state.shell.setCounts(c);
-    if (c.unread > lastUnread) {
+    const quiet = quietCounts;
+    quietCounts = false;
+    if (c.unread > lastUnread && !quiet) {
       toast('وصلك تنبيه جديد — قد تكون مطابقة مناسبة', { kind: 'match', actionLabel: 'عرض', onAction: () => state.shell.setActiveTab('notifications') });
     }
     lastUnread = c.unread;
   });
   es.addEventListener('match_update', () => { const t = state.shell.getActiveTab(); if (t === 'matches' || t === 'requests' || t === 'offers') loadTab(t); });
+  // connections: the events carry no ids; the chat module refetches what is open (never message text over SSE)
+  let cardsTimer = null;
+  const refreshCards = () => { clearTimeout(cardsTimer); cardsTimer = setTimeout(() => { if (state.shell.getActiveTab() === 'matches' && !conn().isOpen()) loadTab('matches'); }, 600); };
+  es.addEventListener('conn_message', () => { quietCounts = true; void conn().onEvent('conn_message'); refreshCards(); });
+  es.addEventListener('conn_update', () => { void conn().onEvent('conn_update'); refreshCards(); });
+  es.addEventListener('conn_location', () => { void conn().onEvent('conn_location'); });
   es.onerror = () => { /* EventSource reconnects automatically */ };
 }
 
 // ───────────── account & demo tools ─────────────
 function addAccountTools() {
   const header = state.shell.header;
-  const logout = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onClick: async () => { await api.post('/api/auth/logout').catch(() => {}); location.reload(); } }, 'خروج');
+  const doLogout = async () => { state.conn?.stopAllSharing(); await api.post('/api/auth/logout').catch(() => {}); location.reload(); };
+  // a real account can only come back with its recovery code: warn first, offer a fresh code (REVIEW MAJOR-6)
+  const newCode = async () => {
+    const r = await api.post('/api/account/recovery-code', {});
+    await showRecoveryCode(r.recoveryCode, { titleAr: 'رمز استرداد جديد', introAr: 'توقف الرمز القديم عن العمل. احفظ هذا الرمز الجديد — لن نعرضه مرة ثانية.' });
+  };
+  const logout = h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onClick: () => { if (state.me?.user?.realm === 'real') confirmLogout({ onLogout: doLogout, onNewCode: newCode }); else void doLogout(); } }, 'خروج');
   header?.querySelector('.app-header-inner')?.append(logout);
 }
 

@@ -250,12 +250,24 @@ function contactBlock(m, handlers, card) {
       return h('div', { class: 'contact contact-incoming' },
         h('p', { class: 'contact-status' }, icon('bell', { size: 16 }), 'الطرف الآخر يطلب التواصل معك'),
         h('div', { class: 'contact-actions' },
-          h('button', { type: 'button', class: 'btn btn-primary btn-sm', onClick: respond(true) }, icon('check', { size: 16 }), 'قبول ومشاركة رقمي'),
-          h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onClick: respond(false) }, 'رفض')));
+          h('button', { type: 'button', class: 'btn btn-primary btn-sm', onClick: respond(true) }, icon('check', { size: 16 }), 'قبول'),
+          h('button', { type: 'button', class: 'btn btn-sm btn-ghost', onClick: respond(false) }, 'رفض')),
+        h('p', { class: 'contact-hint' }, 'عند القبول يظهر اسمك فقط وتُفتح محادثة داخل التطبيق. رقمك لا يظهر إلا إذا شاركته.'));
     }
     case 'accepted': {
+      // V2.2 connections: accept reveals the name; the phone only while its owner shares it (inside the chat)
       const cp = c.counterpart || {};
       const href = telHref(cp.phone);
+      const conn = m.connection || null;
+      const unread = conn && Number(conn.unread) > 0 ? Number(conn.unread) : 0;
+      let chatBtn = null;
+      if (conn && typeof handlers.onOpenChat === 'function') {
+        chatBtn = h('button', { type: 'button', class: ['btn', conn.status === 'open' ? 'btn-primary' : null, 'btn-sm', 'cx-open-chat'], dataset: { connection: conn.id },
+          'aria-label': unread ? `فتح المحادثة — ${formatNumber(unread)} غير مقروءة` : null },
+        icon('send', { size: 16 }), 'فتح المحادثة', unread ? h('span', { class: 'cx-unread', 'aria-hidden': 'true' }, formatNumber(unread)) : null);
+        chatBtn.addEventListener('click', (e) => handlers.onOpenChat(m, e.currentTarget));
+      }
+      const connNote = conn && conn.status !== 'open' ? h('p', { class: 'cx-conn-note' }, conn.status === 'archived' ? 'المحادثة مؤرشفة' : 'المحادثة مغلقة') : null;
       return h('div', { class: 'contact contact-accepted' },
         h('p', { class: 'contact-status' }, icon('check', { size: 16 }), 'تم قبول التواصل'),
         h('div', { class: 'contact-person' },
@@ -264,8 +276,9 @@ function contactBlock(m, handlers, card) {
             h('p', { class: 'contact-name' }, ar(cp.displayName || 'الطرف الآخر')),
             cp.phone
               ? h('a', { class: 'phone', href, dir: 'ltr' }, String(cp.phone))
-              : h('p', { class: 'muted' }, 'لم يشارك رقم هاتف بعد')),
-          href ? h('a', { class: 'btn btn-primary btn-sm', href }, icon('phone', { size: 16 }), 'اتصال') : null));
+              : h('p', { class: 'muted' }, 'الرقم يظهر فقط إذا شاركه صاحبه')),
+          href ? h('a', { class: 'btn btn-primary btn-sm', href }, icon('phone', { size: 16 }), 'اتصال') : null),
+        chatBtn || connNote ? h('div', { class: 'contact-actions' }, chatBtn, connNote) : null);
     }
     case 'declined':
       return h('div', { class: 'contact contact-declined' },
@@ -292,7 +305,7 @@ function contactBlock(m, handlers, card) {
         btn,
         h('p', { class: 'contact-hint' }, m.state === 'possible'
           ? 'الخطوة التالية: تواصل لتأكيد المعلومات الناقصة. لا تظهر بياناتك إلا بعد موافقتك.'
-          : 'الخطوة التالية: أرسل طلب تواصل. لا تظهر بياناتك إلا بعد موافقة الطرفين.'));
+          : 'الخطوة التالية: أرسل طلب تواصل. يظهر اسمك فقط بعد الموافقة، ورقمك لا يظهر إلا إذا شاركته.'));
     }
   }
 }
