@@ -5,13 +5,19 @@ import { seedRegistry } from '../src/domain/registry.ts';
 import { parseUtterance } from '../src/nlu/parse.ts';
 import { applyTurn, emptyDraft, nextQuestion, recordAsked, type ConversationDraft } from '../src/conversation/engine.ts';
 import type { Question } from '../src/domain/types.ts';
-import utterances from '../test/corpus/utterances.json' with { type: 'json' };
+import { readFileSync } from 'node:fs';
+import trainUtterances from '../test/corpus/utterances.json' with { type: 'json' };
 import dialogues from '../test/corpus/dialogues.json' with { type: 'json' };
+
+// --holdout: measure on the held-out set. Individual failures are never printed for it, so it stays
+// an honest measure of generalization (fix only from the training set, then re-measure here).
+const HOLDOUT = process.argv.includes('--holdout');
+const utterances = HOLDOUT ? JSON.parse(readFileSync(new URL('../test/corpus/holdout-utterances.json', import.meta.url), 'utf8')) : trainUtterances;
 
 const reg = seedRegistry();
 const now = new Date('2026-10-08T10:00:00Z');
 const args = process.argv.slice(2);
-const showFails = Number(args[args.indexOf('--fails') + 1]) || (args.includes('--fails') ? 15 : 0);
+const showFails = HOLDOUT ? 0 : Number(args[args.indexOf('--fails') + 1]) || (args.includes('--fails') ? 15 : 0);
 
 type Field = 'side' | 'category' | 'deal' | 'places' | 'placeStrength' | 'negation' | 'price' | 'when' | 'attrs' | 'constraints' | 'mustAsk';
 const stats: Record<Field, { ok: number; n: number; fails: string[] }> = {} as any;
@@ -97,7 +103,7 @@ for (const d of dialogues as any[]) {
 }
 void nextQuestion;
 
-console.log('\nField accuracy on the labeled corpus (rules engine, no Jev):');
+console.log(`\nField accuracy on the ${HOLDOUT ? 'HELD-OUT' : 'training'} corpus (${utterances.length} utterances; rules engine, no Jev):`);
 console.log('field'.padEnd(14), 'accuracy'.padStart(9), '  n');
 for (const [f, s] of Object.entries(stats)) console.log(f.padEnd(14), `${((100 * s.ok) / s.n).toFixed(1)}%`.padStart(9), ` ${s.ok}/${s.n}`);
 console.log(`dialogues     ${((100 * dOk) / dN).toFixed(1)}%   ${dOk}/${dN}   repeated-question violations: ${repeats}`);

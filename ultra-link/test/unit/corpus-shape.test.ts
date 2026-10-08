@@ -1,4 +1,5 @@
-// Shape and vocabulary checks for the hand-labeled corpus in test/corpus/*.json (Role 1).
+// Shape and vocabulary checks for the hand-labeled corpus in test/corpus/*.json (Role 1), including the
+// held-out set test/corpus/holdout-utterances.json.
 // It validates labels against src/seed/taxonomy.ts only; it never runs the parser or the matcher.
 // Run: node --test test/unit/corpus-shape.test.ts
 import { test } from 'node:test';
@@ -13,6 +14,7 @@ const load = (name: string): Json => JSON.parse(readFileSync(new URL(`../corpus/
 const utterances: Json[] = load('utterances.json');
 const dialogues: Json[] = load('dialogues.json');
 const scenarios: Json[] = load('matching-scenarios.json');
+const holdout: Json[] = load('holdout-utterances.json');
 
 // ── vocabularies ──
 const catByCode = new Map(CATEGORIES.map((c) => [c.code, c] as const));
@@ -232,12 +234,12 @@ function checkTags(tags: unknown, where: string, errs: string[]) {
   else if (new Set(tags).size !== tags.length) errs.push(`${where}: duplicate tags`);
 }
 
-// ───────────────────────── utterances ─────────────────────────
-test('utterances.json: ids, labels and codes', () => {
-  assert.ok(utterances.length >= 320, `need >= 320 utterances, have ${utterances.length}`);
-  const errs = uniqueIds(utterances, 'u');
+// ───────────────────────── utterances (training set and held-out set) ─────────────────────────
+/** Label checks shared by utterances.json and holdout-utterances.json. */
+function checkUtteranceFile(items: Json[], prefix: string): string[] {
+  const errs = uniqueIds(items, prefix);
   const texts = new Set<string>();
-  for (const u of utterances) {
+  for (const u of items) {
     if (typeof u.text !== 'string' || u.text.trim() === '') errs.push(`${u.id}: empty text`);
     if (texts.has(u.text)) errs.push(`${u.id}: duplicate text`);
     texts.add(u.text);
@@ -251,13 +253,28 @@ test('utterances.json: ids, labels and codes', () => {
       if (!u.tags.includes(v)) errs.push(`${u.id}: missing vertical tag ${v}`);
     }
   }
-  assert.deepEqual(errs, []);
+  return errs;
+}
+
+/** Tags below their minimum count, every vertical present, and every leaf category used. */
+function coverageGaps(items: Json[], need: Record<string, number>): string[] {
+  const tagCount = new Map<string, number>();
+  for (const u of items) for (const t of u.tags) tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
+  const gaps: string[] = [];
+  for (const [t, n] of Object.entries(need)) if ((tagCount.get(t) ?? 0) < n) gaps.push(`${t}: ${tagCount.get(t) ?? 0} < ${n}`);
+  for (const v of VERTICALS) if (!items.some((u) => u.expected.category?.startsWith(v))) gaps.push(`vertical ${v}: no examples`);
+  const used = new Set(items.map((u) => u.expected.category));
+  for (const c of CATEGORIES) if (isLeaf(c.code) && !used.has(c.code)) gaps.push(`leaf category ${c.code}: no examples`);
+  return gaps;
+}
+
+test('utterances.json: ids, labels and codes', () => {
+  assert.ok(utterances.length >= 320, `need >= 320 utterances, have ${utterances.length}`);
+  assert.deepEqual(checkUtteranceFile(utterances, 'u'), []);
 });
 
 test('utterances.json: coverage of verticals, sides, operators, currencies, units and asks', () => {
-  const tagCount = new Map<string, number>();
-  for (const u of utterances) for (const t of u.tags) tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
-  const need: Record<string, number> = {
+  assert.deepEqual(coverageGaps(utterances, {
     real_estate: 60, vehicles: 35, services: 40, education: 30, activities: 30, goods: 30, help: 15, non_request: 10,
     seeker: 100, provider: 80, joiner: 25, side_unknown: 5, dialect: 200, msa: 10,
     price_eq: 30, price_lte: 25, price_gte: 1, price_between: 5, price_approx: 10,
@@ -268,15 +285,49 @@ test('utterances.json: coverage of verticals, sides, operators, currencies, unit
     strict_attr: 8, preferred_attr: 4, ambiguous_deal: 10, ambiguous_side: 6, multi_intent: 3, keyword_collision: 10,
     asks_side: 6, asks_category: 6, asks_deal: 12, asks_place: 30, asks_when: 10, asks_price: 20, asks_price_currency: 5, asks_price_unit: 4,
     complete: 120,
+  }), []);
+});
+
+// The held-out set measures parsers that were tuned on utterances.json; it must stay unseen and lexically distinct.
+test('holdout-utterances.json: ids, labels and codes', () => {
+  assert.ok(holdout.length >= 160, `need >= 160 held-out utterances, have ${holdout.length}`);
+  assert.deepEqual(checkUtteranceFile(holdout, 'h'), []);
+});
+
+test('holdout-utterances.json: coverage in similar proportions to the training set', () => {
+  assert.deepEqual(coverageGaps(holdout, {
+    real_estate: 30, vehicles: 15, services: 18, education: 12, activities: 12, goods: 12, help: 6, non_request: 5,
+    seeker: 60, provider: 45, joiner: 12, side_unknown: 4, dialect: 100, msa: 4,
+    price_eq: 20, price_lte: 10, price_gte: 1, price_between: 2, price_approx: 4,
+    currency_usd: 25, currency_try: 5, currency_syp: 2, currency_eur: 1, currency_missing: 2,
+    unit_month: 8, unit_year: 1, unit_week: 1, unit_day: 1, unit_hour: 2, unit_session: 2, unit_person: 1, unit_total: 15,
+    arabic_digits: 40, latin_digits: 5, number_words: 5, typo: 2, short: 5, long: 2,
+    strict_place: 2, preferred_place: 2, negated_place: 1, multi_place: 3, region_place: 3, online: 3, when: 15,
+    strict_attr: 3, preferred_attr: 2, ambiguous_deal: 4, ambiguous_side: 4, multi_intent: 2, keyword_collision: 5,
+    asks_side: 4, asks_category: 2, asks_deal: 4, asks_place: 8, asks_when: 4, asks_price: 8, asks_price_currency: 2, asks_price_unit: 2,
+    complete: 60,
+  }), []);
+});
+
+test('holdout-utterances.json: no item repeats or closely paraphrases a training utterance', () => {
+  // Own light normalization (no parser code): drop diacritics/tatweel, unify alef/ya/ta-marbuta, split on non-letters.
+  const words = (s: string) => new Set(s.normalize('NFKC').replace(/[\u064B-\u065F\u0670\u0640]/g, '').replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي').replace(/ة/g, 'ه').split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    let inter = 0;
+    for (const x of a) if (b.has(x)) inter++;
+    return inter / (a.size + b.size - inter || 1);
   };
-  const short: string[] = [];
-  for (const [t, n] of Object.entries(need)) if ((tagCount.get(t) ?? 0) < n) short.push(`${t}: ${tagCount.get(t) ?? 0} < ${n}`);
-  assert.deepEqual(short, []);
-  for (const v of VERTICALS) assert.ok(utterances.some((u) => u.expected.category?.startsWith(v)), `vertical ${v} has examples`);
-  // every leaf category appears at least once
-  const used = new Set(utterances.map((u) => u.expected.category));
-  const missing = CATEGORIES.filter((c) => isLeaf(c.code) && !used.has(c.code)).map((c) => c.code);
-  assert.deepEqual(missing, []);
+  const train = utterances.map((u) => ({ id: u.id as string, text: u.text as string, w: words(u.text) }));
+  const errs: string[] = [];
+  for (const h of holdout) {
+    const hw = words(h.text);
+    for (const t of train) {
+      if (t.text === h.text) errs.push(`${h.id} repeats ${t.id}`);
+      else if (jaccard(hw, t.w) >= 0.5) errs.push(`${h.id} is too close to ${t.id} (word overlap ${jaccard(hw, t.w).toFixed(2)})`);
+    }
+  }
+  assert.deepEqual(errs, []);
 });
 
 // ───────────────────────── dialogues ─────────────────────────

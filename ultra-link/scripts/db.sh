@@ -3,7 +3,8 @@
 # Lives entirely under ultra-link/var — never touches the system cluster or its data.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PGBIN="${PGBIN:-/usr/lib/postgresql/16/bin}"
+# PGBIN: Debian/Ubuntu default; on macOS use e.g. PGBIN="$(brew --prefix postgresql@16)/bin"
+PGBIN="${PGBIN:-$( [ -x /usr/lib/postgresql/16/bin/postgres ] && echo /usr/lib/postgresql/16/bin || dirname "$(command -v postgres 2>/dev/null || echo /usr/lib/postgresql/16/bin/postgres)")}"
 DATA="$ROOT/var/pgdata"
 RUN="$ROOT/var/run"
 LOG="$ROOT/var/log/postgres.log"
@@ -19,8 +20,9 @@ ensure_dirs() {
   mkdir -p "$ROOT/var/log" "$RUN"
   if [ "$(id -u)" = "0" ]; then chown postgres:postgres "$ROOT/var" "$RUN" "$ROOT/var/log"; chmod 755 "$ROOT/var"; fi
   touch "$LOG"; [ "$(id -u)" = "0" ] && chown postgres:postgres "$LOG" || true
-  # postgres must be able to traverse the path to var/
-  local d="$ROOT"; while [ "$d" != "/" ]; do chmod o+x "$d" 2>/dev/null || true; d="$(dirname "$d")"; done
+  # only when running as root (postgres runs as another OS user and must traverse the path to var/);
+  # a normal user runs postgres as themselves, so no permission changes are made on their machine
+  if [ "$(id -u)" = "0" ]; then local d="$ROOT"; while [ "$d" != "/" ]; do chmod o+x "$d" 2>/dev/null || true; d="$(dirname "$d")"; done; fi
 }
 
 init_cluster() {
@@ -28,7 +30,7 @@ init_cluster() {
   if [ ! -f "$DATA/PG_VERSION" ]; then
     echo "→ initdb $DATA"
     mkdir -p "$DATA"; [ "$(id -u)" = "0" ] && chown postgres:postgres "$DATA"
-    as_pg "$PGBIN/initdb" -D "$DATA" -E UTF8 --locale=C.UTF-8 -U postgres --auth-local=peer --auth-host=scram-sha-256 >/dev/null
+    as_pg "$PGBIN/initdb" -D "$DATA" -E UTF8 --locale=C -U postgres --auth-local=peer --auth-host=scram-sha-256 >/dev/null
     cat >> "$DATA/postgresql.conf" <<CONF
 # --- ultra-link local settings ---
 listen_addresses = '127.0.0.1'

@@ -42,7 +42,24 @@ Found (61 labeled dialogues): a bare amount answering «قديش السعر؟» 
 ### Cycle 7 — conditions and time (impact: correct exclusion & ranking)
 Found: «واحد» became Sunday through a synthesized «الاحد»; «اليوم» ignored outside activities; a seeker's «لعائلة» stored as a condition on the landlord; «مو بالطابق الأرضي», «مو أقل من غرفتين», «بين ٢٠٠ و٤٠٠ متر» lost their operators; «بس تكون / المهم» not read as binding; «يجي عالبيت» (home visit) and «الصف الخامس» (grade) unrecognized; verbs taken as car models. Effect: constraints 58.0% → 87.3%, time 82.2% → 95.3%, attrs 66.7% → 77.1%.
 
+## Held-out evaluation (honest generalization)
+`node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
+
+| Field | Training (in-sample, now) | Held-out @ first commit (after cycle 3) | Held-out now (after cycle 7) |
+|---|---|---|---|
+| side | 96.9% | 85.6% | 85.6% |
+| category | 98.4% | 78.1% | 86.3% |
+| deal | 98.4% | 78.1% | 83.8% |
+| places | 97.4% | 95.6% | 95.6% |
+| price | 81.0% | 70.9% | 70.9% |
+| constraints | 88.6% | 27.9% | 44.2% |
+| attrs | 77.1% | 45.0% | 52.5% |
+| time | 95.3% | 64.7% | 93.8% |
+| first question = essential | 88.3% | 64.4% | 70.6% |
+
+Reading: the rules generalize well for places, time and (partly) category/deal; conditions and roles on unseen phrasing are the weak spots (−44 pts and −11 pts vs in-sample). This is exactly where a model like Jev (choosing among options, not inventing values) should help once the network allows it — measure rules vs Jev on this held-out set before trusting either.
+
 ### Next candidates (by expected impact)
-1. Held-out evaluation (see methodology note) to confirm cycles 1–4 generalize.
+1. Enable real Jev and measure it on the held-out set (roles, categories, deals, strictness).
 2. Time expressions (74.5%): «صباح السبت»، «كل تلاتاء»، dates like «١٥ الشهر».
-3. Enable real Jev (needs network allowlist) and measure rules vs Jev disagreement on the same corpus.
+3. Grow the training corpus from real (consented) usage via `unknown_terms` + the advisor loop; keep a fresh held-out set per release.

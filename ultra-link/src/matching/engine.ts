@@ -302,7 +302,8 @@ function exclusionLabel(code: string, n: number, sample: string): string {
     date_no_overlap: 'موعد مختلف', deal_mismatch: 'نوع عملية مختلف', category_mismatch: 'صنف مختلف', side_mismatch: 'نفس الدور',
     same_owner: 'من نفس الحساب', inactive: 'غير نشط', realm_mismatch: 'بيانات تجريبية',
   };
-  return `${n} ${labels[code] ?? sample}`;
+  void n; // the UI prefixes the count (contract: textAr is the reason label only)
+  return labels[code] ?? sample;
 }
 
 /** Candidate ids using index-friendly directions. Never a full scan of the vertical. Exported for tests. */
