@@ -91,7 +91,15 @@ function detectSide(norm: string): Candidate<Side> | null {
   const nSpecific = SIDE_RULES.length - 2;
   for (const r of SIDE_RULES.slice(0, nSpecific)) {
     const m = r.re.exec(norm);
-    if (m) return { value: r.side, confidence: r.conf, evidence: m[0].trim(), explicit: true };
+    if (!m) continue;
+    // two requests in one sentence ("عندي شقة للإيجار، وبدي استأجر محل"): the first clause states this request's role
+    if (/^ ?[وف]/.test(m[0]) && m.index > 0) {
+      const earlier = SIDE_RULES.slice(nSpecific).map((g) => ({ g, gm: g.re.exec(norm.slice(0, m.index)) })).find((x) => x.gm && x.g.side !== r.side);
+      if (earlier && !/^(ولاد|اولاد|عيله|مشكله|مصاري|فلوس)/.test(norm.slice(earlier.gm!.index + earlier.gm![0].length).trim())) {
+        return { value: earlier.g.side, confidence: 0.8, evidence: earlier.gm![0].trim(), explicit: true };
+      }
+    }
+    return { value: r.side, confidence: r.conf, evidence: m[0].trim(), explicit: true };
   }
   const generic = SIDE_RULES.slice(nSpecific)
     .map((r) => ({ r, m: r.re.exec(norm) }))

@@ -122,7 +122,7 @@ Effect:
 | training | 96.9% → 98.7% | 98.4% → 99.2% | 91.0% → 93.3% |
 | **held-out** | 85.3% → 87.7% | 84.0% (no change) | 74.2% → 76.7% |
 
-Multi-intent sentences («عندي شقة للإيجار وبدي استأجر محل») still take the second clause's role; that is left for the multi-intent work.
+Follow-up: in two-request sentences («عندي شقة للإيجار، وبدي استأجر محل») the first clause now sets this request's role. Training side 98.7% → 99.2%; held-out unchanged (87.7%), no regression. The second request is not yet split off into its own request; that is still open.
 
 ## Held-out evaluation (honest generalization)
 `node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
