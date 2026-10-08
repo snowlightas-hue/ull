@@ -371,7 +371,8 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
     if ((/^(الساعه|ساعه)$/.test(prev) && !isCurrencyAt(tokens, n.end)) || /^(الصبح|المسا|العصر|الظهر|صباحا|مساء)$/.test(next)) { usedNum.add(ni); continue; }
     if (/^(اشهر|شهور|اشهور|شهر|سنه|سنين|سنتين)$/.test(next) && /^(لمده|مده|لفتره|اقل شي|اقل|علي الاقل|ل)$/.test(prev)) {
       const months = /سنه|سنين|سنتين/.test(next) ? Number(whole) * 12 : Number(whole);
-      attrMentions.push({ key: 'rental_months', op: /اقل|الاقل/.test(prev) ? 'gte' : 'eq', value: months, strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
+      const atLeastM = /اقل|الاقل/.test(prev) || /^(علي|عالاقل)$/.test(tokens[n.end + 1] ?? '');
+      attrMentions.push({ key: 'rental_months', op: atLeastM ? 'gte' : 'eq', value: months, strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: atLeastM ? 'counterpart' : 'self' });
       usedNum.add(ni); mark(n.start, n.end + 1); continue;
     }
     if (/^\d{7,}$/.test(tokens[n.start]!)) { usedNum.add(ni); continue; } // phone-like: ignore (privacy)
@@ -510,7 +511,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
       const neg = tokens.slice(Math.max(0, k - 2), k).some((x) => /^(مو|مش|غير|بلا|بدون|ومو)$/.test(x));
       attrMentions.push({ key: 'floor', op: neg ? 'neq' : 'eq', value: 0, strength: neg ? null : strengthNear(tokens, k, k + 1), evidence: tokens.slice(Math.max(0, k - 2), k + 1).join(' '), about: 'either' });
       mark(k, k + 1);
-    } else if (/^(مفروشه|مفروش|بفرشها|بفرشه|فرش)$/.test(t) && (vertical === 'real_estate' || topCat === null)) {
+    } else if (/^(مفروشه|مفروش|بفرشها|بفرشه|فرش|عفش|بعفش|بعفشها|بالعفش|مع العفش)$/.test(t) && (vertical === 'real_estate' || topCat === null)) {
       const neg = /^(بدون|بلا|غير|مو|مش)$/.test(tokens[k - 1] ?? '');
       attrMentions.push({ key: 'furnished', op: 'eq', value: !neg, strength: strengthNear(tokens, k, k + 1), evidence: (neg ? tokens[k - 1] + ' ' : '') + t, about: 'either' });
       mark(k - (neg ? 1 : 0), k + 1);
@@ -527,7 +528,11 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   // a sale price is a total amount unless the user said otherwise
   if (deal?.value === 'sale') for (const pr of prices) pr.unit ??= 'total';
   // home visit: "يجي لعندي / يجي عالبيت" (seeker), "بروح عالبيوت" (provider)
-  if ((vertical === 'services' || vertical === 'education') && /(?:^| )(?:يجي|بيجي|تجي|يجيني|ييجي|بروح|منروح|بزور) (?:لعندي|عالبيت|للبيت|عالبيوت|للبيوت|لعنا|عندي|البيت|لعند)(?: |$)|زياره منزليه|بالبيت(?: |$)/.test(norm) && !attrMentions.some((m) => m.key === 'home_visit') && vertical === 'services') {
+  const HOME_VISIT_RE = /(?:^| )[وف]?(?:يجي|بيجي|تجي|يجيني|ييجي|بروح|منروح|بزور) (?:لعندي|عالبيت|للبيت|عالبيوت|للبيوت|لعنا|عندي|البيت|لعند)(?: |$)|زياره منزليه|بالبيت(?: |$)/;
+  if (vertical === 'education' && HOME_VISIT_RE.test(norm) && !attrMentions.some((m) => m.key === 'mode')) {
+    attrMentions.push({ key: 'mode', op: 'eq', value: 'in_person', strength: null, evidence: HOME_VISIT_RE.exec(norm)![0].trim(), about: 'either' });
+  }
+  if (vertical === 'services' && HOME_VISIT_RE.test(norm) && !attrMentions.some((m) => m.key === 'home_visit')) {
     const m = /(?:يجي|بيجي|تجي|يجيني|ييجي|بروح|منروح|بزور) \S+|زياره منزليه|بالبيت/.exec(norm)!;
     attrMentions.push({ key: 'home_visit', op: 'eq', value: true, strength: strengthNear(tokens, Math.max(0, tokens.indexOf(m[0].split(' ')[0]!)), tokens.indexOf(m[0].split(' ')[0]!) + 1), evidence: m[0], about: 'either' });
   }
@@ -540,6 +545,20 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   // "أونلاين" is already the place (point = online); don't double-count it as a mode preference
   if (places.some((p) => reg.placeById.get(p.placeId)?.kind === 'virtual')) {
     for (let i = attrMentions.length - 1; i >= 0; i--) if (attrMentions[i]!.key === 'mode' && attrMentions[i]!.value === 'online') attrMentions.splice(i, 1);
+  }
+  // rental duration without digits: "لمدة سنة", "شهر واحد", "العقد سنة على الأقل"
+  if (vertical === 'real_estate' && !attrMentions.some((m) => m.key === 'rental_months')) {
+    const dm = /(?:^| )(?:لمده|مده|لفتره|العقد|عقد) (سنه|سنتين|شهر|شهرين)(?: (علي الاقل|عالاقل))?(?= |$)/.exec(norm) ?? /(?:^| )(شهر|سنه) (?:واحد|وحده|واحده)(?= |$)/.exec(norm);
+    if (dm) {
+      const months = { سنه: 12, سنتين: 24, شهر: 1, شهرين: 2 }[dm[1] as 'سنه'] ?? 12;
+      const atLeastD = !!dm[2];
+      attrMentions.push({ key: 'rental_months', op: atLeastD ? 'gte' : 'eq', value: months, strength: null, evidence: dm[0].trim(), about: atLeastD ? 'counterpart' : 'self' });
+    }
+  }
+  // numbers read as attributes the category does not have ("نحنا عيلة من خمس أشخاص" on a rental) are dropped
+  if (topCat) {
+    const allowed = new Set(attributesFor(reg, topCat).map((a) => a.key));
+    for (let i = attrMentions.length - 1; i >= 0; i--) if (!allowed.has(attrMentions[i]!.key)) attrMentions.splice(i, 1);
   }
   const negotiable = NEGOTIABLE_RE.test(norm);
   if (negotiable && prices[0]) prices[0].evidence += ' (قابل للتفاوض)';

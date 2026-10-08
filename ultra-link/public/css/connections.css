@@ -1,0 +1,137 @@
+/* Connections («ربط») — chat sheet, phone/location tools, account recovery screens. Owner: connections role.
+   Builds on the tokens and the .sheet mechanics of app.css. Mobile-first; logical properties only (RTL);
+   44px touch targets; motion limited to the sheet's own entrance (app.css handles reduced motion for .sheet). */
+
+/* ───────── chat sheet ───────── */
+.cx-sheet { display: flex; flex-direction: column; gap: 8px; padding-bottom: 0; }
+.cx-sheet.sheet { max-height: 96vh; max-height: 96dvh; overflow: hidden; }
+.cx-title { font-size: 18px; overflow-wrap: anywhere; outline: none; }
+.cx-title:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+.cx-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; }
+.cx-status-note {
+  margin: 0; padding: 8px 12px; border-radius: var(--r-s); font-size: 14px; font-weight: 600;
+  color: var(--warn); background-color: var(--warn-bg); border: 1px solid var(--warn-line);
+}
+
+/* tools (phone / location / options): collapsed by default so the conversation gets the space */
+.cx-tools-wrap { display: grid; gap: 8px; }
+.cx-tools-toggle { justify-self: start; min-height: 44px; }
+.cx-tools-toggle .icon { transition: transform var(--t1) ease-out; }
+.cx-tools-toggle[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.cx-tools { display: grid; gap: 10px; max-height: 42vh; overflow-y: auto; overscroll-behavior: contain; padding-inline-end: 2px; }
+.cx-tools[hidden] { display: none; }
+.cx-row { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r); background-color: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.cx-row-title { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 800; font-size: 14.5px; color: var(--text); }
+.cx-row-title .icon { color: var(--accent-strong); }
+.cx-hint { margin: 0; font-size: 13.5px; }
+.cx-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cx-actions .btn, .cx-sheet .btn-sm { min-height: 44px; }
+.cx-their-phone { margin: 0; font-weight: 700; }
+.cx-their-phone .phone { font-weight: 800; }
+.cx-phone-input { max-width: 240px; }
+.cx-coords { margin: 0; font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 15px; color: var(--text); unicode-bidi: isolate; }
+.cx-their-loc { display: grid; gap: 4px; }
+.cx-their-loc p { margin: 0; }
+.cx-sharing { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 700; color: var(--ok); }
+.cx-live-dot { width: 10px; height: 10px; border-radius: 50%; background-color: var(--ok); box-shadow: 0 0 0 4px var(--ok-bg); flex: none; }
+
+/* switch («شارك رقمي») */
+.cx-switch { gap: 10px; }
+.cx-switch-knob {
+  position: relative; width: 38px; height: 22px; border-radius: 11px; flex: none;
+  background-color: var(--surface-3); border: 1px solid var(--line-strong);
+}
+.cx-switch-knob::after {
+  content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background-color: var(--text-2); transition: transform var(--t1) ease-out;
+}
+.cx-switch[aria-checked="true"] .cx-switch-knob { background-color: var(--accent); border-color: transparent; }
+.cx-switch[aria-checked="true"] .cx-switch-knob::after { background-color: var(--accent-ink); transform: translateX(-16px); }
+[dir="ltr"] .cx-switch[aria-checked="true"] .cx-switch-knob::after { transform: translateX(16px); }
+
+/* report form */
+.cx-report { display: grid; gap: 8px; padding-top: 6px; }
+.cx-report[hidden] { display: none; }
+.cx-report-note { min-height: 64px; padding-block: 8px; resize: vertical; }
+
+/* messages */
+.cx-log {
+  flex: 1 1 auto; min-height: 160px; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 8px; padding: 8px 2px;
+  border-block: 1px solid var(--line);
+}
+.cx-log:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.cx-older { align-self: center; }
+.cx-messages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cx-msg {
+  max-width: min(84%, 460px); padding: 8px 12px 6px; border-radius: 16px; display: grid; gap: 2px;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+/* RTL chat convention: my messages on the end side (left in Arabic), theirs on the start side */
+.cx-theirs { align-self: flex-start; background-color: var(--surface-2); border: 1px solid var(--line); border-start-start-radius: 4px; }
+.cx-mine { align-self: flex-end; background-color: #123a3a; border: 1px solid rgba(79, 240, 210, .35); border-start-end-radius: 4px; }
+.cx-text { margin: 0; font-size: 16px; line-height: 1.6; color: var(--text); }
+.cx-meta { margin: 0; display: flex; align-items: center; gap: 6px; justify-content: flex-end; font-size: 12px; color: var(--text-3); white-space: normal; }
+.cx-receipt { display: inline-flex; align-items: center; color: var(--text-3); }
+.cx-receipt.cx-read { color: var(--accent-strong); }
+.cx-pending { opacity: .75; }
+.cx-failed { border-color: var(--danger-line); }
+.cx-failed .cx-receipt { color: var(--danger); }
+.cx-retry { font-size: 13.5px; justify-self: end; min-height: 32px; }
+.cx-empty { text-align: center; margin: 8px 0; font-size: 14px; }
+.cx-empty[hidden] { display: none; }
+
+/* compose */
+.cx-compose {
+  position: sticky; bottom: 0; display: flex; align-items: flex-end; gap: 8px;
+  margin: 0 -18px; padding: 10px 18px max(12px, env(safe-area-inset-bottom));
+  background-color: var(--bg-elev); border-top: 1px solid var(--line);
+}
+.cx-compose[hidden] { display: none; }
+.cx-input { flex: 1; min-height: 46px; max-height: 140px; padding-block: 10px; resize: none; line-height: 1.5; }
+.cx-compose-side { display: grid; gap: 2px; justify-items: center; }
+.cx-send { min-width: 48px; min-height: 46px; padding-inline: 14px; }
+.cx-counter { font-size: 12px; color: var(--text-3); min-height: 1em; }
+.cx-counter[data-over="true"] { color: var(--danger); font-weight: 700; }
+.cx-closed { margin: 0; padding: 12px 0 max(14px, env(safe-area-inset-bottom)); text-align: center; }
+.cx-closed[hidden] { display: none; }
+
+/* match card: «فتح المحادثة» + unread badge */
+.cx-open-chat { position: relative; }
+.cx-unread {
+  display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--r-pill);
+  background-color: var(--accent); color: var(--accent-ink); font-size: 12.5px; font-weight: 800;
+}
+.cx-conn-note { margin: 0; font-size: 13.5px; color: var(--text-3); }
+
+/* ───────── account recovery ───────── */
+.cx-code-sheet { gap: 12px; padding-bottom: 0; }
+.cx-code {
+  margin: 4px 0; padding: 14px 12px; border-radius: var(--r); text-align: center;
+  font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: clamp(20px, 6.4vw, 30px); font-weight: 800;
+  letter-spacing: .08em; color: var(--accent-strong); background-color: var(--surface); border: 2px dashed var(--accent);
+  user-select: all; overflow-wrap: anywhere;
+}
+.cx-code:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.cx-copied { margin: 0; min-height: 1.4em; font-size: 14px; color: var(--ok); }
+.cx-tips { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; color: var(--text-2); font-size: 14.5px; }
+.cx-check-row { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 700; }
+.cx-check { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
+.cx-check-row label { cursor: pointer; }
+.cx-warn { display: flex; gap: 8px; align-items: flex-start; color: var(--warn); font-size: 15px; }
+.cx-warn .icon { flex: none; margin-top: 3px; }
+.cx-confirm-foot { flex-wrap: wrap; }
+.cx-confirm-foot .btn { flex: 1 1 auto; }
+.cx-code-input { font-family: ui-monospace, "DejaVu Sans Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
+
+@media (min-width: 640px) {
+  .cx-sheet.sheet { max-height: 88vh; }
+  .cx-compose, .cx-code-sheet .sheet-foot { border-radius: 0 0 24px 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cx-tools-toggle .icon, .cx-switch-knob::after { transition: none; }
+}
+@media (forced-colors: active) {
+  .cx-msg, .cx-row, .cx-code { border: 1px solid CanvasText; }
+  .cx-switch[aria-checked="true"] .cx-switch-knob { background-color: Highlight; }
+}

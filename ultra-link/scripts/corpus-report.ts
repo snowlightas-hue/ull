@@ -1,5 +1,6 @@
 // Measures the deterministic parser + conversation engine against the labeled corpus (written by the
 // product role, independently of the parser). Usage: node scripts/corpus-report.ts [--fails N] [--json out.json]
+import { normalizeAr } from '../src/nlu/arabic.ts';
 import { writeFileSync } from 'node:fs';
 import { seedRegistry } from '../src/domain/registry.ts';
 import { parseUtterance } from '../src/nlu/parse.ts';
@@ -65,8 +66,10 @@ for (const u of utterances as any[]) {
     else ok = false;
     rec('when', ok, `${tag} when got=${r.when?.label ?? null} want=${JSON.stringify(e.when)}`);
   }
-  const wantAttrs = e.attrs ?? {};
-  const gotAttrs = Object.fromEntries(Object.entries(r.attrs).map(([k, v]) => [k, v.value]));
+  // free-text values (car models) compare in normalized form: «أكسنت» = «اكسنت»
+  const normV = (v: unknown) => (typeof v === 'string' ? normalizeAr(v) : v);
+  const wantAttrs = Object.fromEntries(Object.entries(e.attrs ?? {}).map(([k, v]) => [k, normV(v)]));
+  const gotAttrs = Object.fromEntries(Object.entries(r.attrs).map(([k, v]) => [k, normV(v.value)]));
   if (Object.keys(wantAttrs).length || Object.keys(gotAttrs).length) rec('attrs', eqJ(sortObj(gotAttrs), sortObj(wantAttrs)), `${tag} attrs got=${JSON.stringify(gotAttrs)} want=${JSON.stringify(wantAttrs)}`);
   const norm = (cs: any[]) => cs.map((c) => `${c.key}:${c.op}:${JSON.stringify(c.value ?? c.values ?? [c.lo, c.hi])}:${c.strength ?? null}`).sort();
   // the corpus labels the user's explicit cue (null = no cue), so compare raw mention strengths

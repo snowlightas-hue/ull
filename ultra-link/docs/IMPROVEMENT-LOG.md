@@ -86,6 +86,26 @@ Effect:
 | training | 81.0% → 96.7% | 88.1% → 89.9% |
 | **held-out** | 70.9% → 82.1% | 71.2% → 73.6% |
 
+### Cycle 10 — attributes and conditions (impact: fewer wrong "missing info" notes, correct facts)
+Found (training failures only):
+- group size taken from «نحنا عيلة من خمس أشخاص» on a rental (not an attribute of rentals);
+- «لمدة سنة», «شهر واحد» and «العقد سنة على الأقل» not read;
+- a seeker's own rental duration stored as a condition on the landlord;
+- «بدون عفش» not read as unfurnished;
+- «وبروح عالبيوت» missed because of the attached «و» (and for lessons it means in-person);
+- «لغة إنجليزية», «لبسة وحدة» and «صغروا عليهن» unknown.
+
+Fix: `src/nlu/parse.ts`, plus attribute words in `src/seed/taxonomy.ts`. Numeric attribute mentions are now filtered by the category's attribute set.
+
+Measurement fix (not a parser change): `corpus-report` now compares free-text attribute values in normalized form («أكسنت» = «اكسنت»). This accounts for 1 of the 13 attrs gained.
+
+Effect:
+
+| | attrs | constraints | first question |
+|---|---|---|---|
+| training | 77.1% → 95.7% | 88.6% → 90.9% | 89.9% → 91.0% |
+| **held-out** | 52.5% → 57.5% | 44.2% → 48.8% | 73.6% → 74.2% |
+
 ## Held-out evaluation (honest generalization)
 `node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
 
