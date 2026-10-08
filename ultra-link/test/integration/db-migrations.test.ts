@@ -235,3 +235,30 @@ test('an applied migration is immutable: a checksum mismatch stops the runner', 
     await db.pool.query("UPDATE schema_migrations SET checksum = $1 WHERE version = '0002'", [sum]);
   }
 });
+
+test('proposed draft migrations/proposed/role5_leaf_fk_matches_intents.sql applies; integrity and cascades hold', async () => {
+  const { readFileSync } = await import('node:fs');
+  const pool = await blankDb(`ultralink_t_${TAG}_leaf`.slice(0, 60), '9999');
+  try {
+    await syncReference(pool);
+    const reg = await loadRegistry(pool);
+    await withTx(pool, (tx) => tx.query(readFileSync(join(ROOT, 'migrations', 'proposed', 'role5_leaf_fk_matches_intents.sql'), 'utf8')));
+    const n = (await pool.query(`SELECT (SELECT count(*) FROM pg_partition_tree('matches') WHERE isleaf)::int AS leaves,
+        (SELECT count(*) FROM pg_constraint k WHERE k.contype = 'f' AND k.convalidated AND k.confrelid IN (SELECT relid FROM pg_partition_tree('intents') WHERE isleaf)
+            AND k.conrelid IN (SELECT relid FROM pg_partition_tree('matches') WHERE isleaf) AND k.conparentid = 0)::int AS leaf_fks,
+        (SELECT count(*) FROM pg_constraint WHERE conrelid = 'matches'::regclass AND confrelid = 'intents'::regclass)::int AS parent_fks`)).rows[0];
+    assert.deepEqual(n, { leaves: n.leaves, leaf_fks: n.leaves * 2, parent_fks: 0 });
+    const [s, p] = [await mkUser(pool, 'buyer'), await mkUser(pool, 'seller')];
+    const azaz = reg.placeByCode.get('sy.aleppo.azaz')!.id;
+    const prov = await withTx(pool, (tx) => createIntent(tx, reg, { userId: p, realm: 'synthetic', titleAr: 'سيارة', sourceText: null, conversationId: null, spec: spec(reg, { side: 'provide', categoryCode: 'vehicles.car', deal: 'sale' }) }));
+    const seek = await withTx(pool, (tx) => createIntent(tx, reg, { userId: s, realm: 'synthetic', titleAr: 'بدي سيارة', sourceText: null, conversationId: null, spec: spec(reg, { side: 'seek', categoryCode: 'vehicles.car', deal: 'sale', place: { pointPlaceId: null, scopePlaceIds: [azaz], scopeStrength: 'required' } }) }));
+    const run = await matchIntent(pool, reg, { verticalId: seek.verticalId, intentId: seek.id, trigger: 'job' });
+    assert.ok(run.totals.confirmed + run.totals.possible >= 1);
+    await assert.rejects(pool.query(`INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, a_version, b_version, eval_seq)
+      VALUES ($1, 'exchange', $2, 987654321, $3, $4, 'possible', 1, 1, 1, 1)`, [seek.verticalId, seek.id, s, p]), (e: { code?: string }) => e.code === '23503');
+    await pool.query('DELETE FROM intents WHERE vertical_id = $1 AND id = $2', [prov.verticalId, prov.id]);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM matches WHERE b_intent_id = $1', [prov.id])).rows[0].n, 0, 'cascade through the leaf FK');
+  } finally {
+    await pool.end();
+  }
+});
