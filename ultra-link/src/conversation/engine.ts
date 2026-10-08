@@ -321,11 +321,12 @@ export function nextQuestion(reg: Registry, d: ConversationDraft): Question | nu
     const q = ask('price', 'price_provide');
     if (q) return q;
   }
-  if (d.price && !d.currency) {
+  const free = !!d.price && d.price.value.lo === '0' && d.price.value.hi === '0'; // "ببلاش": no currency or unit to ask
+  if (d.price && !d.currency && !free) {
     const q = ask('price.currency', 'currency', CHIP.currency);
     if (q) return q;
   }
-  if (d.price && !d.unit && deal !== 'sale') {
+  if (d.price && !d.unit && deal !== 'sale' && !free) {
     const key: TemplateKey = deal === 'rent' ? 'unit_rent' : deal === 'lesson' ? 'unit_lesson' : 'unit_service';
     const q = ask('price.unit', key, deal === 'rent' ? CHIP.unit_rent : deal === 'lesson' ? CHIP.unit_lesson : CHIP.unit_service);
     if (q) return q;

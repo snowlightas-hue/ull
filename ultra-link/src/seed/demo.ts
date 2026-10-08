@@ -6,6 +6,7 @@ import type { Registry } from '../domain/registry.ts';
 import { createIntent } from '../repo/intents.ts';
 import { matchIntent } from '../matching/engine.ts';
 import { buildDemoDataset } from './demo-data.ts';
+import { upsertLivePosition } from '../geo/live.ts';
 
 export { PERSONAS, buildDemoDataset, counterpartFor } from './demo-data.ts';
 export type { DemoItem, DemoUser } from './demo-data.ts';
@@ -30,6 +31,8 @@ export async function seedDemo(pool: pg.Pool, reg: Registry, log: (s: string) =>
   for (const it of items) {
     const res = await withTx(pool, (tx) => createIntent(tx, reg, { userId: ids.get(it.owner)!, realm: 'synthetic', spec: it.spec, titleAr: `${it.title} (تجريبي)`, sourceText: null, conversationId: null, createdAt: new Date(now - it.ageHours * 3600_000) }));
     created.push({ v: res.verticalId, id: res.id });
+    // synthetic "online" drivers: a live position that is fresh for the next 10 minutes (then shown as «غير متصل»)
+    if (it.live) await upsertLivePosition(pool, { verticalId: res.verticalId, id: res.id }, ids.get(it.owner)!, it.live);
   }
   log(`created ${created.length} synthetic intents; computing matches among synthetic data…`);
   let n = 0;

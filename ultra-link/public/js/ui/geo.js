@@ -11,7 +11,7 @@
 //   on logout: await stopAllLiveSharing();
 // Sharing sessions survive list re-renders (one per intent, kept in this module).
 
-import { h } from './dom.js';
+import { h, mount } from './dom.js';
 import { ar } from './format.js';
 import { icon } from './icons.js';
 import { createLiveSharing, LIVE_NOTE_AR } from '../geo/live.js';
@@ -77,12 +77,12 @@ export function liveToggle(intent, { api, createSharing = createLiveSharing } = 
     const on = st.state === 'starting' || st.state === 'sharing';
     box.dataset.state = st.state;
     btn.setAttribute('aria-pressed', String(on));
-    btn.replaceChildren(icon('pin', { size: 16 }), on ? 'أوقف مشاركة موقعي' : 'شارك موقعي المباشر');
+    mount(btn, icon('pin', { size: 16 }), on ? 'أوقف مشاركة موقعي' : 'شارك موقعي المباشر');
     const extra = st.hidden && on ? 'الصفحة في الخلفية — قد يتوقف التحديث حتى تعود إليها' : st.errorAr;
-    line.replaceChildren(ar(st.labelAr), extra ? h('span', { class: 'geo-live-extra' }, ` — ${ar(extra)}`) : null);
+    mount(line, ar(st.labelAr), extra ? h('span', { class: 'geo-live-extra' }, ` — ${ar(extra)}`) : null);
     if (!on && intent.live && intent.live.sharing && st.state === 'idle') {
       // the server still shows a position from an earlier page visit (expires within 10 minutes)
-      line.replaceChildren(ar(`${intent.live.labelAr} — شغّل المشاركة من جديد لتحديث موقعك`));
+      mount(line, ar(`${intent.live.labelAr} — شغّل المشاركة من جديد لتحديث موقعك`));
     }
   };
   const listener = (st) => { if (!box.isConnected && box.dataset.mounted === '1') { s.listeners.delete(listener); return; } paint(st); };

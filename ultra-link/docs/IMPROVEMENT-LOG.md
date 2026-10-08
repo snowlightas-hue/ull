@@ -61,6 +61,31 @@ Effect: flows tests 15/18 → 18/18; dialogues 96.7% → 98.4%; a11y checks 40/4
 
 Corpus note: the new `transport` category got 4 training and 3 held-out examples. The 3 held-out ones (h161–h163) were written by the integrator, who also writes the parser, so they are **not** independent. Treat held-out numbers for `transport` as optimistic until an independent author adds more.
 
+### Cycle 9 — prices (impact: correct ceilings, units and free offers)
+Found (training failures only; held-out failures were not read):
+- negations with an attached «و» were ignored: «وما بدي أدفع أكتر من ٢٠٠» became "more than 200";
+- «مو أقل من ٣٠٠٠» and «ما بأجرها بأقل من ٢٠٠» became ceilings;
+- «الساعة 6 دولار» and «أجر الساعة سبعة دولارات» were read as a clock time;
+- units before the amount were missed («اليوم بـ ٣٠»، «والحصة ما تتعدى»، «الكورس الشهري»، «الشخص بـ»), and so was «الليلة» after it;
+- a currency before the amount was missed («بالتركي حد أقصى ٤٠٠ ألف»);
+- «جاهز ٢٤ ساعة» was taken as the price;
+- «ببلاش / مجانية» was unknown;
+- «بتمانمية» was not a number.
+
+Fix (`src/nlu/parse.ts`, `src/nlu/numbers.ts`):
+- operator cues reordered, with negation allowing a «و/ف» prefix;
+- clock time only when no currency follows;
+- unit/currency look-back that stops at another number or a fee word;
+- currency-less "number + unit" candidates dropped when a real price exists;
+- free = price 0 with no currency/unit question, displayed «مجانًا». Not for volunteer help, which is free by definition, nor for a free part such as «الكشف ببلاش».
+
+Effect:
+
+| | price | first question = essential |
+|---|---|---|
+| training | 81.0% → 96.7% | 88.1% → 89.9% |
+| **held-out** | 70.9% → 82.1% | 71.2% → 73.6% |
+
 ## Held-out evaluation (honest generalization)
 `node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
 

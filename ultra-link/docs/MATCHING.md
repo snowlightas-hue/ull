@@ -24,11 +24,12 @@ SQL only pre-selects candidates; every verdict comes from the pure function `eva
 | Multi-valued facts | `["washer","fridge"]`: `eq`/`in`/`lte`/… = has a satisfying value; `neq` = has none of the excluded value; `[]` = unknown. |
 | Realm / owner / status | Synthetic never matches real; own intents never match; non-active ⇒ `inactive`. |
 
-`PlaceSpec.geo / radiusKm / nearest` (proximity, upcoming) are accepted and ignored by the evaluator today; distance
-between place centroids is only a soft ranking signal.
+`PlaceSpec.geo / radiusKm / nearest` and live positions are evaluated by `proximityCheck` (src/geo/semantics.ts): hard radius,
+"nearest" inside a declared default limit, unknown / approximate distance ⇒ `possible`, stale live ⇒ `possible` — see docs/GEO.md §2.
+Pairs without any of them keep the soft centroid-distance signal below.
 
 **Exclusion priority:** `side_mismatch, realm_mismatch, same_owner, inactive, deal_mismatch, category_mismatch,
-place_excluded, place_out_of_scope, date_no_overlap, price_above_max, price_below_min, price_not_exact, attr_violation`.
+place_excluded, place_out_of_scope, distance_beyond_radius, date_no_overlap, price_above_max, price_below_min, price_not_exact, attr_violation`.
 
 **Score (integer):** confirmed ∈ [5000, 10000] = 7000 + bonus; possible ∈ [0, 4999] = 2500 − 400·(missing − 1) + bonus;
 excluded = 0. Bonus: preferred place ±600, preferred attribute ±500·weight, near price +600 / far −min(1500, 20·%),
@@ -47,6 +48,8 @@ category ∈ ancestors ∪ descendants, status='active', user ≠ me)`.
   P's ancestors (≤ 4) and the places inside P when P is a region. An empty or merely preferred scope is keyed on the root,
   so every probe reaches it.
 - **BROAD** (no point, no required scope): newest counterparts of the category (capped, `truncated` reported).
+- **GEO** (a distance bound — radius or "nearest" — and a known point): KNN on stored / live points plus place-only
+  counterparts near enough; replaces the place directions for that intent (completeness argument: docs/GEO.md §3).
 
 Why it is complete (exchange; peers run RANGE and PROBE together): a non-excluded verdict needs the counterpart's point to
 be *inside or broader than* my required scope (else `place_out_of_scope`), or unknown — exactly RANGE's three parts. With no
@@ -163,4 +166,4 @@ column: `git show bc888ed:ultra-link/src/matching/engine.ts`, point its `../` im
 - Status changes (`POST /api/intents/:id/status`) run matching right after the commit but enqueue no safety-net job
   (Role 7): a crash in between leaves the counterpart's view stale until the next run. Edits and expiry are covered.
 - Point-less counterparts are only sampled (200) when *I* have no point either; reported through `truncated`.
-- Proximity (`geo`, `radiusKm`, `nearest`) is not evaluated yet.
+- Proximity (`geo`, `radiusKm`, `nearest`, live positions): evaluated and retrieved by the GEO directions — docs/GEO.md.

@@ -74,7 +74,7 @@ test('without earthdistance and no superuser: cube is created, then an explicit 
   await pool.query('CREATE EXTENSION IF NOT EXISTS btree_gist; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS pgcrypto');
   const superuser = (await pool.query('SELECT rolsuper FROM pg_roles WHERE rolname = current_user')).rows[0].rolsuper;
   if (superuser) return; // a superuser simply creates earthdistance: nothing to check here
-  await assert.rejects(migrate(pool, () => {}), (e: Error) => {
+  await assert.rejects(migrate(pool, () => {}, { upTo: '0003' }), (e: Error) => {
     assert.match(e.message, /0003_geo\.sql failed: 0003_geo: extension earthdistance is missing and role \w+ may not create it \(earthdistance is not a trusted extension\)/);
     return true;
   });
@@ -96,10 +96,10 @@ test('vertical-8 rows already in the DEFAULT partition: 0003 stops with a clear 
     `INSERT INTO intents (vertical_id, user_id, realm, side, category_id, deal_type_id, title_ar) VALUES ($1, $2, 'synthetic', 'provide', $3, $4, 'تكسي مبكر') RETURNING id`,
     [reg.categoryByCode.get('transport.ride')!.verticalId, u, reg.categoryByCode.get('transport.ride')!.id, reg.dealByCode.get('service')!.id])).rows[0].id) };
   assert.equal((await pool.query('SELECT tableoid::regclass::text AS t FROM intents WHERE id = $1', [c.id])).rows[0].t, 'intents_other');
-  await assert.rejects(migrate(pool, () => {}), /0003_geo: 1 intents and 0 matches of vertical 8 \(transport\) already sit in the DEFAULT partitions/);
+  await assert.rejects(migrate(pool, () => {}, { upTo: '0003' }), /0003_geo: 1 intents and 0 matches of vertical 8 \(transport\) already sit in the DEFAULT partitions/);
   assert.deepEqual((await pool.query('SELECT version FROM schema_migrations ORDER BY 1')).rows.map((r) => r.version), ['0001', '0002']);
   assert.equal(await exists(pool, 'intents_transport'), false, 'rolled back');
   await pool.query('DELETE FROM intents WHERE vertical_id = 8');
-  assert.deepEqual(await migrate(pool, () => {}), ['0003_geo.sql']);
+  assert.deepEqual(await migrate(pool, () => {}, { upTo: '0003' }), ['0003_geo.sql']);
   assert.ok(await exists(pool, 'intents_transport'));
 });

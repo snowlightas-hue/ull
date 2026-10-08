@@ -130,7 +130,7 @@ test('privacy before consent: no name, phone or utterance of the counterpart unt
   const c2 = (await w.c.get(`/api/matches/${w.matchId}`)).body.match;
   assert.equal(a2.contact.status, 'accepted');
   assert.equal(a2.contact.counterpart?.displayName, 'كريم المؤجر');
-  assert.equal(a2.contact.counterpart?.phone, '+90 555 000 0101');
+  assert.equal(a2.contact.counterpart?.phone, undefined, 'V2.2: accept reveals the display name only; the phone needs C’s explicit «شارك رقمي» (docs/CONNECTIONS.md)');
   assert.equal(c2.contact.counterpart?.displayName, 'أمل');
   // answering twice is not possible
   assert.equal((await w.a.post(`/api/contact-requests/${w.contactId}/respond`, { accept: false })).status, 404);

@@ -183,24 +183,30 @@ const CURRENCY_WORDS: { re: RegExp; cur: Currency | 'LIRA' }[] = [
   { re: /^(ليره|ليرات|الليره|بالليره|لira)$/, cur: 'LIRA' },
 ];
 const UNIT_WORDS: { re: RegExp; unit: PriceUnit }[] = [
-  { re: /^(بالشهر|شهري|شهريا|شهريه|الشهر|للشهر|عالشهر)$/, unit: 'month' },
-  { re: /^(بالسنه|سنوي|سنويا|سنويه|السنه|للسنه|عالسنه)$/, unit: 'year' },
-  { re: /^(بالاسبوع|اسبوعي|اسبوعيا|للاسبوع)$/, unit: 'week' },
-  { re: /^(باليوم|يومي|يوميا|اليوم|لليوم|عاليوم|بالليله|لليله)$/, unit: 'day' },
-  { re: /^(بالساعه|للساعه|ساعه|عالساعه)$/, unit: 'hour' },
-  { re: /^(للحصه|بالحصه|الحصه|حصه|للدرس|بالدرس|الدرس|للجلسه|بالجلسه)$/, unit: 'session' },
-  { re: /^(للشخص|عالشخص|بالشخص|للنفر|عالنفر|للراس)$/, unit: 'person' },
+  { re: /^(بالشهر|شهري|شهريا|شهريه|الشهري|الشهريه|الشهر|للشهر|عالشهر)$/, unit: 'month' },
+  { re: /^(بالسنه|سنوي|سنويا|سنويه|السنوي|السنويه|السنه|للسنه|عالسنه)$/, unit: 'year' },
+  { re: /^(بالاسبوع|اسبوعي|اسبوعيا|الاسبوعي|للاسبوع)$/, unit: 'week' },
+  { re: /^(باليوم|يومي|يوميا|اليومي|اليوم|لليوم|عاليوم|بالليله|لليله|الليله|ليله|الليلة)$/, unit: 'day' },
+  { re: /^(بالساعه|للساعه|ساعه|الساعه|عالساعه)$/, unit: 'hour' },
+  { re: /^(للحصه|بالحصه|الحصه|حصه|للدرس|بالدرس|الدرس|للجلسه|بالجلسه|الجلسه)$/, unit: 'session' },
+  { re: /^(للشخص|عالشخص|بالشخص|الشخص|للنفر|عالنفر|النفر|للراس)$/, unit: 'person' },
+  { re: /^(للدوره|بالدوره|للكورس|بالكورس)$/, unit: 'total' },
 ];
+// free of charge: a price of exactly 0 with no currency
+const FREE_RE = /(?:^| )(ببلاش|مجانا|مجاني|مجانيه|بالمجان|مجانًا)(?= |$)/;
 const PRICE_CONTEXT = new Set(['سعر', 'سعرها', 'سعره', 'بسعر', 'السعر', 'ثمن', 'ثمنها', 'حق', 'حقها', 'حقه', 'ادفع', 'بدفع', 'ندفع', 'ميزانيه', 'ميزانيتي', 'ميزانيتنا', 'معي', 'معنا', 'بقدر', 'بحدود', 'حدود', 'اجره', 'اجرتها', 'كلفه', 'تكلفه', 'قيمه', 'مبلغ', 'مطلوب']);
 
 interface OpCue { op: PriceSpec['op']; strict?: 'lt' | 'gt'; strength: Strength; text: string }
 function opBefore(tokens: string[], start: number): OpCue | null {
   const pre = tokens.slice(Math.max(0, start - 5), start).join(' ');
   const tests: [RegExp, OpCue][] = [
-    [/(حد اقصي|الحد الاقصي|اقصي شي|اقصي حد|كحد اقصي|ما بدي اكتر من|ما بدي اكثر من|مو اكتر من|مش اكتر من|مو اكثر من|ما يزيد عن|ما يتجاوز|لا يتجاوز|لا يزيد عن|لحد|لغايه|حتي|ميزانيتي|ميزانيه|ميزانيتنا|معي|معنا|بقدر ادفع|قدرتي)\s*\S{0,2}$/, { op: 'lte', strength: 'required', text: '' }],
-    [/(اقل من|تحت|دون|ادني من)\s*\S{0,2}$/, { op: 'lte', strict: 'lt', strength: 'required', text: '' }],
+    [/(حد اقصي|الحد الاقصي|اقصي شي|اقصي حد|كحد اقصي|ما بدي اكتر من|ما بدي اكثر من|مو اكتر من|مش اكتر من|مو اكثر من|ما يزيد عن|ما يتجاوز|لا يتجاوز|لا يزيد عن|ما تتعدي|ما يتعدي|لا تتعدي|لحد|لغايه|حتي|ميزانيتي|ميزانيه|ميزانيتنا|معي|معنا|بقدر ادفع|قدرتي)\s*\S{0,2}$/, { op: 'lte', strength: 'required', text: '' }],
+    // negated "less than" = at least: "مو أقل من ٣٠٠٠", "ما بأجرها بأقل من ٢٠٠" (tested before plain "أقل من")
+    [/(?:^| )[وف]?(?:ما|مو|مش|لا)(?: \S+){0,2} (?:ب?اقل من|ب?ادني من|تحت)\s*\S{0,2}$/, { op: 'gte', strength: 'required', text: '' }],
     [/(علي الاقل|عالاقل|بالحد الادني|الحد الادني|مو اقل من|مش اقل من|ما يقل عن|لا يقل عن|من فوق)\s*\S{0,2}$/, { op: 'gte', strength: 'required', text: '' }],
-    [/(?:^| )(?:ما|مو|مش|لا|ما منقدر|ما بقدر|ما فيني|ما فينا)(?: \S+){0,2} (?:اكتر من|اكثر من|فوق|يزيد عن|يتجاوز)\s*\S{0,2}$/, { op: 'lte', strength: 'required', text: '' }],
+    [/(اقل من|تحت|دون|ادني من)\s*\S{0,2}$/, { op: 'lte', strict: 'lt', strength: 'required', text: '' }],
+    // negated "more than" = at most: "وما بدي أدفع أكتر من ٢٠٠", "وما منقدر ندفع أكتر من ١٢٠"
+    [/(?:^| )[وف]?(?:ما|مو|مش|لا|ما منقدر|ما بقدر|ما فيني|ما فينا)(?: \S+){0,2} (?:اكتر من|اكثر من|فوق|يزيد عن|يتجاوز)\s*\S{0,2}$/, { op: 'lte', strength: 'required', text: '' }],
     [/(اكتر من|اكثر من|فوق)\s*\S{0,2}$/, { op: 'gte', strict: 'gt', strength: 'required', text: '' }],
     [/(حوالي|تقريبا|بحدود|حدود|حول|قرابه|شي|يعني)\s*\S{0,2}$/, { op: 'approx', strength: 'preferred', text: '' }],
   ];
@@ -305,6 +311,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   const nums = findNumbers(tokens);
   let radius: RuleParse['radius'] = null;
   const prices: PriceCandidate[] = [];
+  const priceSure: boolean[] = []; // parallel to prices: had a currency, a price word, a range or an operator
   const attrMentions: AttrMention[] = [];
   const usedNum = new Set<number>();
   const vertical = topCatObj?.verticalCode ?? null;
@@ -361,7 +368,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
       attrMentions.push({ key: 'group_size', op: 'eq', value: Number(whole), strength: null, evidence: ev, about: 'self' });
       usedNum.add(ni); mark(n.start, n.end + 1); continue;
     }
-    if (/^(الساعه|ساعه)$/.test(prev) || /^(الصبح|المسا|العصر|الظهر|صباحا|مساء)$/.test(next)) { usedNum.add(ni); continue; }
+    if ((/^(الساعه|ساعه)$/.test(prev) && !isCurrencyAt(tokens, n.end)) || /^(الصبح|المسا|العصر|الظهر|صباحا|مساء)$/.test(next)) { usedNum.add(ni); continue; }
     if (/^(اشهر|شهور|اشهور|شهر|سنه|سنين|سنتين)$/.test(next) && /^(لمده|مده|لفتره|اقل شي|اقل|علي الاقل|ل)$/.test(prev)) {
       const months = /سنه|سنين|سنتين/.test(next) ? Number(whole) * 12 : Number(whole);
       attrMentions.push({ key: 'rental_months', op: /اقل|الاقل/.test(prev) ? 'gte' : 'eq', value: months, strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
@@ -385,14 +392,25 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
     const { currency, end } = cu;
     let unit = cu.unit;
     if (!unit) {
-      // unit stated before the amount: "بالأسبوع، ٧٠ دولار" / "بالسنة بألف دولار"
+      // unit stated before the amount: "بالأسبوع، ٧٠ دولار" / "بالسنة بألف دولار" / "والحصة ما تتعدى ١٥٠" / "اليوم بـ ٣٠ دولار"
       for (let k = n.start - 1; k >= Math.max(0, n.start - 4); k--) {
-        const u = UNIT_WORDS.find((x) => x.re.test(tokens[k]!));
-        if (u && !(u.unit === 'day' && tokens[k] === 'اليوم')) { unit = u.unit; break; }
+        if (nums.some((o) => o !== n && k >= o.start && k < o.end) || /^(الكشف|الكشفيه|كشفيه)$/.test(tokens[k]!)) break; // the unit belongs to another number / fee
+        const t = /^[وف]/.test(tokens[k]!) && tokens[k]!.length > 4 ? tokens[k]!.slice(1) : tokens[k]!;
+        const u = UNIT_WORDS.find((x) => x.re.test(t));
+        // "اليوم" is "today" unless it directly introduces the amount ("اليوم بـ ٣٠")
+        if (u && !(u.unit === 'day' && t === 'اليوم' && !(k === n.start - 1 || (k === n.start - 2 && prevTok === 'ب')))) { unit = u.unit; break; }
+      }
+    }
+    let curr = currency;
+    if (!curr) {
+      // currency stated before the amount: "بالتركي حد أقصى ٤٠٠ ألف" (only explicit بال… forms, never "أستاذ تركي")
+      for (let k = n.start - 1; k >= Math.max(0, n.start - 4); k--) {
+        const t = tokens[k]!;
+        if (/^بال/.test(t) || t === '$') { const c = CURRENCY_WORDS.find((x) => x.re.test(t)); if (c) { curr = c.cur; break; } }
       }
     }
     const ctx = PRICE_CONTEXT.has(prevTok) || PRICE_CONTEXT.has(tokens[n.start - 2] ?? '') || /^ب$/.test(prevTok) || prevTok === '$';
-    if (!currency && !unit && !ctx && !isBetween && !opBefore(tokens, n.start)) continue; // a bare number we can't interpret
+    if (!curr && !unit && !ctx && !isBetween && !opBefore(tokens, n.start)) continue; // a bare number we can't interpret
     const cue = isBetween ? null : opBefore(tokens, n.start);
     let lo: bigint | null = n.cents;
     let hi: bigint | null = n.cents;
@@ -418,10 +436,11 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
     }
     const near = strengthNear(tokens, n.start, end, 3, 3);
     if (near) strength = near === 'required' || !strength ? near : strength;
+    priceSure.push(!!curr || ctx || isBetween || opExplicit);
     prices.push({
       lo: lo === null ? null : lo.toString(),
       hi: hi === null ? null : hi.toString(),
-      currency: currency === 'LIRA' ? null : currency,
+      currency: curr === 'LIRA' ? null : curr,
       unit,
       op,
       opExplicit,
@@ -430,8 +449,17 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
     });
     mark(n.start, end);
     usedNum.add(ni);
-    if (currency === 'LIRA') prices[prices.length - 1]!.evidence += ' (ليرة)';
+    if (curr === 'LIRA') prices[prices.length - 1]!.evidence += ' (ليرة)';
   }
+  // "جاهز ٢٤ ساعة، الكشفية ٥ دولار": a bare "number + unit" is a duration, not a price, when a real price exists
+  if (prices.some((p, i) => priceSure[i] && p.currency)) {
+    for (let i = prices.length - 1; i >= 0; i--) if (!priceSure[i] && !prices[i]!.currency) { prices.splice(i, 1); priceSure.splice(i, 1); }
+  }
+  // free of charge: "ببلاش", "الحلقة مجانية"
+  // (not for volunteer help — free by definition — nor for a free part like "الكشف ببلاش")
+  const free = !prices.length && vertical !== 'help' ? FREE_RE.exec(norm) : null;
+  const freeIdx = free ? tokens.indexOf(free[1]!) : -1;
+  if (free && !/^(الكشف|الكشفيه|كشفيه|التوصيل|المعاينه)$/.test(tokens[freeIdx - 1] ?? '')) prices.push({ lo: '0', hi: '0', currency: null, unit: null, op: 'eq', opExplicit: true, strength: null, evidence: free[1]! });
 
   // ── attribute words (enum values), floors, furnished, solar, tenant type
   const attrsAllowed = topCat ? new Set(attributesFor(reg, topCat).map((a) => a.key)) : null;

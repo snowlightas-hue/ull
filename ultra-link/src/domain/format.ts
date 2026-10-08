@@ -26,6 +26,7 @@ export function unitWord(u: PriceUnit): string { return UNIT_AR[u] || 'إجما�
 
 export function priceText(p: PriceSpec | null, side: 'seek' | 'provide' | 'join'): string | null {
   if (!p) return null;
+  if (p.op === 'eq' && p.lo === '0' && p.hi === '0') return 'مجانًا';
   const m = (v: string | null) => (v === null ? '' : moneyText(v, p.currency, null));
   const unit = p.unit && p.unit !== 'total' ? ` ${UNIT_AR[p.unit]}` : '';
   const neg = p.negotiable ? ' (قابل للتفاوض)' : '';

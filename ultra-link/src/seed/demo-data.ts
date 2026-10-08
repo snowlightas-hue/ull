@@ -2,6 +2,7 @@
 // (src/seed/demo.ts) and by the in-browser demo edition (web-demo/). Clearly labeled synthetic data.
 import type { Registry } from '../domain/registry.ts';
 import type { IntentSpec, PriceSpec } from '../domain/types.ts';
+import { destination } from '../geo/distance.ts';
 
 export const PERSONAS = [
   { handle: 'samer', name: 'سامر (تجريبي)', persona: 'يبحث عن شقة — جرّب: «بدي شقة للإيجار بإعزاز فقط حد أقصى 200 دولار بالشهر، يفضّل طابق أول»' },
@@ -31,7 +32,11 @@ const offer = (reg: Registry, categoryCode: string, deal: IntentSpec['deal'], pl
 
 
 export interface DemoUser { handle: string; name: string; persona: string | null; phone: string | null }
-export interface DemoItem { owner: string; spec: IntentSpec; title: string; ageHours: number }
+export interface DemoItem {
+  owner: string; spec: IntentSpec; title: string; ageHours: number;
+  /** synthetic live position (drivers "online now"): the seeder writes it to live_positions with a fresh expiry */
+  live?: { lat: number; lng: number; accuracyM: number };
+}
 
 /**
  * The synthetic dataset as plain data (deterministic for a given `now`). Used by the PostgreSQL seeder
@@ -121,8 +126,57 @@ export function buildDemoDataset(reg: Registry, now = Date.now()): { users: Demo
   trip('sy.aleppo.azaz', toFri + 1, 'يوم السبت', 'رحلة يوم السبت من إعزاز', 3);
   trip('sy.aleppo.afrin', toFri, 'يوم الجمعة', 'رحلة يوم الجمعة من عفرين', 5);
 
+  // ── transport (V2.1 location): 12 drivers with a static GPS point around إعزاز / عفرين / حلب (4 of them "online"
+  // with a live position), and 2 riders asking for the nearest car. Fixed offsets — no rng draws, so the data above
+  // stays identical. Coordinates are synthetic and never shown to other users (only rounded distances).
+  const centre = (code: string) => { const p = reg.placeByCode.get(code)!; return { lat: p.lat!, lng: p.lng! }; };
+  const driver = (n: number, city: string, km: number, bearing: number, title: string, o: { scope?: boolean; live?: [number, number]; fare?: PriceSpec } = {}) => {
+    const at = destination(centre(city), km, bearing);
+    const owner = owners[(n * 7) % owners.length]!;
+    items.push({
+      owner, title, ageHours: 2 + n,
+      spec: {
+        side: 'provide', categoryCode: 'transport.ride', deal: 'service',
+        place: { pointPlaceId: reg.placeByCode.get(city)!.id, scopePlaceIds: o.scope ? [reg.placeByCode.get(city)!.id] : [], scopeStrength: 'required', excludePlaceIds: [],
+          geo: { lat: round6(at.lat), lng: round6(at.lng), accuracyM: 12 + n, source: 'gps' } },
+        price: o.fare ?? null, when: null, attrs: {}, constraints: [],
+      },
+      ...(o.live ? { live: (() => { const l = destination(at, o.live[0], o.live[1]); return { lat: round6(l.lat), lng: round6(l.lng), accuracyM: 10 }; })() } : {}),
+    });
+  };
+  const fare = (try_: number): PriceSpec => ask(try_, 'TRY', 'total');
+  driver(1, 'sy.aleppo.azaz', 0.6, 40, 'تكسي أبو خالد — وسط إعزاز', { live: [0.2, 90], fare: fare(60) });
+  driver(2, 'sy.aleppo.azaz', 1.8, 200, 'سيارة مع سائق — إعزاز', { live: [0.4, 10] });
+  driver(3, 'sy.aleppo.azaz', 3.5, 300, 'تكسي على طريق السلامة', { scope: true, fare: fare(80) });
+  driver(4, 'sy.aleppo.azaz', 6.5, 120, 'سرفيس إعزاز — مارع');
+  driver(5, 'sy.aleppo.azaz', 9.5, 160, 'تكسي قرب مارع', { scope: true });
+  driver(6, 'sy.aleppo.afrin', 0.9, 80, 'تكسي عفرين — الدوار', { live: [0.3, 200], fare: fare(70) });
+  driver(7, 'sy.aleppo.afrin', 2.4, 250, 'سيارة مع سائق في عفرين', { scope: true });
+  driver(8, 'sy.aleppo.afrin', 5.2, 20, 'توصيلات عفرين وجنديرس');
+  driver(9, 'sy.aleppo.aleppo', 1.1, 0, 'تكسي حلب — الجميلية', { live: [0.5, 300], fare: fare(100) });
+  driver(10, 'sy.aleppo.aleppo', 2.7, 135, 'تكسي حلب الجديدة', { scope: true });
+  driver(11, 'sy.aleppo.aleppo', 4.4, 230, 'سيارة مع سائق — حلب');
+  driver(12, 'sy.aleppo.aleppo', 7.8, 60, 'تكسي على أوتوستراد حلب');
+  const riderAt = (n: number, city: string, km: number, bearing: number, title: string, radius: number | null) => {
+    const at = destination(centre(city), km, bearing);
+    items.push({
+      owner: owners[n - 1]!, title, ageHours: 1, // indices 0, 1: never a driver's owner ((n·7) mod 30)
+      spec: {
+        side: 'seek', categoryCode: 'transport.ride', deal: 'service',
+        place: { pointPlaceId: reg.placeByCode.get(city)!.id, scopePlaceIds: [], scopeStrength: 'required', excludePlaceIds: [],
+          geo: { lat: round6(at.lat), lng: round6(at.lng), accuracyM: 20, source: 'gps' },
+          ...(radius ? { radiusKm: { value: radius, strength: 'required' as const } } : { nearest: true }) },
+        price: null, when: null, attrs: {}, constraints: [],
+      },
+    });
+  };
+  riderAt(1, 'sy.aleppo.azaz', 0.8, 260, 'بدي تكسي قريب مني بإعزاز', null);
+  riderAt(2, 'sy.aleppo.aleppo', 1.5, 90, 'بدي سيارة توصلني ضمن 3 كم في حلب', 3);
+
   return { users, items };
 }
+
+const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
 
 /** Build a synthetic counterpart that satisfies a user's saved request (demo of "match arrives later"). */
 export function counterpartFor(reg: Registry, spec: IntentSpec): IntentSpec | null {

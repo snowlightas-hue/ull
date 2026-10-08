@@ -14,6 +14,8 @@ import { GEO_K, knnIntents, knnLive, type GeoKeys } from '../../src/geo/retrieve
 import { nearbyFor } from '../../src/geo/nearby.ts';
 import { destination, type LatLng } from '../../src/geo/distance.ts';
 
+// Opt-in (≈ 80 s, 100k rows): UL_GEO_PERF=1 node --test test/integration/geo-perf.test.ts   (UL_GEO_K, UL_GEO_PERF_N, UL_GEO_PERF_OUT=file.json)
+const ENABLED = process.env.UL_GEO_PERF === '1';
 const N = Number(process.env.UL_GEO_PERF_N ?? 100_000);
 const TAG = `geo_perf_${process.pid}`;
 let db: TestDb;
@@ -25,6 +27,10 @@ const stats = (xs: number[]) => {
 };
 const results: Record<string, unknown> = {};
 
+if (!ENABLED) test('geo perf: skipped (set UL_GEO_PERF=1 — builds 100 000 geo intents, ≈ 80 s)', { skip: true }, () => {});
+else suite();
+
+function suite() {
 before(async () => {
   db = await freshDb(TAG);
   const t0 = Date.now();
@@ -153,3 +159,4 @@ test(`full matchIntent for ride requests among ${N} geo intents (GEO path) vs. t
   }
   results.matchIntentClassic = { 'wall ms': stats(classic.map((x) => x.ms)), candidates: stats(classic.map((x) => x.candidates)), truncated: classic.every((x) => x.truncated) };
 });
+}
