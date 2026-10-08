@@ -79,14 +79,17 @@ export function draftHeader(h: DraftHeader): string {
   ].join('\n');
 }
 
-export interface MoveDependant { table: string; filterColumn: string; parents: string[] }
+/** A table whose rows travel with the vertical: selected by its vertical column, or (no vertical column in its FK)
+ * by its foreign key into the already-copied parent rows. */
+export interface MoveDependant { table: string; filterColumn?: string; via?: { columns: string[]; refTable: string; refColumns: string[] }; parents: string[] }
 export interface MoveGuard { table: string; columns: string[]; refTable: string; refColumns: string[]; onDelete: string }
 
 /**
  * Which rows must travel with a vertical when it leaves the DEFAULT partitions of `roots`, derived from the live FK
- * graph: every table reaching a moved table through an ON DELETE CASCADE foreign key that carries vertical_id is
- * copied and re-inserted (parents first); any other foreign key into a moved table becomes a guard that stops the
- * draft if such rows exist (their rows would otherwise be deleted, nulled or block the delete).
+ * graph: every table reaching a moved table through an ON DELETE CASCADE foreign key is copied and re-inserted
+ * (parents first) — selected by vertical_id when the FK carries it, otherwise through the FK into the parent's copied
+ * rows; any other foreign key into a moved table (NO ACTION / RESTRICT / SET NULL / SET DEFAULT) becomes a guard that
+ * stops the draft if such rows exist (they would otherwise block the delete or lose their reference).
  */
 export function movePlan(fks: { constraint: string; table: string; refTable: string; columns: string[]; refColumns: string[]; onDelete: string }[], roots: string[] = ['intents', 'matches']): { dependants: MoveDependant[]; guards: MoveGuard[] } {
   const moved = new Set(roots);
@@ -97,10 +100,16 @@ export function movePlan(fks: { constraint: string; table: string; refTable: str
     for (const fk of fks) {
       if (!frontier.includes(fk.refTable) || roots.includes(fk.table)) continue;
       const vi = fk.refColumns.indexOf('vertical_id');
-      if (fk.onDelete === 'c' && vi >= 0) {
+      if (fk.onDelete === 'c') {
         const d = found.get(fk.table);
-        if (d) { if (!d.parents.includes(fk.refTable)) d.parents.push(fk.refTable); continue; }
-        found.set(fk.table, { table: fk.table, filterColumn: fk.columns[vi]!, parents: [fk.refTable] });
+        if (d) {
+          if (!d.parents.includes(fk.refTable)) d.parents.push(fk.refTable);
+          if (!d.filterColumn && vi >= 0) { d.filterColumn = fk.columns[vi]!; delete d.via; } // prefer the vertical column
+          continue;
+        }
+        found.set(fk.table, vi >= 0
+          ? { table: fk.table, filterColumn: fk.columns[vi]!, parents: [fk.refTable] }
+          : { table: fk.table, via: { columns: fk.columns, refTable: fk.refTable, refColumns: fk.refColumns }, parents: [fk.refTable] });
         moved.add(fk.table);
         next.push(fk.table);
       } else {
@@ -142,12 +151,15 @@ export function partitionMoveSql(a: { verticalId: number; code: string; intentsD
   const mdf = quoteIdent(a.matchesDefault);
   const t = (s: string) => quoteIdent(`ul_mv${v}_${s}`.slice(0, 63));
   const deps = a.plan.dependants;
+  const where = (d: MoveDependant) => d.filterColumn
+    ? `${quoteIdent(d.filterColumn)} = ${v}`
+    : `(${d.via!.columns.map(quoteIdent).join(', ')}) IN (SELECT ${d.via!.refColumns.map(quoteIdent).join(', ')} FROM ${t(d.via!.refTable)})`;
   const lines: string[] = [`SET LOCAL lock_timeout = '10s';`, '',
     `-- copy vertical ${v} rows and their dependants (${deps.map((d) => d.table).join(', ') || 'none'}), delete them from the DEFAULT`,
     '-- partitions (FK cascades remove the dependants), create the partitions, re-insert everything with the same ids',
     `CREATE TEMP TABLE ${t('intents')} ON COMMIT DROP AS SELECT * FROM ${idf} WHERE vertical_id = ${v};`,
     `CREATE TEMP TABLE ${t('matches')} ON COMMIT DROP AS SELECT * FROM ${mdf} WHERE vertical_id = ${v};`,
-    ...deps.map((d) => `CREATE TEMP TABLE ${t(d.table)} ON COMMIT DROP AS SELECT * FROM ${quoteIdent(d.table)} WHERE ${quoteIdent(d.filterColumn)} = ${v};`)];
+    ...deps.map((d) => `CREATE TEMP TABLE ${t(d.table)} ON COMMIT DROP AS SELECT * FROM ${quoteIdent(d.table)} WHERE ${where(d)};`)];
   for (const g of a.plan.guards) {
     const cols = g.columns.map((c) => `x.${quoteIdent(c)}`).join(', ');
     const refs = g.refColumns.map((c) => `r.${quoteIdent(c)}`).join(', ');
@@ -166,7 +178,7 @@ export function partitionMoveSql(a: { verticalId: number; code: string; intentsD
     `  IF EXISTS (SELECT 1 FROM ${idf} WHERE vertical_id = ${v}) OR EXISTS (SELECT 1 FROM ${mdf} WHERE vertical_id = ${v})`,
     `     OR (SELECT count(*) FROM ${ip}) <> (SELECT count(*) FROM ${t('intents')})`,
     `     OR (SELECT count(*) FROM ${mp}) <> (SELECT count(*) FROM ${t('matches')})`,
-    ...deps.map((d) => `     OR (SELECT count(*) FROM ${quoteIdent(d.table)} WHERE ${quoteIdent(d.filterColumn)} = ${v}) <> (SELECT count(*) FROM ${t(d.table)})`),
+    ...deps.map((d) => `     OR (SELECT count(*) FROM ${quoteIdent(d.table)} WHERE ${where(d)}) <> (SELECT count(*) FROM ${t(d.table)})`),
     '  THEN',
     `    RAISE EXCEPTION 'vertical ${v} move incomplete';`,
     '  END IF;',

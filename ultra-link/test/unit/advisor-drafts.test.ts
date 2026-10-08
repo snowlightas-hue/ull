@@ -55,15 +55,17 @@ const GRAPH = [
   fk('match_refs', ['vertical_id', 'match_id'], 'matches', ['vertical_id', 'id']),
   fk('contact_requests', ['vertical_id', 'match_id'], 'matches', ['vertical_id', 'id']),
   fk('connections', ['contact_vertical_id', 'contact_match_id', 'requester_id'], 'contact_requests', ['vertical_id', 'match_id', 'requester_id']),
+  fk('connections', ['id'], 'connection_owners', ['id'], 'n'),
+  fk('connection_messages', ['connection_id'], 'connections', ['id']),
   fk('reviews', ['match_public_id'], 'match_refs', ['public_id'], 'a'),
   fk('intents', ['user_id'], 'users', ['id']),
 ];
 
 test('movePlan: cascading vertical-keyed dependants travel (parents first); anything else becomes a guard', () => {
   const plan = movePlan(GRAPH);
-  assert.deepEqual(plan.dependants.map((d) => `${d.table}:${d.filterColumn}`), [
-    'contact_requests:vertical_id', 'connections:contact_vertical_id', 'intent_refs:vertical_id', 'intent_scopes:vertical_id', 'live_positions:vertical_id',
-    'match_refs:vertical_id', 'match_runs:vertical_id',
+  assert.deepEqual(plan.dependants.map((d) => `${d.table}:${d.filterColumn ?? `via ${d.via!.refTable}`}`), [
+    'contact_requests:vertical_id', 'connections:contact_vertical_id', 'connection_messages:via connections', 'intent_refs:vertical_id', 'intent_scopes:vertical_id',
+    'live_positions:vertical_id', 'match_refs:vertical_id', 'match_runs:vertical_id',
   ]);
   assert.deepEqual(plan.guards.map((g) => `${g.table}->${g.refTable}:${g.onDelete}`), ['reviews->match_refs:a']);
 });
@@ -75,7 +77,9 @@ test('partitionMoveSql: validates the vertical id, moves exactly the planned tab
   assert.match(sql, /CREATE TABLE intents_pets_animals PARTITION OF intents FOR VALUES IN \(12\);/);
   assert.match(sql, /CREATE TEMP TABLE ul_mv12_connections ON COMMIT DROP AS SELECT \* FROM connections WHERE contact_vertical_id = 12;/);
   const inserts = [...sql.matchAll(/^INSERT INTO (\w+) /gm)].map((m) => m[1]);
-  assert.deepEqual(inserts, ['intents', 'matches', 'contact_requests', 'connections', 'intent_refs', 'intent_scopes', 'live_positions', 'match_refs', 'match_runs']);
+  assert.deepEqual(inserts, ['intents', 'matches', 'contact_requests', 'connections', 'connection_messages', 'intent_refs', 'intent_scopes', 'live_positions', 'match_refs', 'match_runs']);
+  assert.match(sql, /CREATE TEMP TABLE ul_mv12_connection_messages ON COMMIT DROP AS SELECT \* FROM connection_messages WHERE \(connection_id\) IN \(SELECT id FROM ul_mv12_connections\);/);
+  assert.ok(sql.indexOf('TEMP TABLE ul_mv12_connections ') < sql.indexOf('TEMP TABLE ul_mv12_connection_messages '), 'parent copied before child');
   assert.match(sql, /IF EXISTS \(SELECT 1 FROM reviews x WHERE \(x\.match_public_id\) IN \(SELECT r\.public_id FROM ul_mv12_match_refs r\)\) THEN/);
   assert.ok(sql.indexOf('FROM reviews x') < sql.indexOf('DELETE FROM matches_other'), 'guards run before anything is deleted');
   const verticals = [...sql.matchAll(/(?:vertical_id|contact_vertical_id) = (\d+)/g)].map((m) => m[1]);

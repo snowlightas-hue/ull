@@ -24,7 +24,7 @@ import { haversineKm } from './distance.ts';
 import { boundOf, COUNTERPART_GEO_UNC_MAX_KM, defaultNearestKm, effectivePoint, placeCentroid, PRECISE_FIX_MAX_M, type DistanceBound, type EffectivePoint } from './semantics.ts';
 
 /** Nearest-K cap per KNN direction (env UL_GEO_K). Hitting it sets `truncated` (the nearest K are always included). */
-export const GEO_K = Number(process.env.UL_GEO_K ?? 200);
+export const GEO_K = Number(process.env.UL_GEO_K ?? 100);
 /** Cap for the place-based directions (same as the engine's CANDIDATE_LIMIT default). */
 export const GEO_PLACE_LIMIT = Number(process.env.UL_CANDIDATE_LIMIT ?? 5000);
 /** earthdistance's sphere (6378.168 km) is 0.11 % larger than the haversine mean radius → widen the SQL box a little. */

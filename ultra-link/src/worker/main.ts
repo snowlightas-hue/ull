@@ -10,6 +10,7 @@ import { claim, complete, enqueue, fail, type Job } from '../repo/jobs.ts';
 import { setIntentStatus } from '../repo/intents.ts';
 import { notify } from '../repo/notifications.ts';
 import { latestRun, matchIntent, type MatchTrigger } from '../matching/engine.ts';
+import { runConnectionJob } from '../connections/jobs.ts';
 import type { Registry } from '../domain/registry.ts';
 
 /** Max intents one expire_sweep job expires (the next sweep continues). */
@@ -30,6 +31,7 @@ export async function runJob(pool: pg.Pool, reg: Registry, job: Job): Promise<'d
     await sweepExpired(pool, reg);
     return 'done';
   }
+  if (job.kind.startsWith('conn_')) return runConnectionJob(pool, job); // connections: archive sweep, location-share expiry
   throw new Error(`unknown job kind ${job.kind}`);
 }
 

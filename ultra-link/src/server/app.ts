@@ -24,6 +24,9 @@ import { enqueue } from '../repo/jobs.ts';
 import { emitUserEvent, listNotifications, markAllRead, markRead, notify } from '../repo/notifications.ts';
 import { counts, createSession, deleteSession, personaUser, registerUser, userForToken, type SessionUser } from '../repo/users.ts';
 import { hydrateMatches, latestRun, listMatches, matchIntent } from '../matching/engine.ts';
+import { contactRefusal, ConnError, openConnectionForMatch } from '../connections/repo.ts';
+import { decorateMatchCards } from '../connections/match-cards.ts';
+import { issueRecoveryCode } from '../connections/recovery.ts';
 import { EventHub } from './events.ts';
 import { perMinuteRule, type RouteContext, type RouteRateLimit, type UlRoutePlugin } from './context.ts';
 import { FEATURE_ROUTES } from './routes/index.ts';
@@ -244,9 +247,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   app.post('/api/auth/register', async (req, reply) => {
     const { displayName, phone } = body(z.object({ displayName: z.string().trim().min(1).max(80), phone: z.string().trim().max(30).regex(/^[0-9+()\-\s.]*$/).optional() }), req);
-    const user = await registerUser(pool, displayName, phone || null);
-    setCookie(reply, await createSession(pool, user.id));
-    return { user: publicUser(user) };
+    // MAJOR-6: a real account gets a one-time-shown recovery code (only its HMAC is stored; docs/CONNECTIONS.md)
+    const { user, token, recovery } = await withTx(pool, async (tx) => {
+      const created = await registerUser(tx, displayName, phone || null);
+      return { user: created, recovery: await issueRecoveryCode(tx, created.id), token: await createSession(tx, created.id) };
+    });
+    setCookie(reply, token);
+    return { user: publicUser(user), recoveryCode: recovery.code };
   });
   app.post('/api/auth/logout', async (req, reply) => {
     await deleteSession(pool, parseCookies(req.headers.cookie)[COOKIE]);
@@ -344,6 +351,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       run = await latestRun(pool, ref.verticalId, ref.id, row!.version);
     }
     const page = await listMatches(pool, reg, u(req).id, { intent: { verticalId: ref.verticalId, id: ref.id }, states: ['confirmed', 'possible'], limit: q.limit ?? 10 });
+    await decorateMatchCards(pool, u(req).id, page.items); // name only after accept; phone only while shared
     return {
       intentId: row!.public_id, version: row!.version, status,
       totals: run ? { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates } : { confirmed: 0, possible: 0, excluded: 0, candidates: 0 },
@@ -362,7 +370,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       intent = { verticalId: ref.verticalId, id: ref.id };
     }
     const states = q.state === 'invalidated' ? ['invalidated'] : q.state === 'confirmed' ? ['confirmed'] : q.state === 'possible' ? ['possible'] : q.state === 'all' ? ['confirmed', 'possible', 'invalidated'] : ['confirmed', 'possible'];
-    return listMatches(pool, reg, u(req).id, { intent, states, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 });
+    const page = await listMatches(pool, reg, u(req).id, { intent, states, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 });
+    await decorateMatchCards(pool, u(req).id, page.items); // name only after accept; phone only while shared
+    return page;
   });
   const ownMatch = async (req: FastifyRequest<{ Params: { id: string } }>) => {
     const id = uuidParam(req.params.id);
@@ -372,35 +382,48 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!rows[0]) throw new HttpError(404, 'not_found', 'غير موجود');
     return rows[0];
   };
-  app.get<{ Params: { id: string } }>('/api/matches/:id', async (req) => ({ match: (await hydrateMatches(pool, reg, u(req).id, [await ownMatch(req)]))[0] }));
+  app.get<{ Params: { id: string } }>('/api/matches/:id', async (req) => ({ match: (await decorateMatchCards(pool, u(req).id, await hydrateMatches(pool, reg, u(req).id, [await ownMatch(req)])))[0] }));
   app.post<{ Params: { id: string } }>('/api/matches/:id/contact', async (req) => {
     const m = await ownMatch(req);
     if (m.state === 'invalidated') throw new HttpError(409, 'match_invalidated', 'هذه المطابقة لم تعد صالحة');
     const { messageAr } = body(z.object({ messageAr: z.string().trim().max(500).optional() }), req);
     const me = u(req).id;
     const other = String(m.a_user_id) === me ? String(m.b_user_id) : String(m.a_user_id);
+    // connections (docs/CONNECTIONS.md): same realm only, never between blocked users (either direction), and not on a
+    // match whose connection already ended
+    const refusal = await contactRefusal(pool, { verticalId: m.vertical_id, matchId: String(m.id) }, me, other);
+    if (refusal) throw new HttpError(refusal.status, refusal.code, refusal.message);
     const { rows } = await pool.query(
       `INSERT INTO contact_requests (vertical_id, match_id, requester_id, recipient_id, message_ar) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (vertical_id, match_id, requester_id) DO UPDATE SET message_ar = coalesce(EXCLUDED.message_ar, contact_requests.message_ar) RETURNING public_id, status`,
       [m.vertical_id, m.id, me, other, messageAr ?? null],
     );
-    await notify(pool, { recipientId: other, kind: 'contact_request', titleAr: 'طلب تواصل جديد', bodyAr: 'شخص مهتم بمطابقة معك. وافق ليظهر لكما اسم ورقم كل منكما.', payload: { matchId: m.public_id, requestId: rows[0].public_id }, dedupeKey: `contact:${rows[0].public_id}` });
+    await notify(pool, { recipientId: other, kind: 'contact_request', titleAr: 'طلب تواصل جديد', bodyAr: 'شخص مهتم بمطابقة معك. إذا وافقت يظهر لكما الاسم فقط وتُفتح محادثة داخل التطبيق؛ الرقم لا يظهر إلا إذا شاركه صاحبه.', payload: { matchId: m.public_id, requestId: rows[0].public_id }, dedupeKey: `contact:${rows[0].public_id}` });
     await emitUserEvent(pool, me, 'match_update');
     return { contactRequest: { id: rows[0].public_id, status: rows[0].status } };
   });
   app.post<{ Params: { id: string } }>('/api/contact-requests/:id/respond', async (req) => {
     const id = uuidParam(req.params.id);
     const { accept } = body(z.object({ accept: z.boolean() }), req);
-    const { rows } = await pool.query(
-      `UPDATE contact_requests c SET status = $3, responded_at = now() FROM match_refs r
-        WHERE c.public_id = $1 AND c.recipient_id = $2 AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
-        RETURNING c.public_id, c.status, c.requester_id, r.public_id AS match_public_id`,
-      [id, u(req).id, accept ? 'accepted' : 'declined'],
-    );
-    if (!rows[0]) throw new HttpError(404, 'not_found', 'الطلب غير موجود أو تمت الإجابة عليه');
-    await notify(pool, { recipientId: String(rows[0].requester_id), kind: accept ? 'contact_accepted' : 'contact_declined', titleAr: accept ? 'تمت الموافقة على التواصل' : 'تم رفض طلب التواصل', bodyAr: accept ? 'افتح المطابقة لترى الاسم ورقم التواصل.' : undefined, payload: { matchId: rows[0].match_public_id }, dedupeKey: `contact-reply:${rows[0].public_id}` });
+    // accept and open the connection («ربط») in ONE transaction: one connection per match even under concurrent
+    // accepts; accept reveals the display name only (the phone needs the owner's explicit «شارك رقمي»)
+    const res = await withTx(pool, async (tx) => {
+      const { rows } = await tx.query(
+        `UPDATE contact_requests c SET status = $3, responded_at = now() FROM match_refs r
+          WHERE c.public_id = $1 AND c.recipient_id = $2 AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
+          RETURNING c.public_id, c.status, c.requester_id, c.vertical_id, c.match_id, r.public_id AS match_public_id`,
+        [id, u(req).id, accept ? 'accepted' : 'declined'],
+      );
+      if (!rows[0]) return null;
+      const connection = accept ? await openConnectionForMatch(tx, { verticalId: rows[0].vertical_id, matchId: String(rows[0].match_id) }) : null;
+      return { row: rows[0], connection };
+    }).catch((e) => { throw e instanceof ConnError ? new HttpError(e.status, e.code, e.message) : e; });
+    if (!res) throw new HttpError(404, 'not_found', 'الطلب غير موجود أو تمت الإجابة عليه');
+    const { row, connection } = res;
+    await notify(pool, { recipientId: String(row.requester_id), kind: accept ? 'contact_accepted' : 'contact_declined', titleAr: accept ? 'تمت الموافقة على التواصل' : 'تم رفض طلب التواصل', bodyAr: accept ? 'صار بإمكانكما المحادثة داخل التطبيق. يظهر الاسم فقط؛ الرقم لا يظهر إلا إذا شاركه صاحبه.' : undefined, payload: { matchId: row.match_public_id, ...(connection ? { connectionId: connection.publicId } : {}) }, dedupeKey: `contact-reply:${row.public_id}` });
     await emitUserEvent(pool, u(req).id, 'match_update');
-    return { contactRequest: { id: rows[0].public_id, status: rows[0].status } };
+    await emitUserEvent(pool, String(row.requester_id), 'match_update');
+    return { contactRequest: { id: row.public_id, status: row.status }, ...(connection ? { connection: { id: connection.publicId, status: connection.status } } : {}) };
   });
 
   // ── notifications (recipient-only)

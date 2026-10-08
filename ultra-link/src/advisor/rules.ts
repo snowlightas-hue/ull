@@ -253,7 +253,7 @@ export function statementProposals(stmts: StatementStat[] | null, t: Thresholds 
     const q = s.query.replace(/\s+/g, ' ').trim();
     out.push({
       kind: 'index', dedupeKey: `index:statement:${s.queryId}`,
-      title: `Slow statement: mean ${s.meanMs.toFixed(1)} ms × ${s.calls} calls — ${q.slice(0, 70)}${q.length > 70 ? '…' : ''}`,
+      title: `Slow statement: mean ${s.meanMs.toFixed(1)} ms × ${s.calls} calls, ${Math.round(s.rowsPerCall)} rows/call — ${q.slice(0, 60)}${q.length > 60 ? '…' : ''}`,
       rationale: `pg_stat_statements: mean ${s.meanMs.toFixed(1)} ms, ${Math.round(s.totalMs)} ms total, ${s.rowsPerCall.toFixed(1)} rows and ` +
         `${Math.round(s.blocksPerCall)} buffers per call. Run EXPLAIN (ANALYZE, BUFFERS) with representative parameters before deciding on an index.`,
       evidence: { queryId: s.queryId, query: q.slice(0, 600), calls: s.calls, meanMs: Math.round(s.meanMs * 100) / 100, totalMs: Math.round(s.totalMs), rowsPerCall: Math.round(s.rowsPerCall * 10) / 10, blocksPerCall: Math.round(s.blocksPerCall) },

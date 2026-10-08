@@ -92,7 +92,7 @@ test('unused indexes: never on young statistics; never unique/primary/constraint
 });
 
 test('fkCovered: leading columns in any order; partition-key columns are implied; partial indexes only with IS NOT NULL', () => {
-  const fk = (table: string, columns: string[], partitionColumns: string[] = [], onDelete = 'c', refDeletes = 0) => ({ constraint: 'c', table, refTable: 'r', columns, partitionColumns, onDelete, refDeletes });
+  const fk = (table: string, columns: string[], partitionColumns: string[] = [], onDelete = 'c', refDeletes = 0) => ({ constraint: 'c', table, refTable: 'r', columns, refColumns: columns, partitionColumns, onDelete, refDeletes });
   const ix = (table: string, keyColumns: string[], predicate: string | null = null) => ({ index: `${table}_${keyColumns.join('_')}`, table, keyColumns, predicate });
   assert.equal(fkCovered(fk('intent_refs', ['vertical_id', 'intent_id']), [ix('intent_refs', ['intent_id', 'vertical_id'])]), true);
   assert.equal(fkCovered(fk('intent_refs', ['vertical_id', 'intent_id']), [ix('intent_refs', ['public_id']), ix('intent_refs', ['vertical_id', 'user_id', 'intent_id'])]), false);
@@ -138,7 +138,7 @@ test('buildProposals: one list, deduplicated by key, evidence stamped with the c
     statsAgeHours: 2,
     notes: ['pg_stat_statements not installed'],
     unknownTerms: [{ term: 'x', categoryId: 0, categoryCode: null, hits: 9, firstSeen: 'a', lastSeen: 'b' }, { term: 'x', categoryId: 0, categoryCode: null, hits: 9, firstSeen: 'a', lastSeen: 'b' }],
-    foreignKeys: [{ constraint: 'c', table: 'a', refTable: 'b', columns: ['b_id'], partitionColumns: [], onDelete: 'c', refDeletes: 0 }],
+    foreignKeys: [{ constraint: 'c', table: 'a', refTable: 'b', columns: ['b_id'], refColumns: ['id'], partitionColumns: [], onDelete: 'c', refDeletes: 0 }],
   });
   const { proposals, notes } = buildProposals(c);
   assert.deepEqual(proposals.map((p) => p.dedupeKey), ['index:fk:a:b_id', 'lexicon:unmapped:x']);
