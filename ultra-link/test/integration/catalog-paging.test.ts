@@ -10,11 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness, Client, type Harness } from './server-helpers.ts';
 import { catalogRoutes } from '../../src/server/routes/catalog.ts';
+import { INTENT_COLS } from '../../src/repo/intents.ts';
+import { closeTolerant } from './catalog-helpers.ts';
 
 let h: Harness;
 const mediaDir = mkdtempSync(join(tmpdir(), 'ul-catalog-paging-'));
 before(async () => { h = await harness(`catalog_paging_${process.pid}`, { routes: [catalogRoutes({ mediaDir })], featureRoutes: false }); });
-after(async () => { await h?.close(); rmSync(mediaDir, { recursive: true, force: true }); });
+after(async () => { await closeTolerant(h); rmSync(mediaDir, { recursive: true, force: true }); });
 
 const ITEMS = ['موبايل', 'لابتوب', 'تابلت', 'شاشة', 'كمبيوتر', 'ايباد'];
 const COLORS = ['أحمر', 'أزرق', 'أسود', 'أبيض', 'ذهبي'];
@@ -100,6 +102,26 @@ test('120 products: exact totals, keyset pages forward and back, status filters,
   assert.equal((await owner.get(`/api/stores/${s.id}/items?status=closed`)).status, 400, 'deleted products are not listable');
   assert.equal((await owner.get(`/api/stores/${s.id}/items?limit=101`)).status, 400);
 
+  // planning vs execution: the product page and its exact total as plain vs NAMED (prepared) statements (src/catalog/repo.ts#q)
+  const sid = (await h.db.pool.query('SELECT id FROM stores WHERE public_id = $1', [s.id])).rows[0].id;
+  const statuses = ['active', 'paused', 'expired', 'fulfilled'];
+  const J = 'FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id JOIN stores s ON s.id = si.store_id WHERE si.store_id = $1 AND i.status = ANY($2)';
+  const client = await h.db.pool.connect();
+  const cmp: string[] = [];
+  try {
+    for (const [label, text] of [['page', `SELECT ${INTENT_COLS}, si.position ${J} ORDER BY si.position LIMIT 21`], ['total', `SELECT count(*) ${J}`]] as const) {
+      for (const named of [false, true]) {
+        const run = () => client.query(named ? { name: `cmp_${label}`, text, values: [sid, statuses] } : { text, values: [sid, statuses] });
+        for (let i = 0; i < 8; i++) await run();
+        const ts: number[] = [];
+        for (let i = 0; i < 25; i++) { const t1 = performance.now(); await run(); ts.push(performance.now() - t1); }
+        ts.sort((a, b) => a - b);
+        cmp.push(`${label} ${named ? 'named' : 'plain'} p50 ${ts[12]!.toFixed(2)} ms`);
+      }
+    }
+  } finally { client.release(); }
+  console.log(`# measured (this machine): ${cmp.join('; ')}`);
+
   console.log(`# measured (this machine, isolated test DB): preview 120 lines ${previewMs.toFixed(0)} ms; confirm 120 lines incl. inline matching ${confirmMs.toFixed(0)} ms; slowest page of 25 ${pageMs.toFixed(1)} ms`);
 });
 
@@ -128,4 +150,24 @@ test('the 1,000-products-per-store cap is enforced at confirm (exact count, noth
   const last = (await owner.get(`/api/stores/${s.id}/items?limit=100&dir=prev&cursor=${Buffer.from(JSON.stringify({ k: 1_000_000, id: '1' })).toString('base64url')}`)).body;
   assert.deepEqual([last.rangeStart, last.rangeEnd, last.total], [901, 1000, 1000]);
   console.log(`# measured (this machine): confirm of 200 lines into one store, 5 batches: ${times.map((t) => t.toFixed(0)).join(' / ')} ms (incl. inline matching of every new product)`);
+
+  // bulk status path on a full store: 1,000 setIntentStatus + 1,000 jobs in one transaction; the first
+  // UL_CATALOG_INLINE_MATCH (250) re-matched inline, the rest left to the worker through the enqueued jobs
+  let t0 = performance.now();
+  const pause = await owner.post(`/api/stores/${s.id}/status`, { action: 'pause' });
+  const pauseMs = performance.now() - t0;
+  assert.equal(pause.status, 200, pause.raw);
+  assert.equal(pause.body.changed, 1000);
+  assert.deepEqual([pause.body.matching.evaluated, pause.body.matching.queued], [250, 750]);
+  const jobs = await h.db.pool.query(
+    `SELECT count(*)::int AS n FROM jobs j JOIN store_items si ON si.vertical_id = (j.payload->>'verticalId')::smallint AND si.intent_id = (j.payload->>'intentId')::bigint
+       JOIN stores st ON st.id = si.store_id
+      WHERE j.kind = 'match_intent' AND j.status = 'pending' AND j.payload->>'trigger' = 'status' AND st.public_id = $1`, [s.id]);
+  assert.equal(jobs.rows[0].n, 1000, 'one job per paused product (the inline ones are no-ops for the worker)');
+  t0 = performance.now();
+  const resume = await owner.post(`/api/stores/${s.id}/status`, { action: 'resume' });
+  const resumeMs = performance.now() - t0;
+  assert.equal(resume.body.changed, 1000);
+  assert.equal((await owner.get(`/api/stores/${s.id}`)).body.store.counts.active, 1000);
+  console.log(`# measured (this machine): pause a 1,000-product store ${pauseMs.toFixed(0)} ms, resume ${resumeMs.toFixed(0)} ms (each: 1,000 status changes + jobs in one transaction, 250 re-matched inline)`);
 });

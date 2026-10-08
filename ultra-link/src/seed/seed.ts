@@ -6,6 +6,7 @@ import { closePools, getPool } from '../db/pool.ts';
 import { migrate } from '../db/migrate.ts';
 import { loadRegistry, syncReference } from './reference.ts';
 import { seedDemo } from './demo.ts';
+import { seedDemoStores } from './stores-demo.ts';
 
 loadEnv();
 const test = process.argv.includes('--test');
@@ -26,7 +27,10 @@ try {
   }
   const hasDemo = (await pool.query("SELECT 1 FROM users WHERE realm = 'synthetic' LIMIT 1")).rowCount! > 0;
   if (process.argv.includes('--demo-if-new') && hasDemo) console.log('demo data already present — kept as is');
-  else if (!process.argv.includes('--no-demo')) await seedDemo(pool, reg);
+  else if (!process.argv.includes('--no-demo')) {
+    await seedDemo(pool, reg);
+    await seedDemoStores(pool, reg); // one synthetic shop with 25 products (idempotent)
+  }
 } catch (e) {
   console.error((e as Error).stack);
   process.exitCode = 1;

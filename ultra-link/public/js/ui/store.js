@@ -13,8 +13,9 @@
 
 import { h, s, mount, uid } from './dom.js';
 import { icon } from './icons.js';
-import { ar, formatRange, formatNumber, parseAmountToMinor, minorToInput, toLatinDigits } from './format.js';
+import { ar, formatCount, formatRange, formatNumber, minorToInput, NOUNS, parseAmountToMinor, toLatinDigits } from './format.js';
 
+const matchesAr = (n) => formatCount(Number(n) || 0, NOUNS.match);
 const PRODUCT = { one: 'منتج واحد', two: 'منتجان', few: 'منتجات', many: 'منتجًا', other: 'منتج', zero: 'لا منتجات' };
 const PHOTO_MAX = 5 * 1024 * 1024;
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -72,6 +73,34 @@ export function groupMatchesByStore(items) {
     } else out.push({ kind: 'single', item: m });
   }
   return out;
+}
+
+/**
+ * Decorate rendered match cards (lists and home results): store badge + product photos on each card, and a
+ * «٣ منتجات من متجر …» heading before the first card of a group (same request, same store). Idempotent.
+ */
+export function decorateStoreMatches(root, items) {
+  if (!root) return;
+  const cardOf = (m) => root.querySelector(`[data-id="${CSS.escape(String(m.id))}"]`);
+  for (const g of groupMatchesByStore(items)) {
+    const list = g.kind === 'store' ? g.items : [g.item];
+    for (const m of list) {
+      const card = m && cardOf(m);
+      if (!card || card.dataset.storeDecorated) continue;
+      card.dataset.storeDecorated = '1';
+      const title = card.querySelector('.card-title') ?? card.firstElementChild;
+      const photos = matchPhotos(m);
+      const badge = storeBadge(m);
+      if (photos) title?.after(photos);
+      if (badge) title?.after(badge);
+    }
+    if (g.kind === 'store' && g.items.length > 1) {
+      const first = cardOf(g.items[0]);
+      if (first && !first.previousElementSibling?.classList.contains('st-group-head')) {
+        first.before(h('p', { class: 'st-group-head' }, storeGlyph(18), h('span', null, storeGroupLabel(g.store))));
+      }
+    }
+  }
 }
 
 function storeGlyph(size = 22) {
@@ -157,13 +186,12 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
   function entry(el) {
     st.el = el;
     const titleId = uid('st-entry');
-    const sub = h('p', { class: 'st-entry-sub' }, 'اعرض محلك كله: منتجات بأسعارها وصورها، وكل منتج يُطابَق مع من يحتاجه.');
-    const btn = h('button', { type: 'button', class: 'btn btn-primary st-entry-btn', onClick: () => open() }, storeGlyph(18), 'افتح متجري');
-    api.get('/api/stores').then((r) => {
-      st.stores = r.items;
-      if (!r.items.length) { btn.lastChild.textContent = 'أنشئ متجرك'; return; }
-      sub.textContent = ar(r.items.map((x) => `${x.labelAr}: ${productCount(x.counts.total)}${x.status === 'paused' ? ' (موقوف)' : ''}`).join(' — '));
-    }).catch(() => {});
+    // no request here: «عروضي» renders often, and the summary below needs none until the store screen was opened once
+    const known = st.stores;
+    const sub = h('p', { class: 'st-entry-sub' }, known && known.length
+      ? ar(known.map((x) => `${x.labelAr}: ${productCount(x.counts.total)}${x.status === 'paused' ? ' (موقوف)' : ''}`).join(' — '))
+      : 'اعرض محلك كله: منتجات بأسعارها وصورها، وكل منتج يُطابَق مع من يحتاجه.');
+    const btn = h('button', { type: 'button', class: 'btn btn-primary st-entry-btn', onClick: () => open() }, storeGlyph(18), known && !known.length ? 'أنشئ متجرك' : 'افتح متجري');
     return h('section', { class: 'card st-entry', 'aria-labelledby': titleId },
       h('div', { class: 'st-entry-head' }, storeGlyph(), h('h2', { class: 'st-entry-title', id: titleId }, 'متجري')), sub, btn);
   }
@@ -255,7 +283,7 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
       type: 'button', class: ['btn', 'btn-sm', paused ? 'btn-ok' : null], dataset: { key: 'store-status' },
       onClick: () => run(toggle, async () => {
         const r = await api.post(`/api/stores/${s0.id}/status`, { action: paused ? 'resume' : 'pause' });
-        notify(paused ? `استُؤنف المتجر — عادت ${productCount(r.changed)} للمطابقة` : `أُوقف المتجر مؤقتًا — ${productCount(r.changed)} لم تعد تظهر لأحد${r.matching?.invalidated ? ` و${formatNumber(r.matching.invalidated)} مطابقة أُوقفت` : ''}`);
+        notify(paused ? `استُؤنف المتجر — عادت ${productCount(r.changed)} للمطابقة` : `أُوقف المتجر مؤقتًا — ${productCount(r.changed)} لم تعد تظهر لأحد${r.matching?.invalidated ? ` و${matchesAr(r.matching.invalidated)} أُوقفت` : ''}`);
         onChange();
         await refresh();
       }),
@@ -323,7 +351,7 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
         h('span', { class: ['status-chip', `status-${it.status}`] }, statusAr)),
       chips.length ? h('ul', { class: 'chips chips-compact', role: 'list' }, chips.map((c) => h('li', { class: 'chip' }, ar(c)))) : null,
       priceBlock(s0, it),
-      h('p', { class: 'st-item-matches' }, matches ? ar(`${formatNumber(matches)} ${matches === 1 ? 'مطابقة' : matches === 2 ? 'مطابقتان' : 'مطابقات'} مع طلبات الناس`) : 'لا مطابقات حاليًا'),
+      h('p', { class: 'st-item-matches' }, matches ? ar(`${matchesAr(matches)} مع طلبات الناس`) : 'لا مطابقات حاليًا'),
       photosBlock(s0, it),
       live ? h('div', { class: 'card-actions' }, pauseBtn, deleteButton(s0, it)) : h('div', { class: 'card-actions' }, deleteButton(s0, it)));
   }
@@ -352,7 +380,7 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
         const r = await api.patch(`/api/stores/${s0.id}/items/${it.id}`, body);
         st.editing = null;
         const inv = r.matching?.invalidated || 0;
-        notify(`حُدّث السعر${inv ? ` — ${formatNumber(inv)} مطابقة لم تعد مناسبة` : ''}${r.matching?.newMatches ? ` — ${formatNumber(r.matching.newMatches)} مطابقة جديدة` : ''}`);
+        notify(`حُدّث السعر${inv ? ` — ${matchesAr(inv)} لم تعد مناسبة` : ''}${r.matching?.newMatches ? ` — جديد: ${matchesAr(r.matching.newMatches)}` : ''}`);
         await refresh();
         restoreFocus(`${k}:price`);
       } catch (e) {
@@ -450,7 +478,7 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
     const r = await api.post(`/api/stores/${s0.id}/items/${it.id}/status`, { action });
     const inv = r.matching?.invalidated || 0;
     const msg = { pause: 'أُوقف المنتج مؤقتًا', resume: 'عاد المنتج للمطابقة', delete: 'حُذف المنتج' }[action];
-    notify(`${msg}${inv ? ` — ${formatNumber(inv)} مطابقة لم تعد فعّالة` : ''}${r.matching?.newMatches ? ` — ${formatNumber(r.matching.newMatches)} مطابقة جديدة` : ''}`);
+    notify(`${msg}${inv ? ` — ${matchesAr(inv)} لم تعد فعّالة` : ''}${r.matching?.newMatches ? ` — جديد: ${matchesAr(r.matching.newMatches)}` : ''}`);
     onChange();
     await refresh();
     if (action === 'delete') st.el?.querySelector('.st-title')?.focus();
@@ -630,7 +658,7 @@ export function createStoreUi({ api, toast = () => {}, onExit = () => {}, onChan
     try {
       const res = await postFull(`/api/stores/${s0.id}/import/confirm`, { importId: st.importId, items, defaultCurrency: st.importCurrency || null });
       const m = res.matching;
-      notify(`${res.replay ? 'حُفظت سابقًا' : 'أُضيفت'} ${productCount(res.created)} إلى متجرك${m && (m.confirmed + m.possible) ? ` — ${formatNumber(m.confirmed + m.possible)} مطابقة مع طلبات الناس` : ''}${res.storeStatus === 'paused' ? ' (المتجر موقوف: لن تظهر حتى تستأنفه)' : ''}`);
+      notify(`${res.replay ? 'حُفظت سابقًا' : 'أُضيفت'} ${productCount(res.created)} إلى متجرك${m && (m.confirmed + m.possible) ? ` — ${matchesAr(m.confirmed + m.possible)} مع طلبات الناس` : ''}${res.storeStatus === 'paused' ? ' (المتجر موقوف: لن تظهر حتى تستأنفه)' : ''}`);
       st.importText = '';
       st.preview = null;
       st.rows = [];

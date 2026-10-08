@@ -152,3 +152,49 @@ type Message = { seq: number /* 1..n per connection, gap-free */; mine: boolean;
 Notifications: `contact_accepted` (payload `connectionId`), `connection_message` (one per connection and recipient,
 refreshed, body = unread count, never the text), `location_share_started`, `location_share_ended`.
 Jobs: `conn_sweep`, `conn_location_end` (worker: `job.kind.startsWith('conn_')` → `runConnectionJob`). Env: `UL_RECOVERY_PEPPER`, `UL_CONN_SWEEP_MS`.
+
+## Stores & catalog (V2.3 — owner: catalog role; details in `docs/CATALOG.md`)
+Plugin `src/server/routes/catalog.ts` (`catalogRoutes({ mediaDir? })`, default export uses `UL_MEDIA_DIR` or `var/media`).
+Owner-only: another user's store / product / photo → **404**, logged out → **401**. A product **is** an ordinary
+`provide` intent (sale | rent) linked by `store_items`; its id is the intent's public id, so `/api/intents/:id` and the
+match APIs see it unchanged. Realm = the owner's realm (synthetic stores never match real users).
+
+| Method | Path | Body / Query | Response |
+|---|---|---|---|
+| GET | /api/stores | – | `{items: Store[], limits}` (≤ 5 stores per user) |
+| POST | /api/stores | `{nameAr 2..80, descriptionAr?, placeId, contactPref?: 'chat'|'chat_then_phone', hoursAr?}` | `{store}`; 409 `store_limit`; 422 `bad_place` |
+| GET | /api/stores/:id | – | `{store}` |
+| PATCH | /api/stores/:id | `{expectedVersion, …same fields}` | `{store, matching}`; 409 `version_conflict`. A new `placeId` moves every product (new versions → re-match) |
+| POST | /api/stores/:id/status | `{action:'pause'|'resume'}` | `{store, changed, matching}`; pause = every active product paused (matches invalidated); resume = only what the store paused |
+| GET | /api/stores/:id/items | `status=all|active|paused|expired|fulfilled[,…]&cursor=&dir=next|prev&limit=1..100` | `Page<Product>` (catalog order, exact `total`) |
+| GET | /api/stores/:id/items/:itemId | – | `{item: Product}` |
+| PATCH | /api/stores/:id/items/:itemId | `{expectedVersion, nameAr?, amount?: "300"|"12.5", currency?, unit?, negotiable?, condition?: 'new'|'used'|null}` | `{item, matching}`; 409 `version_conflict`/`duplicate` |
+| POST | /api/stores/:id/items/:itemId/status | `{action:'pause'|'resume'|'delete'}` | `{item|null, matching}`; 409 `store_paused` (resume while the store is paused). delete = close the intent + unlink (photos go too) |
+| POST | /api/stores/:id/import/preview | `{text ≤ 200 lines, defaultCurrency?, defaultDeal?}` | `{lines: PreviewLine[], summary:{total, ok, withProblems, duplicates}, limits:{maxLines, maxProducts, remaining}, defaults}` — saves nothing |
+| POST | /api/stores/:id/import/confirm | `{importId: uuid, items: ItemInput[1..200], defaultCurrency?, defaultDeal?}` | `{importId, created, items: string[], replay, storeStatus, products: Product[≤50], matching}`; same importId + same list → `replay: true`, nothing created; same importId + other list → 409 `import_id_reused`; any line with a problem → **422 `import_invalid` + `lines: PreviewLine[]`** (nothing saved); 422 `product_limit` (1,000 per store) |
+| POST | /api/stores/:id/items/:itemId/photos | raw bytes, `Content-Type: image/jpeg|image/png|image/webp|application/octet-stream` | 201 `{photo:{id,url,slot,width,height,mime,bytes}, deduplicated, alreadyAttached, metadataRemoved}` (200 when the same image is already on the product); **413** > 5 MB; **415** not JPEG/PNG/WebP by magic bytes; 422 `bad_image`/`too_many_pixels`; 409 `photo_limit` (6) |
+| DELETE | /api/stores/:id/items/:itemId/photos/:photoId | – | `{ok}` (also `POST …/:photoId/delete`) |
+| GET | /api/photos/:photoId | – | the image: `Content-Type` from the sniffed type, `X-Content-Type-Options: nosniff`, `no-store`. Owner always; others only while the product and its store are active **and** they hold a live (confirmed/possible) match with it; else 404 |
+
+```ts
+type Store = { id: string; nameAr: string; labelAr: string /* + « (تجريبي)» when synthetic */; descriptionAr: string|null;
+  placeId: number; placeAr: string|null; contactPref: 'chat'|'chat_then_phone'; hoursAr: string|null; status: 'active'|'paused';
+  version: number; synthetic: boolean; counts: { total; active; paused; expired; fulfilled }; limits: {…}; createdAt; updatedAt };
+type Product = IntentCard & { storeId: string; nameAr: string; position: number; pausedByStore: boolean;
+  price: { minor: string; amount: string; currency: Currency|null; unit: PriceUnit|null; negotiable: boolean } | null;
+  condition: 'new'|'used'|null; photos: { id; url: '/api/photos/<id>'; slot: 1..6; width; height; mime; bytes }[] };
+type ItemInput = { line: string; nameAr?; categoryCode?; deal?: 'sale'|'rent'; amount?: string; currency?; unit?; condition?: 'new'|'used'|null; negotiable? };
+type PreviewLine = { lineNo; text; ok: boolean; nameAr; categoryCode|null; categoryAr|null; alternatives: {code,labelAr}[]; deal|null; dealAr|null;
+  price: Product['price']; priceAr|null; chips: {labelAr,valueAr}[]; condition|null;
+  problems: {code, field, messageAr}[];   // blocking: unknown_category, not_a_product, missing_price, missing_currency, ambiguous_lira,
+                                          // missing_deal, missing_unit, bad_amount, bad_condition, duplicate_existing, duplicate_in_batch, line_too_long, invalid
+  warnings: {code, field, messageAr}[];   // category_uncertain, currency_defaulted, deal_defaulted, place_ignored, looks_like_request, name_from_category, price_range
+  duplicateOf: { id?; nameAr; lineNo? } | null; item: ItemInput /* send back on confirm, possibly edited */ };
+type Matching = { evaluated; queued; newMatches; invalidated; confirmed; possible };   // inline re-match after the write
+```
+**MatchCard additions** (`attachStoreInfo(pool, reg, viewerId, cards)` in `src/catalog/match-cards.ts`, called by the
+integrator next to `decorateMatchCards`): `store?: { id, nameAr, labelAr, synthetic, placeAr, requestMatches, groupLabelAr }`
+when the counterpart is a store product (`requestMatches` = live matches of THIS request with that store's products;
+`groupLabelAr` e.g. «3 منتجات من متجر أبو أحمد للموبايلات (تجريبي)»), `other.photos` while the match is live, and
+`mineStore?: { id, nameAr, labelAr }` when the viewer's own side is a product. Jobs: unchanged (`match_intent` per
+product version). Env: `UL_MEDIA_DIR`, `UL_CATALOG_INLINE_MATCH` (250), `UL_CATALOG_MATCH_CONCURRENCY` (4).

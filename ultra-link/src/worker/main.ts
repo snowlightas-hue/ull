@@ -13,6 +13,8 @@ import { latestRun, matchIntent, type MatchTrigger } from '../matching/engine.ts
 import { runConnectionJob } from '../connections/jobs.ts';
 import type { Registry } from '../domain/registry.ts';
 import { purgeStaleLive } from '../geo/live.ts';
+import { gcMedia } from '../catalog/service.ts';
+import { MediaStore } from '../catalog/media-store.ts';
 
 /** Max intents one expire_sweep job expires (the next sweep continues). */
 export const SWEEP_MAX = Number(process.env.UL_SWEEP_MAX ?? 2000);
@@ -122,9 +124,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   };
   await sweep();
   const sweepTimer = setInterval(() => void sweep(), 60_000);
+  // unreferenced product photos (deleted products/stores) are removed after an hour
+  const media = new MediaStore();
+  const mediaTimer = setInterval(() => void gcMedia(pool, media).catch(() => {}), 3_600_000);
   console.log(`[worker] ${workerId} started`);
 
-  const shutdown = async () => { stopping = true; wake?.(); clearInterval(hb); clearInterval(sweepTimer); };
+  const shutdown = async () => { stopping = true; wake?.(); clearInterval(hb); clearInterval(sweepTimer); clearInterval(mediaTimer); };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
 

@@ -18,7 +18,7 @@ import { cleanImage, MediaError, sniffImage } from './media.ts';
 import { sha256Hex, type MediaStore } from './media-store.ts';
 import { amountToMinor, IMPORT_LIMITS, markDuplicates, normName, parseItem, previewLine, splitImportText, type ImportDefaults, type ItemInput, type ParsedItem, type PreviewLine } from './import.ts';
 import {
-  attachPhoto, CATALOG_LIMITS, collectUnreferencedBlobs, deletePhoto, existingNames, insertLinks, insertStore, itemCard, listOwnStores, liveItemCount,
+  attachPhoto, CATALOG_LIMITS, collectUnreferencedBlobs, deletePhoto, existingNames, insertLinks, insertStore, itemCard, itemCardsByIds, listOwnStores, liveItemCount,
   ownItem, ownStore, photoUrl, productCards, storeItemStates, storeViewOf, updateStoreRow, upsertBlob, type ProductCard, type StoreInput, type StoreRow, type StoreView,
 } from './repo.ts';
 
@@ -197,8 +197,7 @@ async function replayed(pool: Queryable, reg: Registry, user: SessionUser, store
   if (!rows[0]) return null;
   if (Buffer.compare(rows[0].request_hash, hash) !== 0) throw new CatalogError(409, 'import_id_reused', 'رقم هذه الإضافة استُخدم لقائمة مختلفة. أعد المعاينة ثم التأكيد.');
   const r = rows[0].result as { created: number; items: string[]; storeStatus: 'active' | 'paused' };
-  const products: ProductCard[] = [];
-  for (const id of r.items.slice(0, 50)) { const c = await itemCard(pool, reg, user.id, storeId, id); if (c) products.push(c); }
+  const products = await itemCardsByIds(pool, reg, user.id, storeId, r.items.slice(0, 50));
   return { importId, created: r.created, items: r.items, replay: true, storeStatus: r.storeStatus, products, matching: null };
 }
 
@@ -264,8 +263,7 @@ export async function confirmImport(pool: pg.Pool, reg: Registry, user: SessionU
   }
   // 'interactive': the owner is looking at this result now, so only the seekers are notified (not 200 owner toasts)
   const matching = out.result.storeStatus === 'active' ? await rematch(pool, reg, out.created, 'interactive') : null;
-  const products: ProductCard[] = [];
-  for (const id of out.result.items.slice(0, 50)) { const c = await itemCard(pool, reg, user.id, storeId, id); if (c) products.push(c); }
+  const products = await itemCardsByIds(pool, reg, user.id, storeId, out.result.items.slice(0, 50));
   return { importId: body.importId, ...out.result, replay: false, products, matching };
 }
 

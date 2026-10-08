@@ -48,12 +48,21 @@ export interface ProductCard extends IntentCard {
 
 const STORE_COLS = 's.id, s.public_id, s.owner_id, s.realm, s.name_ar, s.description_ar, s.place_id, s.contact_pref, s.hours_ar, s.status, s.version, s.next_position, s.created_at, s.updated_at';
 
+/**
+ * Hot reads run as NAMED (prepared) statements: planning a join over the 9 intents partitions costs more than running
+ * it (p50 plain → named, printed by test/integration/catalog-paging.test.ts: page 4.5–4.9 → 1.3–1.8 ms, total 5.4–6.5 → 2.7–4.3 ms;
+ * docs/CATALOG.md §7). One name ↔ one SQL text.
+ */
+export function q(db: Queryable, name: string, text: string, values: unknown[]) {
+  return db.query({ name: `ulcat_${name}`, text, values });
+}
+
 export const storeLabel = (name: string, synthetic: boolean) => (synthetic ? `${name} (تجريبي)` : name);
 export const photoUrl = (publicId: string) => `/api/photos/${publicId}`;
 
 // ───────────── stores ─────────────
 export async function ownStore(db: Queryable, ownerId: string, publicId: string, lock: '' | 'FOR UPDATE' = ''): Promise<StoreRow | null> {
-  const { rows } = await db.query(`SELECT ${STORE_COLS} FROM stores s WHERE s.public_id = $1 AND s.owner_id = $2 ${lock}`, [publicId, ownerId]);
+  const { rows } = await q(db, lock ? 'own_store_lock' : 'own_store', `SELECT ${STORE_COLS} FROM stores s WHERE s.public_id = $1 AND s.owner_id = $2 ${lock}`, [publicId, ownerId]);
   return rows[0] ? { ...rows[0], id: String(rows[0].id), owner_id: String(rows[0].owner_id) } : null;
 }
 
@@ -61,7 +70,7 @@ export async function storeCounts(db: Queryable, storeIds: string[]): Promise<Ma
   const out = new Map<string, StoreView['counts']>();
   for (const id of storeIds) out.set(id, { total: 0, active: 0, paused: 0, expired: 0, fulfilled: 0 });
   if (!storeIds.length) return out;
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'store_counts',
     `SELECT si.store_id, i.status, count(*)::int AS n FROM store_items si
        JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
       WHERE si.store_id = ANY($1::bigint[]) AND i.status = ANY($2) GROUP BY si.store_id, i.status`,
@@ -91,7 +100,7 @@ export async function storeViewOf(db: Queryable, reg: Registry, s: StoreRow): Pr
 }
 
 export async function listOwnStores(db: Queryable, reg: Registry, ownerId: string): Promise<StoreView[]> {
-  const { rows } = await db.query(`SELECT ${STORE_COLS} FROM stores s WHERE s.owner_id = $1 ORDER BY s.created_at, s.id`, [ownerId]);
+  const { rows } = await q(db, 'own_stores', `SELECT ${STORE_COLS} FROM stores s WHERE s.owner_id = $1 ORDER BY s.created_at, s.id`, [ownerId]);
   const stores: StoreRow[] = rows.map((r) => ({ ...r, id: String(r.id), owner_id: String(r.owner_id) }));
   const counts = await storeCounts(db, stores.map((s) => s.id));
   return stores.map((s) => toStoreView(reg, s, counts.get(s.id)!));
@@ -133,7 +142,7 @@ const ITEM_COLS = `${INTENT_COLS}, si.position, si.name_ar AS item_name, si.paus
 
 /** A product of one of the owner's stores, by the store's and the product's (intent's) public ids. */
 export async function ownItem(db: Queryable, ownerId: string, storePublicId: string, itemPublicId: string, lock: '' | 'FOR UPDATE OF si' = ''): Promise<{ link: ItemLink; row: ItemRow } | null> {
-  const { rows } = await db.query(
+  const { rows } = await q(db, lock ? 'own_item_lock' : 'own_item',
     `SELECT ${ITEM_COLS}, si.store_id ${ITEM_JOIN}
       JOIN intent_refs r ON r.vertical_id = si.vertical_id AND r.intent_id = si.intent_id
      WHERE r.public_id = $1 AND s.public_id = $2 AND s.owner_id = $3 ${lock}`,
@@ -147,7 +156,7 @@ export async function ownItem(db: Queryable, ownerId: string, storePublicId: str
 export async function photosFor(db: Queryable, keys: { v: number; id: string }[]): Promise<Map<string, PhotoRef[]>> {
   const out = new Map<string, PhotoRef[]>();
   if (!keys.length) return out;
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'photos_for',
     `SELECT p.public_id, p.vertical_id, p.intent_id, p.slot, b.width, b.height, b.mime, b.bytes
        FROM store_item_photos p JOIN media_blobs b ON b.sha256 = p.sha256
       WHERE (p.vertical_id, p.intent_id) IN (SELECT * FROM unnest($1::smallint[], $2::bigint[]))
@@ -166,7 +175,7 @@ export async function photosFor(db: Queryable, keys: { v: number; id: string }[]
 async function matchCounts(db: Queryable, keys: { v: number; id: string }[]): Promise<Map<string, { confirmed: number; possible: number }>> {
   const out = new Map<string, { confirmed: number; possible: number }>();
   if (!keys.length) return out;
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'match_counts',
     `SELECT x.v, x.id::text AS id, m.state, count(*)::int AS n
        FROM unnest($1::smallint[], $2::bigint[]) AS x(v, id)
        JOIN matches m ON m.vertical_id = x.v AND (m.a_intent_id = x.id OR m.b_intent_id = x.id)
@@ -209,21 +218,32 @@ export async function itemCard(db: Queryable, reg: Registry, ownerId: string, st
   return it ? (await productCards(db, reg, [it.row]))[0]! : null;
 }
 
+/** Several products of one of the owner's stores by public id (one query + photos + counts), in catalog order. */
+export async function itemCardsByIds(db: Queryable, reg: Registry, ownerId: string, storePublicId: string, itemPublicIds: string[]): Promise<ProductCard[]> {
+  if (!itemPublicIds.length) return [];
+  const { rows } = await q(db, 'items_by_ids',
+    `SELECT ${ITEM_COLS} ${ITEM_JOIN}
+      JOIN intent_refs r ON r.vertical_id = si.vertical_id AND r.intent_id = si.intent_id
+     WHERE r.public_id = ANY($1::uuid[]) AND s.public_id = $2 AND s.owner_id = $3 ORDER BY si.position`,
+    [itemPublicIds, storePublicId, ownerId]);
+  return productCards(db, reg, rows);
+}
+
 /** Keyset page of a store's products in catalog order (position), with the exact total for the status filter. */
 export async function listItems(db: Queryable, reg: Registry, storeId: string, opts: { statuses: string[]; cursor?: string | null; dir?: 'next' | 'prev'; limit: number }): Promise<Page<ProductCard>> {
   const base = `${ITEM_JOIN} WHERE si.store_id = $1 AND i.status = ANY($2)`;
-  const total = Number((await db.query(`SELECT count(*) ${base}`, [storeId, opts.statuses])).rows[0].count);
+  const total = Number((await q(db, 'items_total', `SELECT count(*) ${base}`, [storeId, opts.statuses])).rows[0].count);
   const cur = decodeCursor(opts.cursor);
   const prev = opts.dir === 'prev' && !!cur;
   const params: unknown[] = [storeId, opts.statuses, opts.limit + 1];
   let keyset = '';
   if (cur) { params.push(Number(cur.k)); keyset = prev ? 'AND si.position < $4' : 'AND si.position > $4'; }
-  const { rows } = await db.query(`SELECT ${ITEM_COLS} ${base} ${keyset} ORDER BY si.position ${prev ? 'DESC' : 'ASC'} LIMIT $3`, params);
+  const { rows } = await q(db, `items_page_${cur ? (prev ? 'prev' : 'next') : 'first'}`, `SELECT ${ITEM_COLS} ${base} ${keyset} ORDER BY si.position ${prev ? 'DESC' : 'ASC'} LIMIT $3`, params);
   const hasMore = rows.length > opts.limit;
   const page: ItemRow[] = rows.slice(0, opts.limit);
   if (prev) page.reverse();
   let rangeStart = 0;
-  if (page.length) rangeStart = Number((await db.query(`SELECT count(*) ${base} AND si.position < $3`, [storeId, opts.statuses, page[0]!.position])).rows[0].count) + 1;
+  if (page.length) rangeStart = Number((await q(db, 'items_before', `SELECT count(*) ${base} AND si.position < $3`, [storeId, opts.statuses, page[0]!.position])).rows[0].count) + 1;
   const items = await productCards(db, reg, page);
   const first = page[0];
   const last = page[page.length - 1];
@@ -238,7 +258,7 @@ export async function listItems(db: Queryable, reg: Registry, storeId: string, o
 
 /** Normalised names of the store's products (duplicate detection on import). */
 export async function existingNames(db: Queryable, storeId: string): Promise<Map<string, { id: string; nameAr: string }>> {
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'existing_names',
     `SELECT si.name_norm, si.name_ar, r.public_id FROM store_items si
        JOIN intent_refs r ON r.vertical_id = si.vertical_id AND r.intent_id = si.intent_id
        JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
@@ -250,7 +270,7 @@ export async function existingNames(db: Queryable, storeId: string): Promise<Map
 
 /** Products that count against the per-store cap (everything still linked and not closed). */
 export async function liveItemCount(db: Queryable, storeId: string): Promise<number> {
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'live_item_count',
     `SELECT count(*)::int AS n FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
       WHERE si.store_id = $1 AND i.status <> 'closed'`, [storeId]);
   return rows[0].n;
@@ -286,7 +306,7 @@ export interface PhotoAccess { sha256: Buffer; mime: string; bytes: number }
  * including "no such photo" — is null (→ 404), so a photo id reveals nothing.
  */
 export async function photoForViewer(db: Queryable, viewerId: string, photoPublicId: string): Promise<PhotoAccess | null> {
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'photo_access',
     `SELECT p.sha256, b.mime, b.bytes, i.user_id, i.status, s.status AS store_status, p.vertical_id, p.intent_id
        FROM store_item_photos p
        JOIN media_blobs b ON b.sha256 = p.sha256
@@ -301,7 +321,7 @@ export async function photoForViewer(db: Queryable, viewerId: string, photoPubli
   const access = { sha256: r.sha256 as Buffer, mime: r.mime as string, bytes: r.bytes as number };
   if (String(r.user_id) === String(viewerId)) return access;
   if (r.status !== 'active' || r.store_status !== 'active') return null;
-  const m = await db.query(
+  const m = await q(db, 'photo_match',
     `SELECT 1 FROM matches m WHERE m.vertical_id = $1 AND m.state IN ('confirmed','possible')
         AND ((m.b_intent_id = $2 AND m.a_user_id = $3) OR (m.a_intent_id = $2 AND m.b_user_id = $3)) LIMIT 1`,
     [r.vertical_id, r.intent_id, viewerId],

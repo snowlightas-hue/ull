@@ -26,6 +26,7 @@ import { counts, createSession, deleteSession, personaUser, registerUser, userFo
 import { hydrateMatches, latestRun, listMatches, matchIntent } from '../matching/engine.ts';
 import { contactRefusal, ConnError, openConnectionForMatch } from '../connections/repo.ts';
 import { decorateMatchCards } from '../connections/match-cards.ts';
+import { attachStoreInfo } from '../catalog/match-cards.ts';
 import { issueRecoveryCode } from '../connections/recovery.ts';
 import { EventHub } from './events.ts';
 import { perMinuteRule, type RouteContext, type RouteRateLimit, type UlRoutePlugin } from './context.ts';
@@ -352,6 +353,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
     const page = await listMatches(pool, reg, u(req).id, { intent: { verticalId: ref.verticalId, id: ref.id }, states: ['confirmed', 'possible'], limit: q.limit ?? 10 });
     await decorateMatchCards(pool, u(req).id, page.items); // name only after accept; phone only while shared
+    await attachStoreInfo(pool, reg, u(req).id, page.items); // store badge + product photos
     return {
       intentId: row!.public_id, version: row!.version, status,
       totals: run ? { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates } : { confirmed: 0, possible: 0, excluded: 0, candidates: 0 },
@@ -372,6 +374,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const states = q.state === 'invalidated' ? ['invalidated'] : q.state === 'confirmed' ? ['confirmed'] : q.state === 'possible' ? ['possible'] : q.state === 'all' ? ['confirmed', 'possible', 'invalidated'] : ['confirmed', 'possible'];
     const page = await listMatches(pool, reg, u(req).id, { intent, states, cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 });
     await decorateMatchCards(pool, u(req).id, page.items); // name only after accept; phone only while shared
+    await attachStoreInfo(pool, reg, u(req).id, page.items); // store badge + product photos
     return page;
   });
   const ownMatch = async (req: FastifyRequest<{ Params: { id: string } }>) => {
@@ -382,7 +385,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!rows[0]) throw new HttpError(404, 'not_found', 'غير موجود');
     return rows[0];
   };
-  app.get<{ Params: { id: string } }>('/api/matches/:id', async (req) => ({ match: (await decorateMatchCards(pool, u(req).id, await hydrateMatches(pool, reg, u(req).id, [await ownMatch(req)])))[0] }));
+  app.get<{ Params: { id: string } }>('/api/matches/:id', async (req) => {
+    const cards = await decorateMatchCards(pool, u(req).id, await hydrateMatches(pool, reg, u(req).id, [await ownMatch(req)]));
+    await attachStoreInfo(pool, reg, u(req).id, cards);
+    return { match: cards[0] };
+  });
   app.post<{ Params: { id: string } }>('/api/matches/:id/contact', async (req) => {
     const m = await ownMatch(req);
     if (m.state === 'invalidated') throw new HttpError(409, 'match_invalidated', 'هذه المطابقة لم تعد صالحة');

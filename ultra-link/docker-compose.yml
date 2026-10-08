@@ -63,6 +63,8 @@ services:
     command: ["node", "src/worker/main.ts"]
     environment: *app-env
     env_file: [{ path: .env, required: false }]
+    volumes:
+      - media:/app/var/media   # the worker removes photos nobody references any more
     depends_on:
       setup: { condition: service_completed_successfully }
     init: true

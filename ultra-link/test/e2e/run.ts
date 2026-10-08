@@ -22,6 +22,7 @@ const SPECS: Spec[] = [
   { name: 'app-scenarios', file: 'test/e2e/app-scenarios.spec.ts', kind: 'real app, 6 README scenarios, 3 viewports (typed text + chips)', summary: /^ \d+\/\d+ scenario runs passed.*$/m },
   { name: 'app-a11y', file: 'test/e2e/app-a11y.spec.ts', kind: 'real app: keyboard, focus, mobile layout, contrast, reduced motion', summary: /^ \d+\/\d+ scenario runs passed.*$/m },
   { name: 'connections', file: 'test/e2e/connections.spec.ts', kind: 'real app, two browsers: contact → chat, phone/location sharing, recovery', summary: /\d+\/\d+ scenario runs passed.*$/m },
+  { name: 'catalog', file: 'test/e2e/catalog.spec.ts', kind: 'real app: «متجري», bulk import preview/confirm, photos, 3 viewports', summary: /\d+\/\d+ scenario runs passed.*$/m },
   { name: 'integration-voice', file: 'test/e2e/integration-voice.spec.ts', kind: 'SIMULATED voice against the real app (isolated stack)', needsStack: true, summary: /(all checks passed.*|\d+ check\(s\) FAILED)$/m },
 ];
 

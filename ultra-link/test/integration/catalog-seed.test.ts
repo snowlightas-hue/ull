@@ -8,13 +8,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness, Client, type Harness } from './server-helpers.ts';
 import { catalogRoutes } from '../../src/server/routes/catalog.ts';
+import { closeTolerant } from './catalog-helpers.ts';
 import { DEMO_STORE, DEMO_STORE_LINES, seedDemoStores } from '../../src/seed/stores-demo.ts';
 import { attachStoreInfo } from '../../src/catalog/match-cards.ts';
 
 let h: Harness;
 const mediaDir = mkdtempSync(join(tmpdir(), 'ul-catalog-seed-'));
 before(async () => { h = await harness(`catalog_seed_${process.pid}`, { routes: [catalogRoutes({ mediaDir })], featureRoutes: false }); });
-after(async () => { await h?.close(); rmSync(mediaDir, { recursive: true, force: true }); });
+after(async () => { await closeTolerant(h); rmSync(mediaDir, { recursive: true, force: true }); });
 
 test('seedDemoStores: one synthetic store, 25 labeled products, idempotent, grouped matches for the demo buyer, never real', async () => {
   const logs: string[] = [];

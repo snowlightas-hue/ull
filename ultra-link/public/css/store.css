@@ -127,3 +127,6 @@
 @media (prefers-reduced-motion: reduce) {
   .st-progress-fill { transition: none; }
 }
+
+/* group heading before several products of one store in a match list */
+.st-group-head { display: flex; align-items: center; gap: 8px; margin: 4px 2px 8px; font-weight: 800; color: var(--text); }

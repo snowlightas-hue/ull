@@ -11,12 +11,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness, Client, mkPersona, type Harness } from './server-helpers.ts';
 import { catalogRoutes } from '../../src/server/routes/catalog.ts';
+import { closeTolerant } from './catalog-helpers.ts';
 import { attachStoreInfo } from '../../src/catalog/match-cards.ts';
 
 let h: Harness;
 const mediaDir = mkdtempSync(join(tmpdir(), 'ul-catalog-api-'));
 before(async () => { h = await harness(`catalog_api_${process.pid}`, { routes: [catalogRoutes({ mediaDir })], featureRoutes: false }); });
-after(async () => { await h?.close(); rmSync(mediaDir, { recursive: true, force: true }); });
+after(async () => { await closeTolerant(h); rmSync(mediaDir, { recursive: true, force: true }); });
 
 const AZAZ = () => h.db.reg.placeByCode.get('sy.aleppo.azaz')!.id;
 const AFRIN = () => h.db.reg.placeByCode.get('sy.aleppo.afrin')!.id;

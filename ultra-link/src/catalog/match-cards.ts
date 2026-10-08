@@ -13,7 +13,7 @@
 // Nothing about the owner is revealed beyond the store's public profile (name, city); identity stays consent-based.
 import type { Queryable } from '../db/pool.ts';
 import type { Registry } from '../domain/registry.ts';
-import { photosFor, storeLabel, type PhotoRef } from './repo.ts';
+import { photosFor, q, storeLabel, type PhotoRef } from './repo.ts';
 
 export interface StoreBadge {
   id: string; nameAr: string; labelAr: string; synthetic: boolean; placeAr: string | null;
@@ -50,7 +50,7 @@ export async function attachStoreInfo<T extends CardLike>(db: Queryable, reg: Re
     if (c?.mine?.id && UUID.test(c.mine.id)) ids.add(c.mine.id);
   }
   if (!ids.size) return cards;
-  const { rows } = await db.query(
+  const { rows } = await q(db, 'badge_items',
     `SELECT r.public_id, r.vertical_id, r.intent_id, r.user_id, s.id AS store_id, s.public_id AS store_public_id, s.name_ar, s.realm, s.status AS store_status, s.place_id
        FROM intent_refs r
        JOIN store_items si ON si.vertical_id = r.vertical_id AND si.intent_id = r.intent_id
@@ -64,13 +64,13 @@ export async function attachStoreInfo<T extends CardLike>(db: Queryable, reg: Re
   // the viewer's requests (card.mine) → internal ids, for the per-request store counts
   const mineIds = [...new Set(cards.map((c) => c?.mine?.id).filter((x): x is string => !!x && UUID.test(x) && !byIntent.has(x)))];
   const mineRefs = mineIds.length
-    ? (await db.query('SELECT public_id, vertical_id, intent_id FROM intent_refs WHERE public_id = ANY($1::uuid[]) AND user_id = $2', [mineIds, viewerId])).rows
+    ? (await q(db, 'badge_mine', 'SELECT public_id, vertical_id, intent_id FROM intent_refs WHERE public_id = ANY($1::uuid[]) AND user_id = $2', [mineIds, viewerId])).rows
     : [];
   const mineBy = new Map(mineRefs.map((r) => [String(r.public_id), r]));
   const storeIds = [...new Set(rows.filter((r) => String(r.user_id) !== String(viewerId)).map((r) => String(r.store_id)))];
   const counts = new Map<string, number>(); // `${mineIntentId}:${storeId}` → n
   if (mineRefs.length && storeIds.length) {
-    const { rows: cr } = await db.query(
+    const { rows: cr } = await q(db, 'badge_counts',
       `SELECT x.id::text AS mine, si.store_id::text AS store, count(*)::int AS n
          FROM unnest($1::smallint[], $2::bigint[]) AS x(v, id)
          JOIN matches m ON m.vertical_id = x.v AND m.a_intent_id = x.id AND m.state IN ('confirmed','possible')

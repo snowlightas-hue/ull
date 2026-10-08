@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { harness, Client, logSink, type Harness } from './server-helpers.ts';
 import { catalogRoutes } from '../../src/server/routes/catalog.ts';
+import { closeTolerant } from './catalog-helpers.ts';
 import { attachStoreInfo } from '../../src/catalog/match-cards.ts';
 import { gcMedia } from '../../src/catalog/service.ts';
 import { MediaStore } from '../../src/catalog/media-store.ts';
@@ -21,7 +22,7 @@ let h: Harness;
 const logs = logSink();
 const mediaDir = mkdtempSync(join(tmpdir(), 'ul-catalog-photos-'));
 before(async () => { h = await harness(`catalog_photos_${process.pid}`, { routes: [catalogRoutes({ mediaDir })], featureRoutes: false, logStream: logs.stream, logLevel: 'info' }); });
-after(async () => { await h?.close(); rmSync(mediaDir, { recursive: true, force: true }); });
+after(async () => { await closeTolerant(h); rmSync(mediaDir, { recursive: true, force: true }); });
 
 const filesOnDisk = (): string[] => {
   const out: string[] = [];

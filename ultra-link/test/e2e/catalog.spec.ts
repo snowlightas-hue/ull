@@ -122,8 +122,7 @@ async function runViewport(vp: Viewport) {
       await openTab(page, 'عروضي', m);
       const entry = page.locator('.st-entry');
       await entry.waitFor({ timeout: 15_000 });
-      await page.waitForFunction(() => /٢٥/.test(document.querySelector('.st-entry-sub')?.textContent ?? ''), null, { timeout: 10_000 });
-      s.check('«متجري» entry card on «عروضي» names the store and its 25 products', /أبو أحمد للموبايلات \(تجريبي\).*٢٥ منتجًا/.test(await text(page, '.st-entry-sub')), await text(page, '.st-entry-sub'));
+      s.check('«متجري» entry card on «عروضي» (no request until opened)', /اعرض محلك كله/.test(await text(page, '.st-entry-sub')), await text(page, '.st-entry-sub'));
       await shot(page, vp.name, '1-offers-entry');
       await tap(page.getByRole('button', { name: 'افتح متجري' }), m);
       await page.locator('.st-store').waitFor();
@@ -212,7 +211,7 @@ async function runViewport(vp: Viewport) {
       // back to «عروضي»
       await tap(page.locator('.st-back'), m);
       await page.locator('.st-entry').waitFor();
-      s.check('«عروضي» list is back with the entry card', (await page.locator('.st-entry').count()) === 1);
+      s.check('«عروضي» list is back; the entry card now names the store and its 29 products', (await page.locator('.st-entry').count()) === 1 && /أبو أحمد للموبايلات \(تجريبي\): ٢٩ منتجًا/.test(await text(page, '.st-entry-sub')), await text(page, '.st-entry-sub'));
       // justified exclusion: Chrome logs the deliberate 415 (the renamed text file above) as a failed resource load
       const errors = noise.errors.filter((e) => !/status of 415 \(Unsupported Media Type\)/.test(e));
       s.check('no console errors / failed requests / 5xx (except the one deliberate 415)', errors.length === 0 && noise.errors.length - errors.length === 1, noise.errors);

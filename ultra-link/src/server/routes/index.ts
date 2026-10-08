@@ -5,5 +5,6 @@ import type { UlRoutePlugin } from '../context.ts';
 import geo from './geo.ts';
 import connections from './connections.ts';
 import account from './account.ts';
+import catalog from './catalog.ts';
 
-export const FEATURE_ROUTES: UlRoutePlugin[] = [geo, connections, account];
+export const FEATURE_ROUTES: UlRoutePlugin[] = [geo, connections, account, catalog];

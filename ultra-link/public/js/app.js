@@ -11,7 +11,7 @@ import { createVoice } from './conversation/voice.js';
 import { createConversationMachine } from './conversation/machine.js';
 import { createConnections, showRecoveryCode, confirmLogout, recoverSection } from './ui/connections.js';
 import { decorateIntentCards, decorateMatchCards, stopAllLiveSharing } from './ui/geo.js';
-import { createStoreUi } from './ui/store.js';
+import { createStoreUi, decorateStoreMatches } from './ui/store.js';
 
 const root = document.getElementById('app');
 const state = { me: null, shell: null, home: null, machine: null, taxonomy: null, lists: {}, events: null, lastIntent: null };
@@ -132,7 +132,11 @@ function renderMachine(st, ctx) {
   else if (!['listening', 'reviewing', 'processing'].includes(st) || !ctx.question) home.hideQuestion();
   if (ctx.lastTurn?.summary) home.showSummary(ctx.lastTurn.summary);
   if (ctx.intent) state.lastIntent = ctx.intent;
-  if (st === 'results') { home.showResults(ctx.matchRun); decorateMatchCards(state.shell.views.home, ctx.matchRun?.page?.items ?? []); }
+  if (st === 'results') {
+    home.showResults(ctx.matchRun);
+    decorateMatchCards(state.shell.views.home, ctx.matchRun?.page?.items ?? []);
+    decorateStoreMatches(state.shell.views.home, ctx.matchRun?.page?.items ?? []);
+  }
   if (st === 'saved_no_results') home.showSavedNoResults(ctx.intent, ctx.matchRun?.suggestionsAr ?? [], ctx.matchRun);
   if (st === 'error' && ctx.error) home.showError(ctx.error.messageAr);
   if (['results', 'saved_no_results'].includes(st)) refreshCounts();
@@ -210,6 +214,7 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         emptyTextAr: ls.intent ? 'لا مطابقات لهذا الطلب حاليًا.' : 'لا مطابقات بعد. سنخبرك فور ظهور طرف مناسب.',
       });
       decorateMatchCards(el, page.items);
+      decorateStoreMatches(el, page.items); // store badge, product photos, «٣ منتجات من متجر …»
       if (ls.intent) el.prepend(h('div', { class: 'notice' }, h('span', { class: 'notice-body' }, 'تعرض مطابقات طلب واحد. '), h('button', { type: 'button', class: 'link-btn', onClick: () => { ls.intent = null; loadTab('matches'); } }, 'عرض كل المطابقات')));
     } else if (tab === 'notifications') {
       renderNotificationPage(el, page, {
