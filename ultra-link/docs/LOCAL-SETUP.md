@@ -69,6 +69,6 @@ npm run status     # الحالة
 - **إمّا** تطبيق **Claude Desktop**: افتح فيه مجلد `ull` وابدأ جلسة.
 - **أو** في الطرفية داخل المجلد: `claude remote-control`، فتظهر الجلسة في تطبيق Claude Code.
 
-ثم اطلب منها مثلًا: «اقرأ `ultra-link/README.md` و`ultra-link/docs/HANDOFF.md` وتابع من نقطة الاستئناف».
+ثم انسخ لها **البرومبت الجاهز** في آخر الملف `ultra-link/docs/HANDOFF.md`، فهو يشرح ما أُنجز وما التالي وبأي ترتيب.
 
 بديل: أكمل العمل في الجلسة السحابية، ونفّذ أنت `git pull` ثم `docker compose up -d --build` لتجرّب آخر نسخة.

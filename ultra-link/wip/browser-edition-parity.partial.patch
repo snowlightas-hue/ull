@@ -1,0 +1,2641 @@
+diff --git a/ultra-link/test/e2e/web-demo.spec.ts b/ultra-link/test/e2e/web-demo.spec.ts
+new file mode 100644
+index 0000000..dcd93b3
+--- /dev/null
++++ b/ultra-link/test/e2e/web-demo.spec.ts
+@@ -0,0 +1,332 @@
++// Browser E2E for the BROWSER EDITION (web-demo/dist/ultra-link.html): the single self-contained page published as a
++// claude.ai Artifact. No server: every /api/* call is answered in the page (web-demo/local-api.ts) and the state lives
++// in this browser's localStorage + IndexedDB. Opened from file:// in Chromium at 390×844 (touch) and 1280×800.
++//
++// Scenarios per viewport (fresh browser context = empty storage):
++//   0. an older edition's data (ultra-link-demo-v1) is dropped with a note in the banner; the banner lists what is simulated
++//   1. log in as a persona → «بدي شقة للإيجار بإعزاز حد أقصى 200 دولار» → «بالشهر» → results with reasons
++//   2. «طلب تواصل» → auto-accepted (synthetic persona) → «فتح المحادثة» → send → a LABELLED automatic demo reply;
++//      «شارك رقمي» toggle → the persona's obviously fake number; live location share shows «غير متاح في نسخة المتصفح»
++//   3. «بدي تكسي قريب مني» → «استخدم موقعي الحالي» → the app's own Arabic permission error → type «إعزاز» → rides with distances
++//   4. «متجري» as the demo store's owner: bulk import 3 lines → preview → confirm → listed (25 → 28); a photo with EXIF/GPS
++//      is re-encoded (no metadata left) and shown
++//   5. the demo buyer sees a store badge («من أبو أحمد للموبايلات (تجريبي)») on a match
++//   6. register a local account → recovery code shown once → logout → recover with the code
++//   7. reload keeps the data; «إعادة ضبط البيانات» resets it
++// Always: no console errors / page errors / failed requests, no unimplemented /api/* endpoint (the page logs every one),
++// no horizontal overflow. Screenshots: test/e2e/artifacts/web-demo/.
++//
++// Run: node web-demo/build.ts && node test/e2e/web-demo.spec.ts   (CHROMIUM_PATH overrides /opt/pw-browsers/chromium)
++
++import { existsSync, mkdirSync } from 'node:fs';
++import path from 'node:path';
++import { fileURLToPath, pathToFileURL } from 'node:url';
++import { chromium, type Locator, type Page } from 'playwright-core';
++import { jpegWithMetadata, GPS_MARKERS } from '../fixtures/catalog-images.ts';
++
++const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
++const PAGE = path.join(ROOT, 'web-demo/dist/ultra-link.html');
++const URL_ = pathToFileURL(PAGE).href;
++const ART = path.join(ROOT, 'test/e2e/artifacts/web-demo');
++const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
++mkdirSync(ART, { recursive: true });
++if (!existsSync(PAGE)) { console.error(`missing ${PAGE} — run: node web-demo/build.ts`); process.exit(2); }
++
++interface Viewport { name: string; width: number; height: number; mobile: boolean }
++const VIEWPORTS: Viewport[] = [
++  { name: 'mobile-390x844', width: 390, height: 844, mobile: true },
++  { name: 'desktop-1280x800', width: 1280, height: 800, mobile: false },
++];
++
++interface Check { name: string; ok: boolean; detail?: string }
++const checks: { vp: string; scenario: string; list: Check[]; error?: string; ms: number }[] = [];
++const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
++
++async function press(loc: Locator, mobile: boolean): Promise<void> {
++  for (let attempt = 1; ; attempt++) {
++    try {
++      await loc.scrollIntoViewIfNeeded();
++      if (mobile) await loc.tap(); else await loc.click();
++      return;
++    } catch (e) {
++      if (attempt >= 4 || !/not attached|detached|not stable|intercept/i.test((e as Error).message)) throw e;
++      await sleep(200);
++    }
++  }
++}
++
++async function runViewport(vp: Viewport) {
++  const browser = await chromium.launch({ executablePath: CHROMIUM, headless: true, args: ['--lang=ar', '--allow-file-access-from-files'] });
++  const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.mobile, hasTouch: vp.mobile, deviceScaleFactor: vp.mobile ? 2 : 1, locale: 'ar-SY', timezoneId: 'Asia/Damascus' });
++  const page = await ctx.newPage();
++  const m = vp.mobile;
++  // noise: console errors, page errors, failed requests; and every unimplemented /api/* endpoint the page logs
++  const errors: string[] = [];
++  const unimplemented: string[] = [];
++  page.on('console', (msg) => {
++    if (msg.type() === 'error') errors.push(`console: ${msg.text()}`);
++    if (/unimplemented endpoint/.test(msg.text())) unimplemented.push(msg.text());
++  });
++  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
++  page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.method()} ${r.url().slice(0, 120)} ${r.failure()?.errorText ?? ''}`));
++  page.on('request', (r) => { if (/\/api\//.test(r.url())) errors.push(`network /api/ request escaped the page: ${r.url()}`); });
++
++  const shot = (name: string, fullPage = false) => page.screenshot({ path: path.join(ART, `${vp.name}-${name}.png`), fullPage }).catch(() => {});
++  const overflow = () => page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > document.documentElement.clientWidth + 1);
++  const toastSeen = (re: RegExp, timeout = 10_000) => page.waitForFunction((src) => [...document.querySelectorAll('.toast')].some((t) => new RegExp(src).test(t.textContent ?? '')), re.source, { timeout }).then(() => true, () => false);
++  const pageUnimplemented = () => page.evaluate(() => ((window as unknown as { __ulDemo?: { unimplemented: string[] } }).__ulDemo?.unimplemented ?? ['__ulDemo missing']).slice());
++  const typeAndSend = async (text: string) => { const input = page.locator('.composer-input'); await input.fill(text); await input.press('Enter'); };
++  const phase = (re: RegExp, timeout = 15_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.home')?.getAttribute('data-phase') ?? ''), re.source, { timeout });
++  const openTab = async (label: string) => { await press(page.getByRole('tab', { name: new RegExp(label) }), m); };
++  const logout = async () => { await press(page.getByRole('button', { name: 'خروج', exact: true }), m); await page.locator('#reg-name').waitFor({ timeout: 15_000 }); };
++  const loginAs = async (namePrefix: string) => {
++    const btn = page.getByRole('button', { name: new RegExp(`ادخل كـ ${namePrefix}`) });
++    await btn.waitFor({ timeout: 15_000 });
++    await press(btn, m);
++    await page.waitForSelector('.composer-input', { timeout: 15_000 });
++    await phase(/^ready$/);
++  };
++
++  async function scenario(name: string, fn: (check: (n: string, ok: boolean, detail?: string) => void) => Promise<void>) {
++    const list: Check[] = [];
++    const t0 = Date.now();
++    const check = (n: string, ok: boolean, detail?: string) => { list.push({ name: n, ok, detail }); console.log(`    ${ok ? 'ok  ' : 'FAIL'} ${n}${!ok && detail ? ` — ${detail}` : ''}`); };
++    console.log(`\n  ▶ [${vp.name}] ${name}`);
++    let error: string | undefined;
++    try { await fn(check); } catch (e) {
++      error = (e as Error).message.split('\n').slice(0, 4).join(' | ');
++      console.log(`    FAIL exception: ${error}`);
++      await shot(`EXCEPTION-${name.split(' ')[0]}`);
++    }
++    for (const u of await pageUnimplemented().catch(() => [])) if (!unimplemented.includes(u)) unimplemented.push(u);
++    checks.push({ vp: vp.name, scenario: name, list, error, ms: Date.now() - t0 });
++  }
++
++  try {
++    await scenario('0-boot', async (check) => {
++      await page.goto(URL_);
++      await page.locator('.demo-edition-bar').waitFor();
++      // simulate a visitor who still has the previous edition's data
++      await page.evaluate(() => { localStorage.removeItem('ultra-link-demo-v2'); localStorage.setItem('ultra-link-demo-v1', '{"seq":1,"intents":[]}'); });
++      await page.reload();
++      await page.getByRole('button', { name: /ادخل كـ سامر/ }).waitFor({ timeout: 15_000 });
++      const bar = (await page.locator('.demo-edition-bar').innerText()).replace(/\s+/g, ' ');
++      check('banner: browser-only demo with synthetic data', /نسخة تجريبية داخل المتصفح/.test(bar) && /بيانات اصطناعية/.test(bar), bar);
++      check('banner lists what is simulated (replies, drivers, no microphone or GPS)', /الردود في المحادثات آلية/.test(bar) && /السائقون/.test(bar) && /لا ميكروفون ولا GPS/.test(bar), bar);
++      check('old edition data (v1) dropped, with a note', /أُعيد ضبط البيانات التجريبية/.test(bar) && (await page.evaluate(() => localStorage.getItem('ultra-link-demo-v1'))) === null);
++      const personas = await page.getByRole('button', { name: /^ادخل كـ/ }).count();
++      check('8 synthetic personas incl. the demo store owner and buyer', personas === 8 && (await page.getByRole('button', { name: /ادخل كـ أبو أحمد/ }).count()) === 1 && (await page.getByRole('button', { name: /ادخل كـ مشتري موبايل/ }).count()) === 1, `count ${personas}`);
++      check('state saved under ultra-link-demo-v2 with a version', (await page.evaluate(() => JSON.parse(localStorage.getItem('ultra-link-demo-v2') ?? '{}').version)) === 2);
++      check('no horizontal overflow (login)', !(await overflow()));
++      await shot('01-login', true);
++    });
++
++    await scenario('1-request-results', async (check) => {
++      await loginAs('سامر');
++      await typeAndSend('بدي شقة للإيجار بإعزاز حد أقصى 200 دولار');
++      const chip = page.locator('.q-options .chip-btn', { hasText: 'بالشهر' });
++      await chip.waitFor({ timeout: 15_000 });
++      check('one follow-up question: «بالشهر ولا بالسنة؟»', /بالشهر/.test(await page.locator('.q-card').innerText()));
++      await press(chip, m);
++      await phase(/^(results|saved_no_results)$/);
++      const cards = page.locator('.results .match-card');
++      await cards.first().waitFor({ timeout: 10_000 });
++      check('results shown', (await cards.count()) > 0, `cards ${await cards.count()}`);
++      check('each result has reasons', (await page.locator('.results .match-card').first().locator('.reason').count()) > 0);
++      check('results are labelled synthetic («تجريبي»)', /تجريبي/.test(await cards.first().innerText()));
++      check('no horizontal overflow (results)', !(await overflow()));
++      await shot('02-results');
++    });
++
++    await scenario('2-contact-chat-phone', async (check) => {
++      await openTab('المطابقات');
++      const ask = page.getByRole('button', { name: 'طلب تواصل' }).first();
++      await ask.waitFor({ timeout: 10_000 });
++      await press(ask, m);
++      check('request sent: «بانتظار موافقة الطرف الآخر»', await page.getByText('بانتظار موافقة الطرف الآخر').first().waitFor({ timeout: 5000 }).then(() => true, () => false));
++      const openBtn = page.locator('.cx-open-chat').first();
++      await openBtn.waitFor({ timeout: 12_000 });
++      check('auto-accepted after ~3 s → «فتح المحادثة»', true);
++      check('accept reveals the name only (no phone yet)', (await page.locator('.match-card .contact-accepted a[href^="tel:"]').count()) === 0);
++      await press(openBtn, m);
++      const dlg = page.getByRole('dialog', { name: /المحادثة مع/ });
++      await dlg.waitFor();
++      check('chat header is labelled «تجريبي»', (await dlg.locator('.demo-tag').count()) >= 1);
++      await dlg.getByLabel('رسالتك').fill('مرحبا، الشقة لسا متاحة؟');
++      await press(dlg.getByRole('button', { name: 'إرسال' }), m);
++      await dlg.locator('.cx-mine .cx-text', { hasText: 'الشقة لسا متاحة' }).waitFor();
++      const reply = dlg.locator('.cx-theirs .cx-text').first();
++      await reply.waitFor({ timeout: 10_000 });
++      const replyText = await reply.innerText();
++      check('a demo reply arrives, clearly labelled «(رد تلقائي تجريبي)»', /^\(رد تلقائي تجريبي\)/.test(replyText) && /شخصية اصطناعية/.test(replyText), replyText);
++      await shot('03-chat');
++      await press(dlg.getByRole('button', { name: 'الهاتف والموقع والخيارات' }), m);
++      const sw = dlg.getByRole('switch', { name: 'شارك رقمي' });
++      check('«شارك رقمي» starts off', (await sw.getAttribute('aria-checked')) === 'false');
++      await press(sw, m);
++      check('«شارك رقمي» toggled on', await dlg.getByRole('switch', { name: 'شارك رقمي', checked: true }).waitFor({ timeout: 5000 }).then(() => true, () => false));
++      const theirPhone = dlg.locator('.cx-their-phone');
++      await theirPhone.waitFor({ timeout: 10_000 });
++      const tp = await theirPhone.innerText();
++      check('the persona shares an obviously fake, labelled number', /\+000 0000 000/.test(tp) && /رقم وهمي/.test(tp), tp);
++      check('live location share: «غير متاح في نسخة المتصفح», buttons disabled', /غير متاح في نسخة المتصفح/.test(await dlg.locator('.demo-unavailable').first().innerText().catch(() => '')) && (await dlg.getByRole('button', { name: '١٥ دقيقة' }).isDisabled()));
++      await shot('04-chat-phone');
++      await press(sw, m);
++      check('«شارك رقمي» toggled off again', await dlg.getByRole('switch', { name: 'شارك رقمي', checked: false }).waitFor({ timeout: 5000 }).then(() => true, () => false));
++      check('no horizontal overflow (chat)', !(await overflow()));
++      await press(dlg.getByRole('button', { name: 'إغلاق المحادثة' }), m);
++      await dlg.waitFor({ state: 'detached' });
++    });
++
++    await scenario('3-gps-graceful', async (check) => {
++      await openTab('الرئيسية');
++      await typeAndSend('بدي تكسي قريب مني');
++      const useLoc = page.locator('.q-options .chip-btn', { hasText: 'استخدم موقعي الحالي' });
++      await useLoc.waitFor({ timeout: 15_000 });
++      await press(useLoc, m);
++      check('«استخدم موقعي الحالي» → the app\'s Arabic permission error', await toastSeen(/لم تسمح بتحديد الموقع\. يمكنك قول اسم المكان أو كتابته/));
++      await shot('05-gps-error');
++      check('the question stays open for a typed place', (await page.locator('.q-card').count()) === 1);
++      await typeAndSend('إعزاز');
++      await phase(/^(results|saved_no_results)$/);
++      const first = page.locator('.results .match-card').first();
++      await first.waitFor({ timeout: 10_000 });
++      check('rides from the typed place, nearest first with a rounded distance', (await page.locator('.results .geo-distance-chip').count()) > 0, await first.innerText());
++      check('simulated synthetic drivers show «متصل الآن»', /متصل الآن/.test(await page.locator('.results').innerText()));
++      await shot('06-rides');
++    });
++
++    await scenario('4-store-import-photo', async (check) => {
++      await logout();
++      await loginAs('أبو أحمد');
++      await openTab('عروضي');
++      await press(page.getByRole('button', { name: 'افتح متجري' }), m);
++      await page.locator('.st-store').waitFor({ timeout: 10_000 });
++      check('store card «أبو أحمد للموبايلات» labelled «تجريبي», 25 products', (await page.locator('.st-store-name').innerText()).trim() === 'أبو أحمد للموبايلات' && (await page.locator('.st-store .demo-tag').count()) === 1 && /٢٥/.test(await page.locator('.st-counts').innerText()), await page.locator('.st-counts').innerText());
++      check('20 products on page 1', (await page.locator('.st-item').count()) === 20);
++      // photo with EXIF + GPS + XMP: re-encoded through a canvas → nothing of the metadata is stored
++      const item = page.locator('.st-item').first();
++      await item.locator('input.st-file').setInputFiles({ name: 'phone.jpg', mimeType: 'image/jpeg', buffer: jpegWithMetadata() });
++      await page.locator('.st-item').first().locator('.st-thumb img').waitFor({ timeout: 10_000 });
++      check('photo uploaded and shown', (await page.locator('.st-item').first().locator('.st-thumb').count()) === 1);
++      const clean = await page.evaluate(async (markers) => {
++        const src = document.querySelector<HTMLImageElement>('.st-item .st-thumb img')!.src;
++        const bytes = new Uint8Array(await (await fetch(src)).arrayBuffer());
++        const latin = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
++        return { jpeg: bytes[0] === 0xff && bytes[1] === 0xd8, leaks: markers.filter((x) => latin.includes(x)), exif: latin.includes('Exif\0\0') };
++      }, [GPS_MARKERS.make, GPS_MARKERS.model, GPS_MARKERS.comment, GPS_MARKERS.trailing, 'GPS', 'xmpmeta']);
++      check('stored photo is a re-encoded JPEG with no EXIF/GPS/XMP/comment left', clean.jpeg && !clean.exif && clean.leaks.length === 0, JSON.stringify(clean));
++      await item.locator('input.st-file').setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('هذا ملف نصي وليس صورة', 'utf8') });
++      check('a text file named .jpg is refused (magic bytes)', await page.locator('.st-item .st-upload-error').first().waitFor({ timeout: 10_000 }).then(() => true, () => false));
++      await press(page.getByRole('button', { name: 'إضافة منتجات' }), m);
++      await page.locator('textarea.st-import-text').fill(['شاحن ايفون سريع 12$', 'ماوس لاسلكي للكمبيوتر ٨ دولار', 'ايباد ميني 5 مستعمل 210 دولار'].join('\n'));
++      await press(page.getByRole('button', { name: 'معاينة' }), m);
++      await page.locator('.st-preview-summary').waitFor();
++      check('preview: 3 lines, all ready', (await page.locator('.st-prow').count()) === 3 && (await page.locator('.st-prow.is-ok').count()) === 3, await page.locator('.st-preview-summary').innerText());
++      await shot('07-import-preview');
++      await press(page.locator('[data-key="confirm"]'), m);
++      await page.locator('.st-store').waitFor({ timeout: 10_000 });
++      await page.waitForFunction(() => /٢٨/.test(document.querySelector('.st-counts')?.textContent ?? ''), null, { timeout: 10_000 });
++      check('confirmed: the store now lists 28 products', /٢٨/.test(await page.locator('.st-counts').innerText()));
++      await press(page.locator('.st-products .pager-btn').last(), m);
++      await page.waitForFunction(() => document.querySelectorAll('.st-item').length === 8, null, { timeout: 10_000 });
++      const names = (await page.locator('.st-item-name').allInnerTexts()).join(' | ');
++      check('the 3 imported products are listed (page 2)', /شاحن ايفون سريع/.test(names) && /ماوس لاسلكي للكمبيوتر/.test(names) && /ايباد ميني 5 مستعمل/.test(names), names);
++      check('no horizontal overflow (store)', !(await overflow()));
++      await shot('08-store-imported');
++    });
++
++    await scenario('5-store-badge', async (check) => {
++      await logout();
++      await loginAs('مشتري موبايل');
++      await openTab('المطابقات');
++      const badge = page.locator('.match-card .st-badge').first();
++      await badge.waitFor({ timeout: 10_000 });
++      const bt = await badge.innerText();
++      check('store badge on a match: «من أبو أحمد للموبايلات (تجريبي)»', /من أبو أحمد للموبايلات \(تجريبي\)/.test(bt), bt);
++      check('grouped heading «… منتجًا من متجر أبو أحمد للموبايلات (تجريبي)»', /من متجر أبو أحمد للموبايلات \(تجريبي\)/.test(await page.locator('.st-group-head').first().innerText().catch(() => '')));
++      await shot('09-store-badge');
++    });
++
++    let code = '';
++    await scenario('6-register-recover', async (check) => {
++      await logout();
++      await page.locator('#reg-name').fill('مجرّب المتصفح');
++      await page.locator('#reg-phone').fill('+90 555 000 4321');
++      await press(page.getByRole('button', { name: 'ابدأ' }), m);
++      const dlg = page.getByRole('dialog', { name: 'احفظ هذا الرمز' });
++      await dlg.waitFor({ timeout: 10_000 });
++      code = ((await dlg.locator('.cx-code').textContent()) ?? '').trim();
++      check('recovery code shown once (XXXX-XXXX-XXXX-XXXX, Crockford base32)', /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$/.test(code), code);
++      await shot('10-recovery-code');
++      await dlg.locator('.cx-check').check();
++      await press(dlg.getByRole('button', { name: 'حفظته، تابع' }), m);
++      await page.waitForSelector('.composer-input', { timeout: 15_000 });
++      check('in the app as the local account', /مجرّب المتصفح/.test(await page.locator('header').first().innerText()));
++      await logout();
++      const codeInput = page.getByRole('textbox', { name: 'رمز الاسترداد' });
++      await codeInput.fill('WRONG-CODE-0000-0000');
++      await press(page.getByRole('button', { name: 'ارجع إلى حسابي' }), m);
++      check('a wrong code is refused', await page.getByText('رمز الاسترداد غير صحيح').waitFor({ timeout: 5000 }).then(() => true, () => false));
++      await codeInput.fill(code.toLowerCase().replace(/-/g, ' '));
++      await press(page.getByRole('button', { name: 'ارجع إلى حسابي' }), m);
++      await page.waitForSelector('.composer-input', { timeout: 15_000 });
++      check('recovered with the code (lower case, spaces) → same account', /مجرّب المتصفح/.test(await page.locator('header').first().innerText()));
++    });
++
++    await scenario('7-reload-reset', async (check) => {
++      await page.reload();
++      await page.waitForSelector('.composer-input', { timeout: 15_000 });
++      check('reload keeps the session', /مجرّب المتصفح/.test(await page.locator('header').first().innerText()));
++      const saved = await page.evaluate(() => localStorage.getItem('ultra-link-demo-v2') ?? '');
++      check('reload keeps the data (imported products, chat messages)', saved.includes('ماوس لاسلكي للكمبيوتر') && saved.includes('الشقة لسا متاحة'));
++      const photos = await page.evaluate(() => new Promise<number>((resolve) => {
++        const r = indexedDB.open('ultra-link-demo-media');
++        r.onsuccess = () => { const c = r.result.transaction('photos').objectStore('photos').count(); c.onsuccess = () => resolve(c.result); c.onerror = () => resolve(-1); };
++        r.onerror = () => resolve(-1);
++      }));
++      check('the photo is kept in IndexedDB (not localStorage)', photos === 1 && !saved.includes('data:image'), `idb photos ${photos}`);
++      for (const u of await pageUnimplemented()) if (!unimplemented.includes(u)) unimplemented.push(u);
++      await press(page.getByRole('button', { name: 'إعادة ضبط البيانات' }), m);
++      await page.getByRole('button', { name: /ادخل كـ سامر/ }).waitFor({ timeout: 15_000 });
++      const after = await page.evaluate(() => localStorage.getItem('ultra-link-demo-v2') ?? '');
++      check('«إعادة ضبط البيانات» → signed out, data back to the seed', !after.includes('ماوس لاسلكي للكمبيوتر') && !after.includes('مجرّب المتصفح') && after.includes('أبو أحمد للموبايلات'));
++      const left = await page.evaluate(() => new Promise<number>((resolve) => {
++        const r = indexedDB.open('ultra-link-demo-media');
++        r.onsuccess = () => { const c = r.result.transaction('photos').objectStore('photos').count(); c.onsuccess = () => resolve(c.result); c.onerror = () => resolve(-1); };
++        r.onerror = () => resolve(-1);
++      }));
++      check('reset also removes the stored photos', left === 0, `idb photos ${left}`);
++      await shot('11-after-reset');
++    });
++
++    await scenario('8-noise', async (check) => {
++      for (const u of await pageUnimplemented()) if (!unimplemented.includes(u)) unimplemented.push(u);
++      check('no unimplemented /api/* endpoint was hit', unimplemented.length === 0, unimplemented.join(', '));
++      check('no console errors, page errors or failed requests', errors.length === 0, errors.slice(0, 5).join(' || '));
++    });
++  } finally {
++    await browser.close();
++  }
++  return { errors, unimplemented };
++}
++
++const t0 = Date.now();
++const wanted = process.env.E2E_VIEWPORTS?.split(',').map((s) => s.trim()).filter(Boolean);
++const noise: Record<string, { errors: string[]; unimplemented: string[] }> = {};
++for (const vp of VIEWPORTS.filter((v) => !wanted?.length || wanted.some((w) => v.name.includes(w)))) {
++  console.log(`\n${'-'.repeat(90)}\n Viewport ${vp.name} — ${URL_}`);
++  noise[vp.name] = await runViewport(vp);
++}
++
++console.log(`\n${'='.repeat(90)}\n Browser edition (web-demo/dist/ultra-link.html) — E2E summary\n${'='.repeat(90)}`);
++let pass = 0, total = 0, scen = 0, scenOk = 0;
++for (const c of checks) {
++  const ok = !c.error && c.list.every((x) => x.ok);
++  scen++; if (ok) scenOk++;
++  pass += c.list.filter((x) => x.ok).length; total += c.list.length;
++  console.log(` ${ok ? 'PASS' : 'FAIL'}  ${c.vp.padEnd(18)} ${c.scenario.padEnd(24)} ${String(c.list.filter((x) => x.ok).length).padStart(2)}/${String(c.list.length).padEnd(2)} checks  ${(c.ms / 1000).toFixed(1)} s${c.error ? `  exception: ${c.error}` : ''}`);
++}
++for (const [vp, n] of Object.entries(noise)) console.log(` ${vp}: unimplemented /api/* endpoints hit: ${n.unimplemented.length ? n.unimplemented.join(', ') : 'none'}; console/page errors: ${n.errors.length}`);
++console.log(`\n ${scenOk}/${scen} scenario runs passed, ${pass}/${total} checks (${((Date.now() - t0) / 1000).toFixed(1)} s). Screenshots: test/e2e/artifacts/web-demo/`);
++process.exit(scenOk === scen ? 0 : 1);
+diff --git a/ultra-link/web-demo/account.ts b/ultra-link/web-demo/account.ts
+new file mode 100644
+index 0000000..1d24c1a
+--- /dev/null
++++ b/ultra-link/web-demo/account.ts
+@@ -0,0 +1,95 @@
++// Browser edition — local accounts and account recovery (V2.2, docs/CONNECTIONS.md §5).
++// An account created here is the person's own, local to this browser. It stays in the synthetic realm (so it can match
++// the synthetic demo data — real and synthetic never mix), and gets a recovery code exactly like a real account on the
++// server: 16 Crockford base32 characters (80 random bits), shown once; only a hash is kept (SHA-256 here, since there
++// is no server-side pepper in a browser). Logout → «ارجع إلى حسابي» with the code works locally.
++
++import { S, fail, nextId, nowIso, publicUser, sha256Hex, userById, uuid, type User } from './core.ts';
++
++const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
++const PHONE_FORM = /^[0-9+()\-\s.]*$/;
++const PHONE_RE = /^[0-9+()\-\s.]{5,30}$/;
++const RECOVER_PER_MIN = 5;
++const attempts: number[] = [];
++
++function generateCode(): string {
++  const b = crypto.getRandomValues(new Uint8Array(16));
++  let s = '';
++  for (const v of b) s += ALPHABET[v & 31];
++  return s.match(/.{4}/g)!.join('-');
++}
++/** Same normalisation as src/connections/recovery.ts (Arabic-Indic digits, case, separators, O→0, I/L→1). */
++export function normalizeCode(input: unknown): string | null {
++  if (typeof input !== 'string' || input.length > 64) return null;
++  const s = input
++    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
++    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
++    .toUpperCase().replace(/[\s\-_.‐-―−]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
++  if (s.length !== 16 || [...s].some((ch) => !ALPHABET.includes(ch))) return null;
++  return s;
++}
++const hashCode = (norm: string) => sha256Hex(`ul-recovery-v1:${norm}`);
++const sameName = (a: string, b: string) => {
++  const n = (x: string) => x.normalize('NFKC').replace(/[ـً-ٰٟ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
++  return n(a) === n(b);
++};
++
++async function issue(userId: string): Promise<{ code: string; createdAt: string }> {
++  const code = generateCode();
++  const hash = await hashCode(normalizeCode(code)!);
++  const createdAt = nowIso();
++  S.recovery = S.recovery.filter((r) => r.userId !== userId);
++  S.recovery.push({ userId, hash, createdAt, lastUsedAt: null });
++  return { code, createdAt };
++}
++
++export async function accountRoutes(method: string, p: string, body: any): Promise<unknown> {
++  if (method === 'POST' && p === '/api/auth/register') {
++    const name = typeof body.displayName === 'string' ? body.displayName.trim() : '';
++    if (!name || name.length > 80) fail(400, 'bad_request', 'اكتب اسمك (حتى ٨٠ حرفًا).');
++    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
++    if (phone.length > 30 || !PHONE_FORM.test(phone)) fail(400, 'bad_request', 'رقم الهاتف غير صالح.');
++    const user: User = { id: nextId(), publicId: uuid(), displayName: name, realm: 'synthetic', handle: null, persona: null, phone: phone || null, local: true };
++    S.users.push(user);
++    const r = await issue(user.id);
++    S.session = user.id;
++    return { user: publicUser(user), recoveryCode: r.code };
++  }
++  if (method === 'POST' && p === '/api/auth/recover') {
++    const t = Date.now();
++    while (attempts.length && t - attempts[0]! > 60_000) attempts.shift();
++    if (attempts.length >= RECOVER_PER_MIN) fail(429, 'rate_limited', 'محاولات كثيرة. انتظر دقيقة ثم حاول مجددًا.');
++    attempts.push(t);
++    const norm = normalizeCode(body.code);
++    const hash = await hashCode(norm ?? 'invalid-code-0000');
++    const rec = norm ? S.recovery.find((r) => r.hash === hash) : undefined;
++    const user = rec ? userById(rec.userId) : undefined;
++    const name = typeof body.displayName === 'string' ? body.displayName.trim() : '';
++    if (!rec || !user || !user.local || (name && !sameName(name, user.displayName))) fail(401, 'bad_recovery_code', 'رمز الاسترداد غير صحيح. تأكد منه وحاول مرة ثانية.');
++    rec!.lastUsedAt = nowIso();
++    S.session = user!.id;
++    return { user: publicUser(user!) };
++  }
++  return null;
++}
++
++/** Routes that need a session: /api/account* */
++export async function accountSessionRoutes(method: string, p: string, body: any, user: User): Promise<unknown> {
++  if (method === 'GET' && p === '/api/account') {
++    const r = S.recovery.find((x) => x.userId === user.id);
++    return { user: publicUser(user), recovery: user.local ? { hasCode: !!r, createdAt: r?.createdAt ?? null, lastUsedAt: r?.lastUsedAt ?? null } : null, phone: user.phone };
++  }
++  if (method === 'POST' && p === '/api/account/recovery-code') {
++    if (!user.local) fail(403, 'real_only', 'رمز الاسترداد للحسابات التي تُنشئها بنفسك. الشخصيات التجريبية تدخل من شاشة البداية.');
++    const r = await issue(user.id);
++    return { recoveryCode: r.code, createdAt: r.createdAt };
++  }
++  if (method === 'POST' && p === '/api/account/phone') {
++    const ph = body.phone === null ? null : typeof body.phone === 'string' ? body.phone.trim() : undefined;
++    if (ph === undefined) fail(400, 'bad_request', 'طلب غير صالح');
++    if (ph && (!PHONE_RE.test(ph) || (ph.match(/\d/g) ?? []).length < 5)) fail(400, 'bad_phone', 'رقم الهاتف غير صالح.');
++    user.phone = ph || null;
++    return { phone: user.phone };
++  }
++  return null;
++}
+diff --git a/ultra-link/web-demo/build.ts b/ultra-link/web-demo/build.ts
+index 258182a..84f007b 100644
+--- a/ultra-link/web-demo/build.ts
++++ b/ultra-link/web-demo/build.ts
+@@ -1,5 +1,5 @@
+ // Builds web-demo/dist/ultra-link.html: one self-contained page (inline CSS + bundled JS) for publishing.
+-import { build } from 'esbuild';
++import { build, type Plugin } from 'esbuild';
+ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+ import { dirname, join } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+@@ -9,6 +9,20 @@ const root = join(here, '..');
+ const out = join(here, 'dist');
+ mkdirSync(out, { recursive: true });
+ 
++// The demo store's data comes from the server seed (src/seed/stores-demo.ts). That module imports the database
++// layer, so it is read HERE, in Node, and handed to the bundle as a tiny data-only module.
++const storesDemo = await import('../src/seed/stores-demo.ts');
++const virtualStoresDemo: Plugin = {
++  name: 'virtual-stores-demo',
++  setup(b) {
++    b.onResolve({ filter: /^virtual:stores-demo$/ }, () => ({ path: 'stores-demo', namespace: 'ul-virtual' }));
++    b.onLoad({ filter: /.*/, namespace: 'ul-virtual' }, () => ({
++      loader: 'js',
++      contents: `export const DEMO_STORE = ${JSON.stringify(storesDemo.DEMO_STORE)};\nexport const DEMO_STORE_LINES = ${JSON.stringify(storesDemo.DEMO_STORE_LINES)};\n`,
++    }));
++  },
++};
++
+ const res = await build({
+   entryPoints: [join(here, 'main.ts')],
+   bundle: true,
+@@ -19,14 +33,14 @@ const res = await build({
+   write: false,
+   legalComments: 'none',
+   define: { 'process.env.NODE_ENV': '"production"' },
++  plugins: [virtualStoresDemo],
+ });
+ const js = res.outputFiles[0]!.text.replace(/<\/script/gi, '<\\/script');
+ // every stylesheet the real app links (app.css + feature sheets), in the same order
+ const indexHtml = readFileSync(join(root, 'public/index.html'), 'utf8');
+ const sheets = [...indexHtml.matchAll(/<link rel="stylesheet" href="([^"]+\.css)">/g)].map((m) => m[1]!);
+ const css = sheets.map((href) => readFileSync(join(root, 'public', href), 'utf8')).join('\n');
+-const html = readFileSync(join(root, 'public/index.html'), 'utf8');
+-const app = /<div id="app"[\s\S]*?<\/div>\s*<\/div>/.exec(html)![0];
++const app = /<div id="app"[\s\S]*?<\/div>\s*<\/div>/.exec(indexHtml)![0];
+ 
+ const page = `<title>ألترا لينك</title>
+ <style>
+@@ -36,9 +50,14 @@ ${css}
+ .demo-edition-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between;
+   padding: 8px 16px; background: #1b1530; color: #f3e9ff; font: 13px/1.5 system-ui, "Noto Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+   border-bottom: 1px solid #3b2f63; direction: rtl; }
+-.demo-edition-bar span { min-width: 0; flex: 1 1 260px; }
+-.demo-edition-reset { background: transparent; color: #f3e9ff; border: 1px solid #6b5aa8; border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer; }
++.demo-edition-text { min-width: 0; flex: 1 1 260px; display: grid; gap: 2px; }
++.demo-edition-text p { margin: 0; }
++.demo-edition-sim { color: #d9ccff; }
++.demo-edition-note { color: #ffd84d; }
++.demo-edition-reset { background: transparent; color: #f3e9ff; border: 1px solid #6b5aa8; border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer; min-height: 32px; }
+ .demo-edition-reset:focus-visible { outline: 3px solid #ffd84d; outline-offset: 2px; }
++.demo-unavailable { margin: 6px 0 0; padding: 6px 10px; border-radius: 8px; background: rgba(255, 216, 77, 0.1); border: 1px solid rgba(255, 216, 77, 0.35);
++  color: #ffe9a3; font-size: 0.85rem; line-height: 1.5; }
+ </style>
+ <div dir="rtl" lang="ar">
+ ${app}
+diff --git a/ultra-link/web-demo/catalog.ts b/ultra-link/web-demo/catalog.ts
+new file mode 100644
+index 0000000..be541b5
+--- /dev/null
++++ b/ultra-link/web-demo/catalog.ts
+@@ -0,0 +1,415 @@
++// Browser edition — stores, catalog, bulk import and photos (V2.3). Same contract as src/server/routes/catalog.ts
++// (docs/CONTRACTS.md «Stores & catalog»): owner-only (another user's store / product / photo → 404), a product IS an
++// ordinary provide intent, so matching, cards and match APIs see it unchanged.
++// Reused as they are (pure modules): the bulk-import parser and preview (src/catalog/import.ts — the same
++// parseUtterance/applyTurn/buildSpec path as the server), the store/product views (src/catalog/repo.ts) and the
++// group label (src/catalog/match-cards.ts). Re-implemented here: the storage (in memory + localStorage) and the
++// photo intake (media.ts: canvas re-encode instead of the server's byte-level EXIF stripper).
++
++import type { IntentSpec } from '../src/domain/types.ts';
++import { validateSpec } from '../src/domain/validate.ts';
++import { intentToSpec, type IntentRow } from '../src/repo/intents.ts';
++import { amountToMinor, markDuplicates, normName, parseItem, previewLine, splitImportText, type ImportDefaults, type ItemInput, type ParsedItem } from '../src/catalog/import.ts';
++import { CATALOG_LIMITS, ITEM_STATUSES, storeLabel, toProductCard, toStoreView, type PhotoRef, type ProductCard, type StoreView } from '../src/catalog/repo.ts';
++import { groupLabelAr } from '../src/catalog/match-cards.ts';
++import { DEMO_STORE, DEMO_STORE_LINES } from 'virtual:stores-demo';
++import {
++  S, Reply, createIntent, fail, hash53, intentById, intentByPublic, matchCounts, nowIso, nextId, page as offsetPage, reg, rematch, setIntentStatus,
++  sha256Hex, updateIntentSpec, uuid, matchIntent,
++  type ItemRec, type RematchSummary, type StoreRec, type User,
++} from './core.ts';
++import { BUDGET_BYTES, cleanPhoto, deletePhotoBlob, MediaRefusal, photoBlob, photoUrl, putPhoto } from './media.ts';
++
++const productTitle = (nameAr: string, realm: 'real' | 'synthetic') => (realm === 'synthetic' ? `${nameAr} (تجريبي)` : nameAr);
++const CURRENCIES = ['USD', 'TRY', 'SYP', 'EUR'];
++const UNITS = ['total', 'month', 'year', 'week', 'day', 'hour', 'session', 'person'];
++const emptyRematch = (): RematchSummary => ({ evaluated: 0, queued: 0, newMatches: 0, invalidated: 0, confirmed: 0, possible: 0 });
++
++// ───────────── views ─────────────
++function storeCounts(storeId: string): StoreView['counts'] {
++  const c = { total: 0, active: 0, paused: 0, expired: 0, fulfilled: 0 };
++  for (const it of S.items) {
++    if (it.storeId !== storeId) continue;
++    const st = intentById(it.intentId)?.status;
++    if (st && (ITEM_STATUSES as readonly string[]).includes(st)) { c[st as keyof Omit<typeof c, 'total'>]++; c.total++; }
++  }
++  return c;
++}
++const storeView = (s: StoreRec): StoreView => toStoreView(reg, s, storeCounts(s.id));
++
++function photoRefs(intentId: string): PhotoRef[] {
++  return S.photos.filter((p) => p.intentId === intentId).sort((a, b) => a.slot - b.slot)
++    .map((p) => ({ id: p.id, url: photoUrl(p.id) ?? '', slot: p.slot, width: p.width, height: p.height, mime: p.mime, bytes: p.bytes }))
++    .filter((p) => p.url);
++}
++function productCard(s: StoreRec, it: ItemRec): ProductCard {
++  const row = intentById(it.intentId)!;
++  const r = { ...row, position: it.position, item_name: it.nameAr, paused_by_store: it.pausedByStore, store_public_id: s.public_id } as Parameters<typeof toProductCard>[1];
++  return toProductCard(reg, r, photoRefs(row.id), matchCounts(row.id));
++}
++
++// ───────────── owner-scoped lookups ─────────────
++function ownStore(user: User, publicId: string): StoreRec {
++  const s = S.stores.find((x) => x.public_id === publicId && x.owner_id === user.id);
++  if (!s) fail(404, 'not_found', 'غير موجود');
++  return s!;
++}
++function ownItem(user: User, s: StoreRec, itemPublicId: string): { it: ItemRec; row: IntentRow } {
++  const row = intentByPublic(itemPublicId);
++  const it = row ? S.items.find((x) => x.storeId === s.id && x.intentId === row.id) : undefined;
++  if (!row || !it || row.user_id !== user.id) fail(404, 'not_found', 'غير موجود');
++  return { it: it!, row: row! };
++}
++function existingNames(storeId: string): Map<string, { id: string; nameAr: string }> {
++  const out = new Map<string, { id: string; nameAr: string }>();
++  for (const it of S.items) {
++    if (it.storeId !== storeId) continue;
++    const row = intentById(it.intentId);
++    if (row && row.status !== 'closed') out.set(it.nameNorm, { id: row.public_id, nameAr: it.nameAr });
++  }
++  return out;
++}
++const liveItemCount = (storeId: string) => S.items.filter((it) => it.storeId === storeId && intentById(it.intentId)?.status !== 'closed').length;
++
++// ───────────── stores ─────────────
++function checkPlace(placeId: unknown): number {
++  const id = Number(placeId);
++  const p = reg.placeById.get(id);
++  if (!Number.isInteger(id) || !p || id === reg.rootPlaceId) fail(422, 'bad_place', 'اختر مدينة أو منطقة المتجر');
++  return id;
++}
++const optText = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
++
++export function createStore(user: User, b: any): StoreRec {
++  const name = typeof b.nameAr === 'string' ? b.nameAr.trim() : '';
++  if (name.length < 2 || name.length > 80) fail(400, 'bad_request', 'اكتب اسم المتجر (حرفان على الأقل).');
++  const placeId = checkPlace(b.placeId);
++  if (S.stores.filter((x) => x.owner_id === user.id).length >= CATALOG_LIMITS.storesPerUser) fail(409, 'store_limit', `لا يمكن إنشاء أكثر من ${CATALOG_LIMITS.storesPerUser} متاجر لحساب واحد`);
++  const t = nowIso();
++  const s: StoreRec = {
++    id: nextId(), public_id: uuid(), owner_id: user.id, realm: user.realm, name_ar: name, description_ar: optText(b.descriptionAr, 500),
++    place_id: placeId, contact_pref: b.contactPref === 'chat_then_phone' ? 'chat_then_phone' : 'chat', hours_ar: optText(b.hoursAr, 120),
++    status: 'active', version: 1, next_position: 1, created_at: t, updated_at: t,
++  };
++  S.stores.push(s);
++  return s;
++}
++
++function updateStore(user: User, s: StoreRec, b: any) {
++  if (b.expectedVersion !== s.version) fail(409, 'version_conflict', 'تغيّر المتجر من مكان آخر. حدّث الصفحة.');
++  if (b.nameAr !== undefined) { const n = String(b.nameAr).trim(); if (n.length < 2 || n.length > 80) fail(400, 'bad_request', 'اكتب اسم المتجر (حرفان على الأقل).'); s.name_ar = n; }
++  const changed: string[] = [];
++  if (b.placeId !== undefined) {
++    const placeId = checkPlace(b.placeId);
++    if (placeId !== s.place_id) {
++      s.place_id = placeId;
++      for (const it of S.items.filter((x) => x.storeId === s.id)) {
++        const row = intentById(it.intentId);
++        if (!row || row.status === 'closed') continue;
++        const spec = intentToSpec(reg, row);
++        spec.place = { ...spec.place, pointPlaceId: placeId };
++        const v = validateSpec(reg, spec);
++        if (!v.ok) continue;
++        updateIntentSpec(row, v.spec, row.title_ar);
++        changed.push(row.id);
++      }
++    }
++  }
++  if (b.descriptionAr !== undefined) s.description_ar = optText(b.descriptionAr, 500);
++  if (b.hoursAr !== undefined) s.hours_ar = optText(b.hoursAr, 120);
++  if (b.contactPref !== undefined) s.contact_pref = b.contactPref === 'chat_then_phone' ? 'chat_then_phone' : 'chat';
++  s.version++; s.updated_at = nowIso();
++  const matching = changed.length ? rematch(changed, 'edit') : null;
++  return { store: storeView(s), matching };
++}
++
++function setStoreStatus(user: User, s: StoreRec, action: string) {
++  if (action !== 'pause' && action !== 'resume') fail(400, 'bad_request', 'إجراء غير صالح');
++  const want = action === 'pause' ? 'paused' : 'active';
++  if (s.status === want) fail(409, 'invalid_transition', action === 'pause' ? 'المتجر موقوف أصلًا' : 'المتجر نشط أصلًا');
++  const changed: string[] = [];
++  for (const it of S.items.filter((x) => x.storeId === s.id)) {
++    const row = intentById(it.intentId);
++    if (!row) continue;
++    if (action === 'pause' ? row.status !== 'active' : !(it.pausedByStore && row.status === 'paused')) continue;
++    if (!setIntentStatus(row, action as 'pause' | 'resume')) continue;
++    changed.push(row.id);
++    if (action === 'pause') it.pausedByStore = true;
++  }
++  if (action === 'resume') for (const it of S.items) if (it.storeId === s.id) it.pausedByStore = false;
++  s.status = want; s.version++; s.updated_at = nowIso();
++  const matching = rematch(changed, 'status');
++  return { store: storeView(s), changed: changed.length, matching };
++}
++
++// ───────────── import ─────────────
++const defaultsOf = (b: any): ImportDefaults => ({
++  currency: CURRENCIES.includes(b.defaultCurrency) ? b.defaultCurrency : null,
++  deal: b.defaultDeal === 'sale' || b.defaultDeal === 'rent' ? b.defaultDeal : null,
++});
++
++function previewImport(s: StoreRec, b: any) {
++  if (typeof b.text !== 'string' || b.text.length > 60_000) fail(400, 'bad_request', 'النص طويل جدًا');
++  const defaults = defaultsOf(b);
++  const lines = splitImportText(b.text);
++  if (!lines.length) fail(422, 'empty_import', 'الصق سطرًا واحدًا على الأقل: اسم المنتج وسعره');
++  if (lines.length > CATALOG_LIMITS.linesPerImport) fail(422, 'too_many_lines', `الحد ${CATALOG_LIMITS.linesPerImport} سطر في المرة الواحدة (لصقت ${lines.length})`);
++  const parsed = lines.map((l) => parseItem(reg, { line: l.text }, { placeId: s.place_id, defaults }, l.lineNo));
++  markDuplicates(parsed, existingNames(s.id));
++  const view = parsed.map((p) => previewLine(reg, p));
++  return {
++    lines: view,
++    summary: { total: view.length, ok: view.filter((l) => l.ok).length, withProblems: view.filter((l) => !l.ok).length, duplicates: view.filter((l) => l.duplicateOf).length },
++    limits: { maxLines: CATALOG_LIMITS.linesPerImport, maxProducts: CATALOG_LIMITS.productsPerStore, remaining: Math.max(0, CATALOG_LIMITS.productsPerStore - liveItemCount(s.id)) },
++    defaults,
++  };
++}
++
++function stable(v: unknown): string {
++  if (Array.isArray(v)) return `[${v.map(stable).join(',')}]`;
++  if (v && typeof v === 'object') return `{${Object.keys(v as object).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}`;
++  return JSON.stringify(v);
++}
++
++function cleanItems(raw: unknown): ItemInput[] {
++  if (!Array.isArray(raw) || raw.length < 1 || raw.length > CATALOG_LIMITS.linesPerImport) fail(422, raw && Array.isArray(raw) && raw.length ? 'too_many_lines' : 'empty_import', Array.isArray(raw) && raw.length ? `الحد ${CATALOG_LIMITS.linesPerImport} منتج في المرة الواحدة` : 'لا توجد منتجات محددة للحفظ');
++  return (raw as any[]).map((x) => {
++    if (!x || typeof x.line !== 'string' || x.line.length > 400) fail(400, 'bad_request', 'سطر غير صالح');
++    const it: ItemInput = { line: x.line };
++    if (typeof x.nameAr === 'string') it.nameAr = x.nameAr.slice(0, 120);
++    if (typeof x.categoryCode === 'string') it.categoryCode = x.categoryCode.slice(0, 80);
++    if (x.deal === 'sale' || x.deal === 'rent') it.deal = x.deal;
++    if (typeof x.amount === 'string') it.amount = x.amount.slice(0, 24);
++    if (CURRENCIES.includes(x.currency)) it.currency = x.currency;
++    if (UNITS.includes(x.unit)) it.unit = x.unit;
++    if (x.condition === 'new' || x.condition === 'used' || x.condition === null) it.condition = x.condition;
++    if (typeof x.negotiable === 'boolean') it.negotiable = x.negotiable;
++    return it;
++  });
++}
++
++/** Save a previewed list atomically (all or nothing), idempotent by importId — as src/catalog/service.ts confirmImport. */
++export function confirmImport(user: User, s: StoreRec, b: any, opts: { seed?: boolean } = {}) {
++  const importId = String(b.importId ?? '').toLowerCase();
++  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(importId)) fail(400, 'bad_request', 'رقم الإضافة غير صالح');
++  const items = cleanItems(b.items);
++  const defaults = defaultsOf(b);
++  const hash = hash53(stable({ d: defaults, i: items }));
++  const prior = S.imports.find((x) => x.storeId === s.id && x.importId === importId);
++  if (prior) {
++    if (prior.hash !== hash) fail(409, 'import_id_reused', 'رقم هذه الإضافة استُخدم لقائمة مختلفة. أعد المعاينة ثم التأكيد.');
++    return { importId, ...prior.result, replay: true, products: productsByIds(s, prior.result.items.slice(0, 50)), matching: null };
++  }
++  const parsed: ParsedItem[] = items.map((it, k) => parseItem(reg, it, { placeId: s.place_id, defaults }, k + 1));
++  markDuplicates(parsed, existingNames(s.id));
++  const bad = parsed.filter((p) => p.problems.length || !p.spec);
++  if (bad.length) fail(422, 'import_invalid', `في ${bad.length} سطر مشكلة تحتاج تصحيحًا قبل الحفظ`, { lines: bad.map((p) => previewLine(reg, p)) });
++  const live = liveItemCount(s.id);
++  if (live + parsed.length > CATALOG_LIMITS.productsPerStore) fail(422, 'product_limit', `الحد ${CATALOG_LIMITS.productsPerStore} منتج للمتجر (فيه الآن ${live}، والقائمة ${parsed.length})`);
++  const paused = s.status === 'paused';
++  const created: IntentRow[] = [];
++  for (const p of parsed) {
++    const row = createIntent(user.id, s.realm, p.spec as IntentSpec, productTitle(p.nameAr, s.realm), new Date(), p.text);
++    if (paused) setIntentStatus(row, 'pause');
++    S.items.push({ storeId: s.id, intentId: row.id, position: s.next_position++, nameAr: p.nameAr, nameNorm: p.nameNorm, pausedByStore: paused, importId });
++    created.push(row);
++  }
++  s.updated_at = nowIso();
++  const result = { created: created.length, items: created.map((r) => r.public_id), storeStatus: s.status };
++  S.imports.push({ storeId: s.id, importId, hash, result });
++  // 'interactive': the owner is looking at this result now, so only the seekers are notified
++  const matching = s.status === 'active' ? rematch(created.map((r) => r.id), opts.seed ? 'seed' : 'interactive') : null;
++  return { importId, ...result, replay: false, products: productsByIds(s, result.items.slice(0, 50)), matching };
++}
++function productsByIds(s: StoreRec, publicIds: string[]): ProductCard[] {
++  const set = new Set(publicIds);
++  return S.items.filter((it) => it.storeId === s.id && set.has(intentById(it.intentId)?.public_id ?? '')).sort((a, b) => a.position - b.position).map((it) => productCard(s, it));
++}
++
++// ───────────── one product ─────────────
++function editItem(user: User, s: StoreRec, itemId: string, b: any) {
++  const { it, row } = ownItem(user, s, itemId);
++  if (row.status === 'closed') fail(404, 'not_found', 'غير موجود');
++  if (b.expectedVersion !== row.version) fail(409, 'version_conflict', 'تغيّر المنتج من مكان آخر. حدّث الصفحة.');
++  const spec = intentToSpec(reg, row);
++  if (b.amount !== undefined || b.currency !== undefined || b.unit !== undefined || b.negotiable !== undefined) {
++    const cur = spec.price;
++    const minor = b.amount !== undefined ? amountToMinor(String(b.amount)) : cur?.lo ?? cur?.hi ?? null;
++    if (minor === null) fail(422, 'bad_amount', 'السعر المكتوب غير صالح (أرقام فقط، وحتى منزلتين بعد الفاصلة)');
++    const unit = spec.deal === 'sale' ? 'total' : (UNITS.includes(b.unit) ? b.unit : cur?.unit ?? null);
++    if (spec.deal === 'rent' && (!unit || unit === 'total')) fail(422, 'missing_unit', 'الإيجار بالشهر أم باليوم أم بالسنة؟');
++    const currency = CURRENCIES.includes(b.currency) ? b.currency : cur?.currency ?? null;
++    if (!currency) fail(422, 'missing_currency', 'اختر العملة');
++    spec.price = { op: 'eq', lo: minor, hi: minor, currency, unit, strength: 'required', negotiable: typeof b.negotiable === 'boolean' ? b.negotiable : cur?.negotiable ?? false };
++  }
++  if (b.condition !== undefined) { if (b.condition === null) delete spec.attrs.condition; else if (b.condition === 'new' || b.condition === 'used') spec.attrs.condition = b.condition; }
++  const v = validateSpec(reg, spec);
++  if (!v.ok) fail(422, 'invalid_spec', `تعديل غير صالح: ${v.issues.map((i) => i.code).join('، ')}`);
++  let name = it.nameAr;
++  if (b.nameAr !== undefined) {
++    name = String(b.nameAr).replace(/\s+/g, ' ').trim();
++    const norm = normName(name);
++    if (!name || !norm) fail(422, 'bad_name', 'اكتب اسم المنتج');
++    const dup = existingNames(s.id).get(norm);
++    if (dup && dup.id !== itemId) fail(409, 'duplicate', `منتج بنفس الاسم موجود: «${dup.nameAr}»`);
++    it.nameAr = name; it.nameNorm = norm;
++  }
++  updateIntentSpec(row, (v as { ok: true; spec: IntentSpec }).spec, productTitle(name, row.realm));
++  const matching = rematch([row.id], 'edit');
++  return { item: productCard(s, it), matching };
++}
++
++function setItemStatus(user: User, s: StoreRec, itemId: string, action: string) {
++  if (!['pause', 'resume', 'delete'].includes(action)) fail(400, 'bad_request', 'إجراء غير صالح');
++  const { it, row } = ownItem(user, s, itemId);
++  if (action === 'resume' && s.status === 'paused') fail(409, 'store_paused', 'المتجر موقوف. استأنف المتجر أولًا.');
++  if (action === 'delete') {
++    const closed = (row.status === 'active' || row.status === 'paused') && setIntentStatus(row, 'close');
++    S.items = S.items.filter((x) => x !== it);
++    for (const p of S.photos.filter((x) => x.intentId === row.id)) void deletePhotoBlob(p.id);
++    S.photos = S.photos.filter((x) => x.intentId !== row.id);
++    return { item: null, matching: closed ? rematch([row.id], 'status') : emptyRematch() };
++  }
++  if (!setIntentStatus(row, action as 'pause' | 'resume')) fail(409, 'invalid_transition', 'لا يمكن تنفيذ هذا الإجراء على حالة المنتج الحالية');
++  it.pausedByStore = false;
++  const matching = rematch([row.id], 'status');
++  return { item: productCard(s, it), matching };
++}
++
++// ───────────── photos ─────────────
++async function uploadPhoto(user: User, s: StoreRec, itemId: string, body: unknown): Promise<Reply> {
++  const { row } = ownItem(user, s, itemId);
++  if (row.status === 'closed') fail(404, 'not_found', 'غير موجود');
++  if (!(body instanceof Blob)) fail(400, 'empty_upload', 'لم يصل أي ملف');
++  let clean;
++  try { clean = await cleanPhoto(body as Blob); } catch (e) {
++    if (e instanceof MediaRefusal) fail(e.status, e.code, e.message);
++    throw e;
++  }
++  const srcHash = await sha256Hex(clean!.bytes.buffer as ArrayBuffer);
++  const mine = S.photos.filter((p) => p.intentId === row.id);
++  const same = mine.find((p) => p.srcHash === srcHash);
++  const ref = (p: (typeof S.photos)[number]) => ({ id: p.id, url: photoUrl(p.id) ?? '', slot: p.slot, width: p.width, height: p.height, mime: p.mime, bytes: p.bytes });
++  if (same) return new Reply(200, { photo: ref(same), deduplicated: true, alreadyAttached: true, metadataRemoved: [] });
++  if (mine.length >= CATALOG_LIMITS.photosPerProduct) fail(409, 'photo_limit', `الحد ${CATALOG_LIMITS.photosPerProduct} صور للمنتج`);
++  const used = S.photos.reduce((n, p) => n + p.bytes, 0);
++  if (used + clean!.photo.blob.size > BUDGET_BYTES) fail(409, 'demo_storage_full', 'امتلأت مساحة الصور في نسخة المتصفح (٢٥ ميغابايت). احذف بعض الصور أولًا.');
++  const id = uuid();
++  const stored = await putPhoto(id, clean!.photo.blob);
++  const slots = new Set(mine.map((p) => p.slot));
++  let slot = 1;
++  while (slots.has(slot)) slot++;
++  const rec = { id, intentId: row.id, slot, srcHash, mime: clean!.photo.mime, bytes: clean!.photo.blob.size, width: clean!.photo.width, height: clean!.photo.height, createdAt: nowIso(), stored };
++  S.photos.push(rec);
++  // the canvas export carries pixels only: every EXIF/GPS/XMP/IPTC block and comment of the original is gone
++  return new Reply(201, { photo: ref(rec), deduplicated: false, alreadyAttached: false, metadataRemoved: ['all (re-encoded through canvas)'] });
++}
++
++async function removePhoto(user: User, s: StoreRec, itemId: string, photoId: string) {
++  const { row } = ownItem(user, s, itemId);
++  const p = S.photos.find((x) => x.id === photoId && x.intentId === row.id);
++  if (!p) fail(404, 'not_found', 'غير موجود');
++  S.photos = S.photos.filter((x) => x !== p);
++  await deletePhotoBlob(photoId);
++  return { ok: true };
++}
++
++/** Visibility as src/catalog/repo.ts photoForViewer: the owner; others only while product + store are active and they hold a live match. */
++async function photoForViewer(user: User, photoId: string): Promise<Reply> {
++  const p = S.photos.find((x) => x.id === photoId);
++  const row = p ? intentById(p.intentId) : undefined;
++  const it = row ? S.items.find((x) => x.intentId === row.id) : undefined;
++  const s = it ? S.stores.find((x) => x.id === it.storeId) : undefined;
++  if (!p || !row || !s) fail(404, 'not_found', 'غير موجود');
++  if (row!.user_id !== user.id) {
++    const live = row!.status === 'active' && s!.status === 'active' && S.matches.some((m) => m.state !== 'invalidated' && ((m.b === row!.id && m.aUser === user.id) || (m.a === row!.id && m.bUser === user.id)));
++    if (!live) fail(404, 'not_found', 'غير موجود');
++  }
++  const blob = await photoBlob(p!.id);
++  if (!blob) fail(404, 'not_found', 'غير موجود');
++  return new Reply(200, blob, p!.mime);
++}
++
++// ───────────── store info on match cards (src/catalog/match-cards.ts attachStoreInfo) ─────────────
++type CardOut = { state?: string; mine?: { id?: string } | null; other?: { id?: string; status?: string; photos?: PhotoRef[] } | null; store?: unknown; mineStore?: unknown };
++export function attachStoreInfo(cards: CardOut[], viewerId: string): void {
++  for (const c of cards) {
++    const o = c.other?.id ? intentByPublic(c.other.id) : undefined;
++    const oItem = o ? S.items.find((x) => x.intentId === o.id) : undefined;
++    const oStore = oItem ? S.stores.find((x) => x.id === oItem.storeId) : undefined;
++    if (o && oStore && o.user_id !== viewerId) {
++      const synthetic = oStore.realm === 'synthetic';
++      const mine = c.mine?.id ? intentByPublic(c.mine.id) : undefined;
++      const storeIntents = new Set(S.items.filter((x) => x.storeId === oStore.id).map((x) => x.intentId));
++      const n = mine ? S.matches.filter((m) => m.a === mine.id && m.state !== 'invalidated' && storeIntents.has(m.b)).length : 0;
++      c.store = {
++        id: oStore.public_id, nameAr: oStore.name_ar, labelAr: storeLabel(oStore.name_ar, synthetic), synthetic,
++        placeAr: reg.placeById.get(oStore.place_id)?.nameAr ?? null, requestMatches: n, groupLabelAr: groupLabelAr(Math.max(n, 1), oStore.name_ar, synthetic),
++      };
++      const live = (c.state === 'confirmed' || c.state === 'possible') && (c.other?.status === undefined || c.other.status === 'active');
++      if (c.other && oStore.status === 'active' && live) c.other.photos = photoRefs(o.id);
++    }
++    const m = c.mine?.id ? intentByPublic(c.mine.id) : undefined;
++    const mItem = m ? S.items.find((x) => x.intentId === m.id) : undefined;
++    const mStore = mItem ? S.stores.find((x) => x.id === mItem.storeId) : undefined;
++    if (m && mStore && m.user_id === viewerId) c.mineStore = { id: mStore.public_id, nameAr: mStore.name_ar, labelAr: storeLabel(mStore.name_ar, mStore.realm === 'synthetic') };
++  }
++}
++
++// ───────────── routes ─────────────
++const limitsView = () => ({ productsPerStore: CATALOG_LIMITS.productsPerStore, linesPerImport: CATALOG_LIMITS.linesPerImport, photosPerProduct: CATALOG_LIMITS.photosPerProduct, photoBytes: CATALOG_LIMITS.photoBytes });
++
++/** /api/stores/* and /api/photos/:id (null when the path is not a catalog route) */
++export async function catalogRoutes(method: string, p: string, q: URLSearchParams, body: any, user: User): Promise<unknown> {
++  let m: RegExpMatchArray | null;
++  if (method === 'GET' && p === '/api/stores') {
++    return { items: S.stores.filter((x) => x.owner_id === user.id).sort((a, b) => a.created_at.localeCompare(b.created_at) || Number(a.id) - Number(b.id)).map(storeView), limits: { stores: CATALOG_LIMITS.storesPerUser, ...limitsView() } };
++  }
++  if (method === 'POST' && p === '/api/stores') return { store: storeView(createStore(user, body)) };
++  if ((m = p.match(/^\/api\/photos\/([\w-]+)$/)) && method === 'GET') return photoForViewer(user, m[1]!);
++  if (!(m = p.match(/^\/api\/stores\/([\w-]+)(?:\/(.+))?$/))) return null;
++  const s = ownStore(user, m[1]!);
++  const sub = m[2] ?? '';
++  if (sub === '' && method === 'GET') return { store: storeView(s) };
++  if (sub === '' && method === 'PATCH') return updateStore(user, s, body);
++  if (sub === 'status' && method === 'POST') return setStoreStatus(user, s, body.action);
++  if (sub === 'items' && method === 'GET') {
++    const raw = q.get('status');
++    const statuses = !raw || raw === 'all' ? [...ITEM_STATUSES] : [...new Set(raw.split(','))];
++    if (!statuses.every((x) => (ITEM_STATUSES as readonly string[]).includes(x))) fail(400, 'bad_request', 'حالة غير صالحة');
++    const all = S.items.filter((it) => it.storeId === s.id && statuses.includes(intentById(it.intentId)?.status ?? '')).sort((a, b) => a.position - b.position);
++    const pg = offsetPage(all, q);
++    return { ...pg, items: pg.items.map((it) => productCard(s, it)) };
++  }
++  if (sub === 'import/preview' && method === 'POST') return previewImport(s, body);
++  if (sub === 'import/confirm' && method === 'POST') return confirmImport(user, s, body);
++  let mm: RegExpMatchArray | null;
++  if ((mm = sub.match(/^items\/([\w-]+)$/))) {
++    if (method === 'GET') { const { it } = ownItem(user, s, mm[1]!); return { item: productCard(s, it) }; }
++    if (method === 'PATCH') return editItem(user, s, mm[1]!, body);
++  }
++  if ((mm = sub.match(/^items\/([\w-]+)\/status$/)) && method === 'POST') return setItemStatus(user, s, mm[1]!, body.action);
++  if ((mm = sub.match(/^items\/([\w-]+)\/photos$/)) && method === 'POST') return uploadPhoto(user, s, mm[1]!, body);
++  if ((mm = sub.match(/^items\/([\w-]+)\/photos\/([\w-]+)(\/delete)?$/)) && ((method === 'DELETE' && !mm[3]) || (method === 'POST' && mm[3]))) return removePhoto(user, s, mm[1]!, mm[2]!);
++  return fail(404, 'not_found', 'المسار غير موجود في النسخة التجريبية');
++}
++
++// ───────────── demo store seed (src/seed/stores-demo.ts data, same confirm path) ─────────────
++export function seedDemoStores(ensureUser: (handle: string, name: string, persona: string) => User): void {
++  const azaz = reg.placeByCode.get('sy.aleppo.azaz')!;
++  const owner = ensureUser(DEMO_STORE.ownerHandle, DEMO_STORE.ownerName, DEMO_STORE.ownerPersona);
++  const buyer = ensureUser(DEMO_STORE.buyerHandle, DEMO_STORE.buyerName, DEMO_STORE.buyerPersona);
++  // the buyer's request first, so the store's products find it when they are matched (as the server seed)
++  const spec: IntentSpec = {
++    side: 'seek', categoryCode: 'goods.electronics', deal: 'sale',
++    place: { pointPlaceId: null, scopePlaceIds: [azaz.id], scopeStrength: 'required' },
++    price: { op: 'lte', lo: null, hi: '30000', currency: 'USD', unit: 'total', strength: 'required' },
++    when: null, attrs: {}, constraints: [],
++  };
++  const v = validateSpec(reg, spec);
++  if (!v.ok) throw new Error('demo buyer spec invalid');
++  const want = createIntent(buyer.id, 'synthetic', v.spec, 'موبايل للشراء في إعزاز (تجريبي)', new Date(Date.now() - 2 * 3600_000));
++  const store = createStore(owner, { nameAr: DEMO_STORE.storeName, descriptionAr: DEMO_STORE.storeDescription, placeId: azaz.id, contactPref: 'chat', hoursAr: DEMO_STORE.hours });
++  confirmImport(owner, store, { importId: DEMO_STORE.importId, items: DEMO_STORE_LINES.map((line) => ({ line })) }, { seed: true });
++  matchIntent(want.id, 'seed');
++}
+diff --git a/ultra-link/web-demo/connections.ts b/ultra-link/web-demo/connections.ts
+new file mode 100644
+index 0000000..db0e328
+--- /dev/null
++++ b/ultra-link/web-demo/connections.ts
+@@ -0,0 +1,421 @@
++// Browser edition — connections («ربط»), chat, phone share, timed location share, block / report (V2.2).
++// Same contract and rules as src/server/routes/connections.ts + src/connections/repo.ts (docs/CONNECTIONS.md):
++// one connection per accepted match; only the two participants see it (404 otherwise); accept reveals the display
++// name only; a phone only while its owner shares it in an OPEN connection; blocks freeze every connection of the pair.
++//
++// Simulated in this edition (single human; the counterparts are synthetic personas):
++//   * a contact request to a synthetic counterpart is accepted automatically after ~3 s;
++//   * a synthetic counterpart answers chat messages with CLEARLY LABELLED automatic demo replies, and shares its
++//     obviously fake number (FAKE_PHONE) after you share yours;
++//   * live location sharing is unavailable: the published page's frame refuses geolocation (409 with an Arabic note).
++
++import {
++  S, emit, fail, intentById, isAutomated, nowIso, nextId, notify, notifyUpsert, page as offsetPage, schedule, onTimer, userById, uuid,
++  type Conn, type Contact, type MatchRec, type User,
++} from './core.ts';
++
++export const MAX_MESSAGE_CHARS = 1000;
++export const AUTO_ACCEPT_MS = 3000;
++const AUTO_REPLY_MS = 1800;
++const PHONE_RE = /^[0-9+()\-\s.]{5,30}$/;
++const REPORT_REASONS = ['spam', 'scam', 'abuse', 'inappropriate', 'fake', 'other'];
++const MSG = {
++  notOpen: 'المحادثة مغلقة، لا يمكن إرسال رسائل أو مشاركة شيء فيها.',
++  unavailable: 'لا يمكن إرسال طلب تواصل لهذه المطابقة.',
++  realm: 'الحسابات التجريبية تتواصل مع حسابات تجريبية فقط، والحقيقية مع الحقيقية.',
++  ended: 'انتهى التواصل في هذه المطابقة.',
++  liveUnavailable: 'مشاركة الموقع المباشر غير متاحة في نسخة المتصفح: الصفحة المنشورة لا تسمح بتحديد الموقع (GPS). جرّبها في التطبيق الكامل.',
++};
++/** Automatic replies of the synthetic personas — every one says it is automatic and synthetic. */
++const AUTO_REPLIES = [
++  '(رد تلقائي تجريبي) أهلًا! هذا رد تجريبي من شخصية اصطناعية — لا يوجد شخص حقيقي يقرأ هذه المحادثة.',
++  '(رد تلقائي تجريبي) وصلتني رسالتك. في التطبيق الحقيقي يرد عليك صاحب العرض بنفسه.',
++  '(رد تلقائي تجريبي) هذه محادثة تجريبية داخل نسخة المتصفح؛ الردود آلية ومحددة مسبقًا.',
++];
++
++// ───────────── helpers ─────────────
++type Side = 'a' | 'b';
++const sideOf = (c: Conn, userId: string): Side | null => (c.a === userId ? 'a' : c.b === userId ? 'b' : null);
++const other = (s: Side): Side => (s === 'a' ? 'b' : 'a');
++const userOf = (c: Conn, s: Side) => (s === 'a' ? c.a : c.b);
++const readOf = (c: Conn, s: Side) => (s === 'a' ? c.aRead : c.bRead);
++const phoneOn = (c: Conn, s: Side) => (s === 'a' ? c.aPhone : c.bPhone);
++const matchOf = (c: Conn) => S.matches.find((m) => m.id === c.matchId);
++const matchPublic = (c: Conn) => matchOf(c)?.publicId ?? null;
++
++function viewStatus(c: Conn, userId: string): Conn['status'] {
++  if (c.status === 'blocked' && c.statusBy !== userId) return 'closed';
++  return c.status;
++}
++const blockedBetween = (u1: string, u2: string) => S.blocks.some((b) => (b.blocker === u1 && b.blocked === u2) || (b.blocker === u2 && b.blocked === u1));
++
++function mustLoad(publicId: string, userId: string): { c: Conn; me: Side } {
++  const c = S.connections.find((x) => x.publicId === publicId && (x.a === userId || x.b === userId));
++  if (!c) fail(404, 'not_found', 'غير موجود');
++  return { c: c!, me: sideOf(c!, userId)! };
++}
++function unreadAr(n: number): string {
++  if (n <= 1) return 'رسالة جديدة واحدة';
++  if (n === 2) return 'رسالتان جديدتان';
++  if (n <= 10) return `${n} رسائل جديدة`;
++  return `${n} رسالة جديدة`;
++}
++export function cleanMessageText(raw: string): string {
++  // eslint-disable-next-line no-control-regex
++  return raw.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
++}
++
++// ───────────── views ─────────────
++type LocationOut = { active: boolean; startedAt: string | null; expiresAt: string | null; position?: { lat: number; lng: number; accuracyM: number | null; at: string } | null };
++function locationsOf(c: Conn, userId: string): { mine: LocationOut; theirs: LocationOut } {
++  const open = c.status === 'open';
++  const t = Date.now();
++  const out = (s: Conn['shares'][number] | undefined, withPosition: boolean): LocationOut => {
++    const active = !!s && !s.endedAt && Date.parse(s.expiresAt) > t && open;
++    const o: LocationOut = { active, startedAt: active ? s!.startedAt : null, expiresAt: active ? s!.expiresAt : null };
++    if (withPosition) o.position = active && s!.lat !== null ? { lat: s!.lat!, lng: s!.lng!, accuracyM: s!.accuracyM, at: s!.positionAt! } : null;
++    return o;
++  };
++  return { mine: out(c.shares.find((s) => s.userId === userId), false), theirs: out(c.shares.find((s) => s.userId !== userId), true) };
++}
++
++function connCard(c: Conn, userId: string) {
++  const me = sideOf(c, userId)!;
++  const them = other(me);
++  const otherUser = userById(userOf(c, them));
++  const mineIntent = intentById(me === 'a' ? c.aIntent : c.bIntent);
++  const otherIntent = intentById(me === 'a' ? c.bIntent : c.aIntent);
++  const phone = c.status === 'open' && phoneOn(c, them) ? otherUser?.phone ?? null : null;
++  return {
++    id: c.publicId, status: viewStatus(c, userId), blockedByMe: c.status === 'blocked' && c.statusBy === userId,
++    synthetic: (otherUser?.realm ?? 'synthetic') === 'synthetic', matchId: matchPublic(c),
++    counterpart: { displayName: otherUser?.displayName ?? 'الطرف الآخر', ...(phone ? { phone } : {}) },
++    titles: { mineAr: mineIntent?.title_ar ?? null, otherAr: otherIntent?.title_ar ?? null },
++    unread: Math.max(0, c.messages.length - readOf(c, me)), messageCount: c.messages.length,
++    lastMessageAt: c.lastMessageAt, createdAt: c.createdAt, updatedAt: c.updatedAt,
++  };
++}
++
++function connDetail(c: Conn, userId: string) {
++  const me = sideOf(c, userId)!;
++  const them = other(me);
++  const loc = locationsOf(c, userId);
++  const u = userById(userId);
++  return {
++    ...connCard(c, userId),
++    canSend: c.status === 'open',
++    reportedByMe: S.reports.some((r) => r.connectionId === c.id && r.reporter === userId),
++    me: { phoneShared: phoneOn(c, me), hasPhone: !!u?.phone, lastReadSeq: readOf(c, me), location: loc.mine },
++    them: { phoneShared: c.status === 'open' && phoneOn(c, them), lastReadSeq: readOf(c, them), location: loc.theirs },
++  };
++}
++
++const msgOut = (m: Conn['messages'][number], userId: string) => {
++  const mine = m.sender === userId;
++  return { seq: m.seq, mine, text: m.text, createdAt: m.createdAt, ...(mine ? { clientMsgId: m.clientMsgId } : {}) };
++};
++
++// ───────────── contact flow hooks (used by the core match routes) ─────────────
++/** null = may send a contact request on this match; else the refusal (same codes as the server). */
++export function contactRefusal(m: MatchRec, meId: string, otherId: string): void {
++  const a = userById(meId), b = userById(otherId);
++  if (!a || !b || a.realm !== b.realm) fail(409, 'realm_mismatch', MSG.realm);
++  if (blockedBetween(meId, otherId)) fail(409, 'contact_unavailable', MSG.unavailable);
++  const c = S.connections.find((x) => x.matchId === m.id);
++  if (c && c.status !== 'open') fail(409, 'connection_ended', MSG.ended);
++}
++
++/** Open (idempotently) the connection of an accepted contact request's match. */
++export function openConnectionForMatch(m: MatchRec): Conn {
++  const existing = S.connections.find((x) => x.matchId === m.id);
++  if (existing) return existing;
++  const ua = userById(m.aUser), ub = userById(m.bUser);
++  if (!ua || !ub || ua.realm !== ub.realm) fail(409, 'realm_mismatch', MSG.realm);
++  if (blockedBetween(m.aUser, m.bUser)) fail(409, 'contact_unavailable', MSG.unavailable);
++  const t = nowIso();
++  const c: Conn = {
++    id: nextId(), publicId: uuid(), matchId: m.id, a: m.aUser, b: m.bUser, aIntent: m.a, bIntent: m.b, status: 'open', statusBy: null,
++    aPhone: false, bPhone: false, aRead: 0, bRead: 0, messages: [], shares: [], lastMessageAt: null, activityAt: t, createdAt: t, updatedAt: t, closedAt: null,
++  };
++  S.connections.push(c);
++  return c;
++}
++
++/** MatchCard privacy + connection info (src/connections/match-cards.ts): name after accept; phone only while shared. */
++export function decorateMatchCard(cardOut: { contact?: { status?: string; counterpart?: { displayName: string; phone?: string } }; connection?: unknown }, m: MatchRec, userId: string): void {
++  if (cardOut.contact?.counterpart) cardOut.contact.counterpart = { displayName: cardOut.contact.counterpart.displayName };
++  const c = S.connections.find((x) => x.matchId === m.id && (x.a === userId || x.b === userId));
++  if (!c) return;
++  const me = sideOf(c, userId)!;
++  cardOut.connection = { id: c.publicId, status: viewStatus(c, userId), unread: Math.max(0, c.messages.length - readOf(c, me)) };
++  if (c.status === 'open' && phoneOn(c, other(me)) && cardOut.contact?.counterpart) {
++    const p = userById(userOf(c, other(me)))?.phone;
++    if (p) cardOut.contact.counterpart.phone = p;
++  }
++}
++
++/** POST /api/matches/:id/contact */
++export function requestContact(user: User, m: MatchRec): { contactRequest: { id: string; status: string } } {
++  if (m.state === 'invalidated') fail(409, 'match_invalidated', 'هذه المطابقة لم تعد صالحة');
++  const otherId = m.aUser === user.id ? m.bUser : m.aUser;
++  contactRefusal(m, user.id, otherId);
++  let c = S.contacts.find((x) => x.matchId === m.id && x.requester === user.id);
++  if (!c) {
++    c = { id: uuid(), matchId: m.id, requester: user.id, recipient: otherId, status: 'pending', createdAt: nowIso() };
++    S.contacts.push(c);
++    notify(otherId, 'contact_request', 'طلب تواصل جديد', 'شخص مهتم بمطابقة معك. إذا وافقت يظهر لكما الاسم فقط وتُفتح محادثة داخل التطبيق؛ الرقم لا يظهر إلا إذا شاركه صاحبه.', { matchId: m.publicId, requestId: c.id }, `contact:${c.id}`);
++    // demo only: a synthetic counterpart accepts by itself after a few seconds (announced as automatic)
++    if (isAutomated(userById(otherId))) schedule('auto_accept', AUTO_ACCEPT_MS, { contactId: c.id });
++  }
++  emit(user.id, 'match_update');
++  return { contactRequest: { id: c.id, status: c.status } };
++}
++
++function accept(c: Contact, auto: boolean): Conn {
++  const m = S.matches.find((x) => x.id === c.matchId)!;
++  const conn = openConnectionForMatch(m);
++  c.status = 'accepted';
++  notify(c.requester, 'contact_accepted', 'تمت الموافقة على التواصل',
++    auto ? 'قبول تلقائي في نسخة المتصفح (شخصية اصطناعية). صار بإمكانكما المحادثة داخل التطبيق؛ الردود هناك آلية ومعلَّمة.' : 'صار بإمكانكما المحادثة داخل التطبيق. يظهر الاسم فقط؛ الرقم لا يظهر إلا إذا شاركه صاحبه.',
++    { matchId: m.publicId, connectionId: conn.publicId }, `contact-reply:${c.id}`);
++  emit(c.recipient, 'match_update');
++  emit(c.requester, 'match_update');
++  return conn;
++}
++
++onTimer('auto_accept', ({ contactId }) => {
++  const c = S.contacts.find((x) => x.id === contactId);
++  if (!c || c.status !== 'pending') return;
++  try { accept(c, true); } catch { c.status = 'cancelled'; }
++});
++
++/** POST /api/contact-requests/:id/respond */
++export function respondContact(user: User, requestId: string, acceptIt: boolean) {
++  const c = S.contacts.find((x) => x.id === requestId && x.recipient === user.id && x.status === 'pending');
++  if (!c) fail(404, 'not_found', 'الطلب غير موجود أو تمت الإجابة عليه');
++  let conn: Conn | null = null;
++  if (acceptIt) conn = accept(c!, false);
++  else {
++    c!.status = 'declined';
++    const m = S.matches.find((x) => x.id === c!.matchId)!;
++    notify(c!.requester, 'contact_declined', 'تم رفض طلب التواصل', null, { matchId: m.publicId }, `contact-reply:${c!.id}`);
++    emit(user.id, 'match_update');
++  }
++  return { contactRequest: { id: c!.id, status: c!.status }, ...(conn ? { connection: { id: conn.publicId, status: conn.status } } : {}) };
++}
++
++// ───────────── messages ─────────────
++function appendMessage(c: Conn, senderId: string, text: string, clientMsgId: string, auto = false) {
++  const me = sideOf(c, senderId)!;
++  const seq = c.messages.length + 1;
++  const t = nowIso();
++  const m = { seq, sender: senderId, clientMsgId, text, createdAt: t, ...(auto ? { auto: true } : {}) };
++  c.messages.push(m);
++  c.lastMessageAt = t; c.activityAt = t; c.updatedAt = t;
++  if (me === 'a') c.aRead = seq; else c.bRead = seq;
++  const them = other(me);
++  const recipient = userOf(c, them);
++  const sender = userById(senderId);
++  notifyUpsert(recipient, 'connection_message', `رسائل جديدة من ${sender?.displayName ?? 'الطرف الآخر'}`, unreadAr(seq - readOf(c, them)),
++    { connectionId: c.publicId, matchId: matchPublic(c) }, `conn-msg:${c.publicId}`);
++  // replying means I have read everything before: clear my own grouped notification for this connection
++  for (const n of S.notifications) if (n.recipient === senderId && n.dedupe === `conn-msg:${c.publicId}` && !n.readAt) n.readAt = t;
++  emit(recipient, 'conn_message');
++  emit(senderId, 'conn_message');
++  return m;
++}
++
++onTimer('auto_reply', ({ connectionId, from }) => {
++  const c = S.connections.find((x) => x.id === connectionId);
++  if (!c || c.status !== 'open' || !from || !isAutomated(userById(from))) return;
++  const n = c.messages.filter((m) => m.sender === from && m.auto).length;
++  appendMessage(c, from, AUTO_REPLIES[n % AUTO_REPLIES.length]!, uuid(), true);
++});
++
++onTimer('auto_phone', ({ connectionId, from }) => {
++  const c = S.connections.find((x) => x.id === connectionId);
++  const u = from ? userById(from) : undefined;
++  if (!c || c.status !== 'open' || !u || !isAutomated(u)) return;
++  const s = sideOf(c, u.id);
++  if (!s || phoneOn(c, s)) return;
++  if (s === 'a') c.aPhone = true; else c.bPhone = true;
++  c.updatedAt = nowIso();
++  appendMessage(c, u.id, `(رد تلقائي تجريبي) شاركتُ رقمي أيضًا — وهو رقم وهمي للتجربة فقط: ${u.phone ?? ''}`, uuid(), true);
++  emit(userOf(c, other(s)), 'conn_update');
++});
++
++// ───────────── routes ─────────────
++/** /api/connections/* (null when the path is not a connections route) */
++export function connectionRoutes(method: string, p: string, q: URLSearchParams, body: any, user: User): unknown {
++  let m: RegExpMatchArray | null;
++  if (method === 'GET' && p === '/api/connections') {
++    const st = q.get('status') || 'open';
++    if (!['open', 'closed', 'archived', 'all'].includes(st)) fail(400, 'bad_request', 'قيمة غير صالحة');
++    const statuses = st === 'closed' ? ['closed', 'blocked'] : st === 'archived' ? ['archived'] : st === 'all' ? ['open', 'closed', 'blocked', 'archived'] : ['open'];
++    const all = S.connections.filter((c) => (c.a === user.id || c.b === user.id) && statuses.includes(c.status))
++      .sort((x, y) => y.activityAt.localeCompare(x.activityAt) || Number(y.id) - Number(x.id));
++    const pg = offsetPage(all, q);
++    return { ...pg, items: pg.items.map((c) => connCard(c, user.id)) };
++  }
++  if (!(m = p.match(/^\/api\/connections\/([\w-]+)(?:\/(.+))?$/))) return null;
++  const id = m[1]!;
++  const sub = m[2] ?? '';
++  const { c, me } = mustLoad(id, user.id);
++  const them = other(me);
++  const counterpart = userById(userOf(c, them));
++
++  if (method === 'GET' && sub === '') return { connection: connDetail(c, user.id) };
++
++  if (method === 'GET' && sub === 'messages') {
++    const lastRead = { mine: readOf(c, me), theirs: readOf(c, them) };
++    const limit = Math.min(100, Math.max(1, Number(q.get('limit')) || (q.has('after') ? 100 : 30)));
++    if (q.has('after')) {
++      const after = Number(q.get('after'));
++      if (!Number.isInteger(after) || after < 0) fail(400, 'bad_request', 'قيمة غير صالحة');
++      const newer = c.messages.filter((x) => x.seq > after);
++      return { items: newer.slice(0, limit).map((x) => msgOut(x, user.id)), more: newer.length > limit, total: c.messages.length, lastReadSeq: lastRead };
++    }
++    // newest first; `next` = older, `prev` = newer (cursor = a seq)
++    const total = c.messages.length;
++    let cur: number | null = null;
++    if (q.get('cursor')) { try { cur = Number(atob(q.get('cursor')!)); } catch { cur = NaN; } if (!Number.isInteger(cur)) fail(400, 'bad_cursor', 'مؤشر الصفحة غير صالح'); }
++    const prev = q.get('dir') === 'prev' && cur !== null;
++    let rows = prev ? c.messages.filter((x) => x.seq > cur!).slice(0, limit + 1) : c.messages.filter((x) => cur === null || x.seq < cur).reverse().slice(0, limit + 1);
++    const hasMore = rows.length > limit;
++    rows = rows.slice(0, limit);
++    if (prev) rows.reverse();
++    const first = rows[0], last = rows[rows.length - 1];
++    const rangeStart = first ? total - first.seq + 1 : 0;
++    return {
++      items: rows.map((x) => msgOut(x, user.id)), total, limit,
++      nextCursor: last && (prev ? last.seq > 1 : hasMore) ? btoa(String(last.seq)) : null,
++      prevCursor: first && rangeStart > 1 ? btoa(String(first.seq)) : null,
++      rangeStart: rows.length ? rangeStart : 0, rangeEnd: rows.length ? rangeStart + rows.length - 1 : 0,
++      lastReadSeq: lastRead,
++    };
++  }
++
++  if (method === 'POST' && sub === 'messages') {
++    const text = cleanMessageText(String(body.text ?? ''));
++    const cid = String(body.clientMsgId ?? '').toLowerCase();
++    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(cid)) fail(400, 'bad_request', 'طلب غير صالح');
++    if (!text) fail(400, 'empty_message', 'اكتب رسالة أولًا.');
++    if ([...text].length > MAX_MESSAGE_CHARS) fail(400, 'message_too_long', 'الرسالة طويلة. الحد ١٠٠٠ حرف.');
++    const dup = c.messages.find((x) => x.sender === user.id && x.clientMsgId === cid);
++    if (dup) {
++      if (dup.text !== text) fail(409, 'client_msg_id_reused', 'هذا المعرّف استُخدم لرسالة أخرى.');
++      return { message: msgOut(dup, user.id), duplicate: true };
++    }
++    if (c.status !== 'open') fail(409, 'connection_not_open', MSG.notOpen);
++    const msg = appendMessage(c, user.id, text, cid);
++    if (isAutomated(counterpart)) schedule('auto_reply', AUTO_REPLY_MS, { connectionId: c.id, from: counterpart!.id });
++    return { message: msgOut(msg, user.id), duplicate: false };
++  }
++
++  if (method === 'POST' && sub === 'read') {
++    const seq = Number(body.seq);
++    if (!Number.isInteger(seq) || seq < 0) fail(400, 'bad_request', 'قيمة غير صالحة');
++    const cur = readOf(c, me);
++    const next = Math.max(cur, Math.min(seq, c.messages.length));
++    if (next > cur) { if (me === 'a') c.aRead = next; else c.bRead = next; emit(userOf(c, them), 'conn_update'); }
++    if (next >= c.messages.length) {
++      let k = 0;
++      for (const n of S.notifications) if (n.recipient === user.id && n.dedupe === `conn-msg:${c.publicId}` && !n.readAt) { n.readAt = nowIso(); k++; }
++      if (k) emit(user.id, 'counts');
++    }
++    return { ok: true, lastReadSeq: next, unread: Math.max(0, c.messages.length - next) };
++  }
++
++  if (method === 'POST' && sub === 'phone') {
++    if (typeof body.share !== 'boolean') fail(400, 'bad_request', 'طلب غير صالح');
++    if (c.status !== 'open') fail(409, 'connection_not_open', MSG.notOpen);
++    if (body.share) {
++      if (body.phone) {
++        const ph = String(body.phone).trim();
++        if (!PHONE_RE.test(ph) || (ph.match(/\d/g) ?? []).length < 5) fail(400, 'bad_phone', 'رقم الهاتف غير صالح.');
++        user.phone = ph;
++      }
++      if (!user.phone) fail(409, 'no_phone', 'أضف رقم هاتفك أولًا حتى تشاركه.');
++    }
++    if (me === 'a') c.aPhone = !!body.share; else c.bPhone = !!body.share;
++    c.updatedAt = nowIso();
++    emit(userOf(c, them), 'conn_update');
++    // demo: the synthetic counterpart answers by sharing its (fake, labelled) number too
++    if (body.share && isAutomated(counterpart) && !phoneOn(c, them)) schedule('auto_phone', AUTO_REPLY_MS, { connectionId: c.id, from: counterpart!.id });
++    return { connection: connDetail(c, user.id) };
++  }
++
++  if (method === 'POST' && sub === 'location/start') {
++    if (![15, 30, 60].includes(body.minutes)) fail(400, 'bad_request', 'مدة غير صالحة.');
++    if (c.status !== 'open') fail(409, 'connection_not_open', MSG.notOpen);
++    // the published page cannot read the device position, so a share could never send one: say so instead of pretending
++    return fail(409, 'not_available_in_browser', MSG.liveUnavailable);
++  }
++  if (method === 'POST' && sub === 'location/stop') {
++    const s = c.shares.find((x) => x.userId === user.id && !x.endedAt);
++    if (s) { s.endedAt = nowIso(); s.lat = s.lng = s.accuracyM = null; s.positionAt = null; emit(userOf(c, them), 'conn_update'); }
++    return { ok: true };
++  }
++  if (method === 'POST' && sub === 'location') {
++    const s = c.shares.find((x) => x.userId === user.id && !x.endedAt && Date.parse(x.expiresAt) > Date.now());
++    if (!s || c.status !== 'open') fail(409, 'share_not_active', 'مشاركة الموقع متوقفة. ابدأها من جديد إذا أردت.');
++    if (!Number.isFinite(body.lat) || !Number.isFinite(body.lng) || Math.abs(body.lat) > 90 || Math.abs(body.lng) > 180) fail(400, 'bad_request', 'إحداثيات غير صالحة');
++    Object.assign(s!, { lat: body.lat, lng: body.lng, accuracyM: body.accuracyM == null ? null : Math.round(body.accuracyM), positionAt: nowIso() });
++    emit(userOf(c, them), 'conn_location');
++    return { ok: true, expiresAt: s!.expiresAt };
++  }
++  if (method === 'GET' && sub === 'location') return locationsOf(c, user.id);
++
++  if (method === 'POST' && sub === 'close') {
++    if (!(c.status === 'closed' || (c.status === 'blocked' && viewStatus(c, user.id) === 'closed'))) {
++      if (c.status !== 'open') fail(409, 'invalid_transition', 'لا يمكن تنفيذ هذا الإجراء على حالتها الحالية.');
++      endConnection(c, 'closed', user.id);
++      emit(userOf(c, them), 'conn_update'); emit(user.id, 'conn_update');
++    }
++    return { connection: connDetail(c, user.id) };
++  }
++  if (method === 'POST' && sub === 'block') {
++    const otherId = userOf(c, them);
++    if (!S.blocks.some((b) => b.blocker === user.id && b.blocked === otherId)) S.blocks.push({ blocker: user.id, blocked: otherId, connectionId: c.id });
++    for (const x of S.connections) {
++      if (((x.a === user.id && x.b === otherId) || (x.a === otherId && x.b === user.id)) && x.status !== 'blocked') endConnection(x, 'blocked', user.id);
++    }
++    for (const k of S.contacts) {
++      if (k.status === 'pending' && ((k.requester === user.id && k.recipient === otherId) || (k.requester === otherId && k.recipient === user.id))) k.status = 'cancelled';
++    }
++    S.timers = S.timers.filter((t) => !(t.data.connectionId === c.id));
++    emit(otherId, 'conn_update'); emit(user.id, 'conn_update');
++    return { connection: connDetail(c, user.id) };
++  }
++  if (method === 'POST' && sub === 'unblock') {
++    const otherId = userOf(c, them);
++    const before = S.blocks.length;
++    S.blocks = S.blocks.filter((b) => !(b.blocker === user.id && b.blocked === otherId));
++    if (S.blocks.length !== before) {
++      const theyBlockMe = S.blocks.some((b) => b.blocker === otherId && b.blocked === user.id);
++      for (const x of S.connections) {
++        if (((x.a === user.id && x.b === otherId) || (x.a === otherId && x.b === user.id)) && x.status === 'blocked' && x.statusBy === user.id) {
++          if (theyBlockMe) x.statusBy = otherId; else x.status = 'closed';
++          x.updatedAt = nowIso();
++        }
++      }
++      emit(user.id, 'conn_update');
++    }
++    return { connection: connDetail(c, user.id) };
++  }
++  if (method === 'POST' && sub === 'report') {
++    if (!REPORT_REASONS.includes(body.reason)) fail(400, 'bad_request', 'سبب غير صالح');
++    const note = typeof body.note === 'string' && body.note.trim() ? body.note.trim().slice(0, 500) : null;
++    const prev = S.reports.find((r) => r.connectionId === c.id && r.reporter === user.id);
++    if (prev) Object.assign(prev, { reason: body.reason, note, createdAt: nowIso() });
++    else S.reports.push({ connectionId: c.id, reporter: user.id, reported: userOf(c, them), reason: body.reason, note, createdAt: nowIso() });
++    return { ok: true, noteAr: 'وصلنا بلاغك (محفوظ في هذا المتصفح فقط — نسخة تجريبية). لا يُعاقَب أحد تلقائيًا.' };
++  }
++  return fail(404, 'not_found', 'المسار غير موجود في النسخة التجريبية');
++}
++
++function endConnection(c: Conn, status: 'closed' | 'blocked', by: string): void {
++  const t = nowIso();
++  c.status = status; c.statusBy = by; c.closedAt ??= t; c.updatedAt = t; c.aPhone = false; c.bPhone = false;
++  for (const s of c.shares) if (!s.endedAt) { s.endedAt = t; s.lat = s.lng = s.accuracyM = null; s.positionAt = null; }
++}
+diff --git a/ultra-link/web-demo/core.ts b/ultra-link/web-demo/core.ts
+new file mode 100644
+index 0000000..99f6a78
+--- /dev/null
++++ b/ultra-link/web-demo/core.ts
+@@ -0,0 +1,361 @@
++// Browser edition — shared core: state + persistence, ids, errors, intents, matching, notifications, live events and
++// a small persisted scheduler (the "worker" of this edition: auto-accepts, demo replies). Feature modules
++// (connections.ts, catalog.ts, account.ts) import from here; local-api.ts wires everything to the /api/* router.
++//
++// Storage: one JSON document in this browser's localStorage (key STORE_KEY, `version` inside); product photos live in
++// IndexedDB (media.ts). Nothing leaves the browser. Never contains secrets.
++
++import { seedRegistry, attributesFor } from '../src/domain/registry.ts';
++import type { IntentSpec, Side } from '../src/domain/types.ts';
++import type { ConversationDraft } from '../src/conversation/engine.ts';
++import type { Question } from '../src/domain/types.ts';
++import { evaluatePair } from '../src/matching/evaluate.ts';
++import { expiryFor, rowToMatchable, specToColumns, toCard, type IntentRow } from '../src/repo/intents.ts';
++
++export const reg = seedRegistry();
++export const STORE_KEY = 'ultra-link-demo-v2';
++export const OLD_KEYS = ['ultra-link-demo-v1'];
++export const STATE_VERSION = 2;
++/** Every synthetic persona's phone in this edition: obviously fake, and labelled. */
++export const FAKE_PHONE = '+000 0000 000 (رقم وهمي)';
++
++// ───────────── types ─────────────
++export interface User {
++  id: string; publicId: string; displayName: string; realm: 'real' | 'synthetic'; handle: string | null; persona: string | null; phone: string | null;
++  /** an account created in this browser by the person using it (never answered automatically) */
++  local?: boolean;
++}
++export interface MatchRec {
++  id: string; publicId: string; verticalId: number; kind: 'exchange' | 'peer'; a: string; b: string; aUser: string; bUser: string;
++  state: 'confirmed' | 'possible' | 'invalidated'; score: number; reasons: unknown[]; missing: string[]; aVersion: number; bVersion: number;
++  invalidReasonAr: string | null; firstAt: string; updatedAt: string;
++}
++export interface Notif { id: string; recipient: string; kind: string; titleAr: string; bodyAr: string | null; payload: Record<string, unknown>; dedupe: string; createdAt: string; readAt: string | null }
++export interface Contact { id: string; matchId: string; requester: string; recipient: string; status: 'pending' | 'accepted' | 'declined' | 'cancelled'; createdAt: string }
++export interface Run { intentId: string; version: number; candidates: number; confirmed: number; possible: number; excluded: number; exclusions: { code: string; count: number; textAr: string }[]; newMatches: number; invalidated: number }
++export interface Conv { publicId: string; userId: string; state: 'collecting' | 'asking' | 'saved' | 'cancelled'; draft: ConversationDraft; pending: Question | null; turnResults: Record<string, unknown>; updatedAt: string; intentId?: string }
++export interface Msg { seq: number; sender: string; clientMsgId: string; text: string; createdAt: string; auto?: boolean }
++export interface Share { userId: string; startedAt: string; expiresAt: string; endedAt: string | null; lat: number | null; lng: number | null; accuracyM: number | null; positionAt: string | null }
++export interface Conn {
++  id: string; publicId: string; matchId: string; a: string; b: string; aIntent: string; bIntent: string;
++  status: 'open' | 'closed' | 'blocked' | 'archived'; statusBy: string | null;
++  aPhone: boolean; bPhone: boolean; aRead: number; bRead: number; messages: Msg[]; shares: Share[];
++  lastMessageAt: string | null; activityAt: string; createdAt: string; updatedAt: string; closedAt: string | null;
++}
++export interface Report { connectionId: string; reporter: string; reported: string; reason: string; note: string | null; createdAt: string }
++export interface Recovery { userId: string; hash: string; createdAt: string; lastUsedAt: string | null }
++/** shaped like src/catalog/repo.ts StoreRow, so its pure view builders can be reused as they are */
++export interface StoreRec {
++  id: string; public_id: string; owner_id: string; realm: 'real' | 'synthetic'; name_ar: string; description_ar: string | null;
++  place_id: number; contact_pref: 'chat' | 'chat_then_phone'; hours_ar: string | null; status: 'active' | 'paused';
++  version: number; next_position: number; created_at: string; updated_at: string;
++}
++export interface ItemRec { storeId: string; intentId: string; position: number; nameAr: string; nameNorm: string; pausedByStore: boolean; importId: string | null }
++export interface ImportRec { storeId: string; importId: string; hash: string; result: { created: number; items: string[]; storeStatus: 'active' | 'paused' } }
++export interface PhotoRec { id: string; intentId: string; slot: number; srcHash: string; mime: string; bytes: number; width: number; height: number; createdAt: string; stored: 'idb' | 'memory' }
++export interface Timer { id: string; at: number; kind: string; data: Record<string, string> }
++
++export interface State {
++  version: number; seq: number; session: string | null; seededAt: string;
++  users: User[]; intents: IntentRow[]; matches: MatchRec[]; notifications: Notif[]; contacts: Contact[]; runs: Run[]; conversations: Conv[];
++  connections: Conn[]; blocks: { blocker: string; blocked: string; connectionId: string }[]; reports: Report[]; recovery: Recovery[];
++  stores: StoreRec[]; items: ItemRec[]; imports: ImportRec[]; photos: PhotoRec[];
++  /** synthetic drivers kept «متصل الآن» by a simulated ping (their live position is refreshed on read) */
++  simLive: string[];
++  timers: Timer[];
++}
++
++export let S: State = emptyState();
++export function setState(next: State): void { S = next; }
++export function emptyState(): State {
++  return {
++    version: STATE_VERSION, seq: 0, session: null, seededAt: new Date().toISOString(),
++    users: [], intents: [], matches: [], notifications: [], contacts: [], runs: [], conversations: [],
++    connections: [], blocks: [], reports: [], recovery: [], stores: [], items: [], imports: [], photos: [], simLive: [], timers: [],
++  };
++}
++
++// ───────────── persistence ─────────────
++export function save(): void { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { /* storage unavailable or full: keep in memory */ } }
++export function load(): State | null {
++  try { const raw = localStorage.getItem(STORE_KEY); return raw ? (JSON.parse(raw) as State) : null; } catch { return null; }
++}
++/** Older browser-edition data (other keys) cannot be migrated safely (no geo/connection/store fields): drop it. */
++export function dropOldVersions(): boolean {
++  let dropped = false;
++  for (const k of OLD_KEYS) {
++    try { if (localStorage.getItem(k) !== null) { localStorage.removeItem(k); dropped = true; } } catch { /* ignore */ }
++  }
++  return dropped;
++}
++
++export const nextId = () => String(++S.seq);
++export const uuid = (): string => {
++  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
++  const b = crypto.getRandomValues(new Uint8Array(16));
++  b[6] = (b[6]! & 0x0f) | 0x40; b[8] = (b[8]! & 0x3f) | 0x80;
++  const x = [...b].map((v) => v.toString(16).padStart(2, '0')).join('');
++  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
++};
++export const nowIso = () => new Date().toISOString();
++export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
++/** cyrb53: a fast 53-bit string hash (idempotency fingerprints; not security). */
++export function hash53(str: string, seed = 0): string {
++  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
++  for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
++  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
++  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
++  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
++}
++/** SHA-256 hex when WebCrypto is available (secure contexts), else the non-cryptographic hash53 (labelled). */
++export async function sha256Hex(data: string | ArrayBuffer): Promise<string> {
++  try {
++    if (crypto?.subtle) {
++      const buf = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
++      const d = await crypto.subtle.digest('SHA-256', buf);
++      return [...new Uint8Array(d)].map((v) => v.toString(16).padStart(2, '0')).join('');
++    }
++  } catch { /* fall through */ }
++  const s = typeof data === 'string' ? data : [...new Uint8Array(data)].join(',');
++  return `h53:${hash53(s)}:${hash53(s, 7)}`;
++}
++
++// ───────────── HTTP-shaped errors and results ─────────────
++export class LocalError extends Error {
++  status: number; code: string; extra: Record<string, unknown> | undefined;
++  constructor(status: number, code: string, msg: string, extra?: Record<string, unknown>) { super(msg); this.status = status; this.code = code; this.extra = extra; }
++}
++export const fail = (status: number, code: string, msg: string, extra?: Record<string, unknown>): never => { throw new LocalError(status, code, msg, extra); };
++/** A route result with a non-200 status (e.g. 201 Created) or a binary body. */
++export class Reply {
++  status: number; body: unknown; contentType: string | null;
++  constructor(status: number, body: unknown, contentType: string | null = null) { this.status = status; this.body = body; this.contentType = contentType; }
++}
++
++// ───────────── users ─────────────
++export const userById = (id: string) => S.users.find((u) => u.id === id);
++export function me(): User { const u = S.session ? userById(S.session) : undefined; if (!u) fail(401, 'unauthorized', 'سجّل الدخول أولًا'); return u!; }
++export const publicUser = (u: User) => ({ publicId: u.publicId, displayName: u.displayName, realm: u.realm });
++/** synthetic personas and demo owners answer automatically in this edition; accounts made here never do */
++export const isAutomated = (u: User | undefined) => !!u && u.realm === 'synthetic' && !u.local;
++
++// ───────────── live events (SSE stand-in) ─────────────
++const listeners = new Set<(type: string, data: unknown) => void>();
++export function onEvent(fn: (type: string, data: unknown) => void): () => void { listeners.add(fn); return () => { listeners.delete(fn); }; }
++export function emit(userId: string, type: string): void {
++  if (userId !== S.session) return;
++  queueMicrotask(() => { for (const l of listeners) { l(type, counts(userId)); if (type !== 'counts') l('counts', counts(userId)); } });
++}
++
++// ───────────── notifications ─────────────
++export function notify(recipient: string, kind: string, titleAr: string, bodyAr: string | null, payload: Record<string, unknown>, dedupe: string): void {
++  if (S.notifications.some((n) => n.recipient === recipient && n.dedupe === dedupe)) return; // never duplicated
++  S.notifications.push({ id: uuid(), recipient, kind, titleAr, bodyAr, payload, dedupe, createdAt: nowIso(), readAt: null });
++  emit(recipient, 'notification');
++}
++/** One row per (recipient, dedupe): refreshed and marked unread again (grouped chat notifications). */
++export function notifyUpsert(recipient: string, kind: string, titleAr: string, bodyAr: string | null, payload: Record<string, unknown>, dedupe: string): void {
++  const n = S.notifications.find((x) => x.recipient === recipient && x.dedupe === dedupe);
++  if (n) Object.assign(n, { kind, titleAr, bodyAr, payload, createdAt: nowIso(), readAt: null });
++  else S.notifications.push({ id: uuid(), recipient, kind, titleAr, bodyAr, payload, dedupe, createdAt: nowIso(), readAt: null });
++}
++
++// ───────────── intents ─────────────
++export const intentById = (id: string) => S.intents.find((i) => i.id === id);
++export const intentByPublic = (pid: string) => S.intents.find((i) => i.public_id === pid);
++
++export function createIntent(userId: string, realm: 'real' | 'synthetic', spec: IntentSpec, titleAr: string, createdAt = new Date(), sourceText: string | null = null): IntentRow {
++  const c = specToColumns(reg, spec);
++  const id = nextId();
++  const iso = createdAt.toISOString();
++  const row: IntentRow = {
++    id, vertical_id: c.vertical_id, public_id: uuid(), user_id: userId, realm, side: c.side, category_id: c.category_id, deal_type_id: c.deal_type_id,
++    status: 'active', version: 1, title_ar: titleAr, source_text: sourceText, point_place_id: c.point_place_id, scope_strength: c.scope_strength,
++    scope_place_ids: c.scope_place_ids, price_op: c.price_op, price_lo: c.price_lo, price_hi: c.price_hi, currency: c.currency, price_unit: c.price_unit,
++    price_strength: c.price_strength, negotiable: c.negotiable, when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar,
++    attrs: c.attrs as IntentRow['attrs'], constraints: c.constraints as IntentRow['constraints'], expires_at: expiryFor(spec, createdAt).toISOString(),
++    created_at: iso, updated_at: iso, created_key: `${iso}#${id.padStart(9, '0')}`,
++    geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
++    live: null,
++  };
++  S.intents.push(row);
++  return row;
++}
++
++/** Replace an intent's spec (new version). Same columns as src/repo/intents.ts updateIntent. */
++export function updateIntentSpec(row: IntentRow, spec: IntentSpec, titleAr: string): void {
++  const c = specToColumns(reg, spec);
++  Object.assign(row, {
++    side: c.side, category_id: c.category_id, deal_type_id: c.deal_type_id, point_place_id: c.point_place_id, scope_strength: c.scope_strength, scope_place_ids: c.scope_place_ids,
++    price_op: c.price_op, price_lo: c.price_lo, price_hi: c.price_hi, currency: c.currency, price_unit: c.price_unit, price_strength: c.price_strength, negotiable: c.negotiable,
++    when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar, attrs: c.attrs, constraints: c.constraints,
++    geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
++    title_ar: titleAr, version: row.version + 1, updated_at: nowIso(),
++  });
++}
++
++export type StatusAction = 'pause' | 'resume' | 'fulfill' | 'close';
++const NEXT: Record<StatusAction, [string[], string]> = { pause: [['active'], 'paused'], resume: [['paused'], 'active'], fulfill: [['active', 'paused'], 'fulfilled'], close: [['active', 'paused'], 'closed'] };
++/** Same transitions as src/repo/intents.ts setIntentStatus (a non-active intent stops sharing its live position). */
++export function setIntentStatus(row: IntentRow, action: StatusAction): boolean {
++  const t = NEXT[action];
++  if (!t || !t[0].includes(row.status)) return false;
++  row.status = t[1]; row.version++; row.updated_at = nowIso();
++  if (row.status === 'active' && (!row.expires_at || Date.parse(row.expires_at) < Date.now())) row.expires_at = new Date(Date.now() + 30 * 86400_000).toISOString();
++  if (row.status !== 'active') { row.live = null; S.simLive = S.simLive.filter((x) => x !== row.id); }
++  return true;
++}
++
++/** Simulated pings: the synthetic «online» drivers stay «متصل الآن» (real drivers would ping from their phones). */
++export function refreshSimulatedDrivers(): void {
++  const t = Date.now();
++  for (const id of S.simLive) {
++    const r = intentById(id);
++    if (r?.live && t - Date.parse(r.live.at) > 30_000) r.live = { ...r.live, at: new Date(t).toISOString() };
++  }
++}
++
++// ───────────── matching (the server's evaluator; brute force over this small store) ─────────────
++const EXCLUSION_AR: Record<string, string> = {
++  place_out_of_scope: 'خارج المكان الذي اشترطته', place_excluded: 'في مكان استثنيته', price_above_max: 'أعلى من حد السعر',
++  price_below_min: 'أقل من الحد الأدنى للسعر', price_not_exact: 'السعر لا يساوي المطلوب بالضبط', attr_violation: 'لا يحقق شرطًا ملزمًا',
++  date_no_overlap: 'موعد مختلف', deal_mismatch: 'نوع عملية مختلف', category_mismatch: 'صنف مختلف', side_mismatch: 'نفس الدور', same_owner: 'من نفس الحساب', inactive: 'غير نشط',
++  distance_beyond_radius: 'أبعد من المسافة التي حددتها',
++};
++export const MISSING_AR: Record<string, string> = { price: 'السعر', 'price.currency': 'عملة السعر', 'price.unit': 'وحدة السعر (شهري/سنوي…)', place: 'المكان', when: 'الموعد', distance: 'المسافة', live: 'الموقع المباشر' };
++const INVALID_AR: Record<string, string> = { paused: 'الطلب موقوف مؤقتًا', expired: 'انتهت صلاحية الطلب', fulfilled: 'الطلب تمّت تلبيته', closed: 'الطلب مغلق' };
++
++export type Trigger = 'interactive' | 'seed' | 'job' | 'edit' | 'status';
++export function matchIntent(intentId: string, trigger: Trigger): Run {
++  refreshSimulatedDrivers();
++  const row = intentById(intentId)!;
++  const me = rowToMatchable(reg, row);
++  const run: Run = { intentId, version: row.version, candidates: 0, confirmed: 0, possible: 0, excluded: 0, exclusions: [], newMatches: 0, invalidated: 0 };
++  const agg = new Map<string, { count: number; textAr: string }>();
++  const mine = S.matches.filter((m) => m.a === intentId || m.b === intentId);
++  if (row.status !== 'active') {
++    for (const m of mine) if (m.state !== 'invalidated') {
++      m.state = 'invalidated'; m.invalidReasonAr = INVALID_AR[row.status] ?? 'الطلب مغلق'; m.updatedAt = nowIso(); run.invalidated++;
++      emit(m.aUser, 'match_update'); emit(m.bUser, 'match_update');
++    }
++    upsertRun(run);
++    return run;
++  }
++  const counterSide: Side = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
++  // same candidate pool as the server's retrieval: same realm/vertical/deal, compatible category (ancestor or descendant)
++  const cat = reg.categoryById.get(row.category_id)!;
++  const catSet = new Set([...cat.ancestors, ...cat.descendants]);
++  const others = S.intents.filter((o) => o.id !== intentId && o.vertical_id === row.vertical_id && o.realm === row.realm && o.side === counterSide
++    && o.deal_type_id === row.deal_type_id && catSet.has(o.category_id) && o.user_id !== row.user_id
++    && (o.status === 'active' || mine.some((m) => m.a === o.id || m.b === o.id)));
++  const now = new Date();
++  for (const o of others) {
++    const other = rowToMatchable(reg, o);
++    const v = evaluatePair(reg, me, other, { now });
++    run.candidates++;
++    const peer = me.side === 'join';
++    const [a, b] = peer ? (Number(me.id) < Number(other.id) ? [me, other] : [other, me]) : me.side === 'seek' ? [me, other] : [other, me];
++    const prev = S.matches.find((m) => m.a === a.id && m.b === b.id);
++    if (v.verdict === 'excluded') {
++      run.excluded++;
++      const code = v.exclusion?.code ?? 'excluded';
++      const g = agg.get(code) ?? { count: 0, textAr: EXCLUSION_AR[code] ?? v.exclusion?.text ?? '' };
++      g.count++; agg.set(code, g);
++      if (prev && prev.state !== 'invalidated') {
++        prev.state = 'invalidated'; prev.invalidReasonAr = v.exclusion?.text ?? 'لم تعد مطابقة'; prev.aVersion = a.version; prev.bVersion = b.version; prev.updatedAt = nowIso(); run.invalidated++;
++        emit(a.userId, 'match_update'); emit(b.userId, 'match_update');
++      }
++      continue;
++    }
++    const state = v.verdict === 'match' ? 'confirmed' : 'possible';
++    run[state]++;
++    if (prev) Object.assign(prev, { state, score: v.score, reasons: v.reasons, missing: v.missing, aVersion: a.version, bVersion: b.version, invalidReasonAr: null, updatedAt: nowIso() });
++    else S.matches.push({ id: nextId(), publicId: uuid(), verticalId: row.vertical_id, kind: peer ? 'peer' : 'exchange', a: a.id, b: b.id, aUser: a.userId, bUser: b.userId, state, score: v.score, reasons: v.reasons, missing: v.missing, aVersion: a.version, bVersion: b.version, invalidReasonAr: null, firstAt: nowIso(), updatedAt: nowIso() });
++    if (!prev || prev.state === 'invalidated') {
++      run.newMatches++;
++      if (trigger !== 'seed') {
++        const m = S.matches.find((x) => x.a === a.id && x.b === b.id)!;
++        for (const [rec, mineI, theirs] of [[a, a, b], [b, b, a]] as const) {
++          if (trigger === 'interactive' && rec.userId === me.userId) continue;
++          notify(rec.userId, state === 'confirmed' ? 'match_new' : 'match_possible', state === 'confirmed' ? 'مطابقة جديدة مناسبة' : 'مطابقة محتملة تحتاج تأكيد', `«${intentById(theirs.id)!.title_ar}» يناسب «${intentById(mineI.id)!.title_ar}»`, { matchId: m.publicId }, `match:${a.id}:${b.id}`);
++        }
++        emit(a.userId, 'match_update'); emit(b.userId, 'match_update');
++      }
++    }
++  }
++  run.exclusions = [...agg.entries()].map(([code, g]) => ({ code, count: g.count, textAr: g.textAr })).sort((x, y) => y.count - x.count);
++  upsertRun(run);
++  return run;
++}
++function upsertRun(run: Run) { S.runs = S.runs.filter((r) => !(r.intentId === run.intentId && r.version === run.version)); S.runs.push(run); }
++
++export interface RematchSummary { evaluated: number; queued: number; newMatches: number; invalidated: number; confirmed: number; possible: number }
++export function rematch(ids: string[], trigger: Trigger): RematchSummary {
++  const sum: RematchSummary = { evaluated: 0, queued: 0, newMatches: 0, invalidated: 0, confirmed: 0, possible: 0 };
++  for (const id of ids) {
++    const r = matchIntent(id, trigger);
++    sum.evaluated++; sum.newMatches += r.newMatches; sum.invalidated += r.invalidated; sum.confirmed += r.confirmed; sum.possible += r.possible;
++  }
++  return sum;
++}
++
++// ───────────── views ─────────────
++export function counts(userId: string) {
++  return {
++    requests: S.intents.filter((i) => i.user_id === userId && (i.side === 'seek' || i.side === 'join') && (i.status === 'active' || i.status === 'paused')).length,
++    offers: S.intents.filter((i) => i.user_id === userId && i.side === 'provide' && (i.status === 'active' || i.status === 'paused')).length,
++    matches: S.matches.filter((m) => (m.aUser === userId || m.bUser === userId) && m.state !== 'invalidated').length,
++    unread: S.notifications.filter((n) => n.recipient === userId && !n.readAt).length,
++  };
++}
++export function matchCounts(intentId: string) {
++  const ms = S.matches.filter((m) => m.a === intentId || m.b === intentId);
++  return { confirmed: ms.filter((m) => m.state === 'confirmed').length, possible: ms.filter((m) => m.state === 'possible').length };
++}
++export function card(row: IntentRow, withSpec = false) { return toCard(reg, row, matchCounts(row.id), withSpec); }
++export function missingAr(m: MatchRec, otherRow: IntentRow): string[] {
++  const defs = attributesFor(reg, reg.categoryById.get(otherRow.category_id)!.code);
++  return m.missing.map((k) => MISSING_AR[k] ?? (k.startsWith('attr.') ? defs.find((d) => d.key === k.slice(5))?.labelAr ?? k.slice(5) : k));
++}
++
++/** Offset pagination with exact totals (the demo store is small; the server uses keyset cursors). */
++export function page<T>(all: T[], q: URLSearchParams, def = 20, max = 100) {
++  const limit = Math.min(max, Math.max(1, Number(q.get('limit')) || def));
++  let offset = 0;
++  try { offset = Math.max(0, Number(q.get('cursor') ? atob(q.get('cursor')!) : 0) || 0); } catch { fail(400, 'bad_cursor', 'مؤشر الصفحة غير صالح'); }
++  const items = all.slice(offset, offset + limit);
++  return {
++    items, total: all.length, limit,
++    nextCursor: offset + limit < all.length ? btoa(String(offset + limit)) : null,
++    prevCursor: offset > 0 ? btoa(String(Math.max(0, offset - limit))) : null,
++    rangeStart: items.length ? offset + 1 : 0, rangeEnd: items.length ? offset + items.length : 0,
++  };
++}
++
++// ───────────── scheduler (persisted; the edition's stand-in for the worker) ─────────────
++const timerHandlers = new Map<string, (data: Record<string, string>) => void>();
++let armed: ReturnType<typeof setTimeout> | null = null;
++export function onTimer(kind: string, fn: (data: Record<string, string>) => void): void { timerHandlers.set(kind, fn); }
++export function schedule(kind: string, delayMs: number, data: Record<string, string>): void {
++  S.timers.push({ id: uuid(), at: Date.now() + delayMs, kind, data });
++  arm();
++}
++export function arm(): void {
++  if (armed) clearTimeout(armed);
++  armed = null;
++  if (!S.timers.length) return;
++  const next = Math.min(...S.timers.map((t) => t.at));
++  armed = setTimeout(runDue, Math.max(0, next - Date.now()));
++}
++export function runDue(): void {
++  armed = null;
++  const t = Date.now();
++  const due = S.timers.filter((x) => x.at <= t).sort((x, y) => x.at - y.at);
++  S.timers = S.timers.filter((x) => x.at > t);
++  for (const d of due) {
++    try { timerHandlers.get(d.kind)?.(d.data); } catch (e) { console.warn('[web-demo] timer failed', d.kind, e); }
++  }
++  if (due.length) save();
++  arm();
++}
+diff --git a/ultra-link/web-demo/local-api.ts b/ultra-link/web-demo/local-api.ts
+index 586f18d..678bd36 100644
+--- a/ultra-link/web-demo/local-api.ts
++++ b/ultra-link/web-demo/local-api.ts
+@@ -1,257 +1,170 @@
+ // In-browser backend for the Ultra Link demo edition.
+-// Implements the same /api/* contract as src/server/app.ts (docs/CONTRACTS.md) on top of the SAME
+-// understanding, conversation, validation and matching modules — only storage differs: an in-memory
+-// store persisted to this browser's localStorage, seeded with the same synthetic dataset as PostgreSQL.
+-// Never contains secrets: Jev is not called from the browser (the key must stay on a server).
++// Implements the same /api/* contract as src/server/app.ts + src/server/routes/* (docs/CONTRACTS.md) on top of the SAME
++// understanding, conversation, validation, matching, geo and catalog-import modules — only storage differs: an
++// in-memory store persisted to this browser's localStorage (photos in IndexedDB), seeded with the same synthetic
++// dataset as PostgreSQL. Never contains secrets: Jev is not called from the browser (the key must stay on a server).
++//
++// Modules: core.ts (state, intents, matching, notifications, scheduler) · connections.ts (V2.2 chat/phone/location/
++// block/report) · account.ts (local accounts + recovery codes) · catalog.ts (V2.3 stores/import/photos) · media.ts.
+ 
+-import { seedRegistry } from '../src/domain/registry.ts';
+ import { attributesFor } from '../src/domain/registry.ts';
+ import { validateSpec } from '../src/domain/validate.ts';
+-import type { IntentSpec, Question, Side } from '../src/domain/types.ts';
+-import { applyTurn, emptyDraft, recordAsked, summarize, titleOf, type ConversationDraft } from '../src/conversation/engine.ts';
++import type { IntentSpec } from '../src/domain/types.ts';
++import { applyTurn, emptyDraft, recordAsked, summarize, titleOf } from '../src/conversation/engine.ts';
+ import { evaluatePair } from '../src/matching/evaluate.ts';
+-import { expiryFor, intentToSpec, rowToMatchable, specToColumns, toCard, type IntentRow } from '../src/repo/intents.ts';
++import { intentToSpec, rowToMatchable, specToColumns, toCard, type IntentRow } from '../src/repo/intents.ts';
++import { boundAr, defaultNearestKm, effectivePoint, liveState, PRECISE_FIX_MAX_M } from '../src/geo/semantics.ts';
++import { haversineKm, roundDistance } from '../src/geo/distance.ts';
+ import { buildDemoDataset, counterpartFor, PERSONAS } from '../src/seed/demo-data.ts';
++import {
++  S, STATE_VERSION, STORE_KEY, FAKE_PHONE, LocalError, Reply, arm, card, counts, createIntent, dropOldVersions, emptyState, fail, intentById, intentByPublic,
++  load, matchCounts, matchIntent, me, missingAr, nextId, nowIso, page, publicUser, reg, refreshSimulatedDrivers, runDue, save, setIntentStatus,
++  setState, updateIntentSpec, uuid, emit, type Conv, type MatchRec, type User,
++} from './core.ts';
++import { connectionRoutes, decorateMatchCard, requestContact, respondContact } from './connections.ts';
++import { accountRoutes, accountSessionRoutes } from './account.ts';
++import { attachStoreInfo, catalogRoutes, seedDemoStores } from './catalog.ts';
++import { clearPhotos, loadPhotos } from './media.ts';
+ 
+-const reg = seedRegistry();
+-const STORE_KEY = 'ultra-link-demo-v1';
++export { onEvent } from './core.ts';
+ 
+-interface User { id: string; publicId: string; displayName: string; realm: 'real' | 'synthetic'; handle: string | null; persona: string | null; phone: string | null }
+-interface MatchRec {
+-  id: string; publicId: string; verticalId: number; kind: 'exchange' | 'peer'; a: string; b: string; aUser: string; bUser: string;
+-  state: 'confirmed' | 'possible' | 'invalidated'; score: number; reasons: unknown[]; missing: string[]; aVersion: number; bVersion: number;
+-  invalidReasonAr: string | null; firstAt: string; updatedAt: string;
+-}
+-interface Notif { id: string; recipient: string; kind: string; titleAr: string; bodyAr: string | null; payload: Record<string, unknown>; dedupe: string; createdAt: string; readAt: string | null }
+-interface Contact { id: string; matchId: string; requester: string; recipient: string; status: 'pending' | 'accepted' | 'declined'; createdAt: string }
+-interface Run { intentId: string; version: number; candidates: number; confirmed: number; possible: number; excluded: number; exclusions: { code: string; count: number; textAr: string }[] }
+-interface Conv { publicId: string; userId: string; state: 'collecting' | 'asking' | 'saved' | 'cancelled'; draft: ConversationDraft; pending: Question | null; turnResults: Record<string, unknown>; updatedAt: string; intentId?: string }
+-interface State { seq: number; session: string | null; users: User[]; intents: IntentRow[]; matches: MatchRec[]; notifications: Notif[]; contacts: Contact[]; runs: Run[]; conversations: Conv[]; seededAt: string }
++/** Endpoints the app called that this edition does not implement (must stay empty; the e2e spec checks it). */
++export const unimplemented: string[] = [];
++
++// ───────────── init / seed / reset ─────────────
++export interface InitInfo { reset: 'none' | 'old-version' | 'corrupt' | 'requested' }
+ 
+-let S: State;
+-const listeners = new Set<(type: string, data: unknown) => void>();
++export function init(force = false): InitInfo {
++  let reset: InitInfo['reset'] = 'none';
++  const dropped = dropOldVersions();
++  const prev = force ? null : load();
++  if (prev && prev.version === STATE_VERSION && Array.isArray(prev.intents) && prev.intents.length) {
++    setState(prev);
++  } else {
++    reset = force ? 'requested' : prev ? 'corrupt' : dropped ? 'old-version' : 'none';
++    seed();
++  }
++  runDue(); // timers that fell due while the page was closed (auto-accepts, demo replies)
++  arm();
++  return { reset };
++}
+ 
+-// ───────────── persistence ─────────────
+-function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch { /* storage unavailable: keep in memory */ } }
+-function load(): State | null {
+-  try { const raw = localStorage.getItem(STORE_KEY); return raw ? (JSON.parse(raw) as State) : null; } catch { return null; }
++/** Load stored product photos (IndexedDB) for display; photos that are gone are dropped from the state. */
++export async function initMedia(): Promise<number> {
++  const missing = new Set(await loadPhotos(S.photos.map((p) => p.id)));
++  if (missing.size) { S.photos = S.photos.filter((p) => !missing.has(p.id)); save(); }
++  return missing.size;
+ }
+-const nextId = () => String(++S.seq);
+-const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-4000-8000-${Math.random().toString(16).slice(2, 14)}`);
+-const nowIso = () => new Date().toISOString();
+ 
+-export function resetDemo(): void {
++export async function resetDemo(): Promise<void> {
+   try { localStorage.removeItem(STORE_KEY); } catch { /* ignore */ }
++  await clearPhotos().catch(() => {});
+   init(true);
+ }
+ 
+-export function init(force = false): void {
+-  const prev = force ? null : load();
+-  if (prev && prev.intents?.length) { S = prev; return; }
+-  S = { seq: 0, session: null, users: [], intents: [], matches: [], notifications: [], contacts: [], runs: [], conversations: [], seededAt: nowIso() };
++function seed(): void {
++  setState(emptyState());
+   const now = Date.now();
+   const { users, items } = buildDemoDataset(reg, now);
+   const byHandle = new Map<string, string>();
+-  for (const u of users) {
+-    const id = nextId();
+-    byHandle.set(u.handle, id);
+-    S.users.push({ id, publicId: uuid(), displayName: u.name, realm: 'synthetic', handle: u.handle, persona: u.persona, phone: u.phone });
++  const ensureUser = (handle: string, name: string, persona: string | null): User => {
++    const have = S.users.find((u) => u.handle === handle);
++    if (have) return have;
++    const u: User = { id: nextId(), publicId: uuid(), displayName: name, realm: 'synthetic', handle, persona, phone: FAKE_PHONE };
++    S.users.push(u);
++    byHandle.set(handle, u.id);
++    return u;
++  };
++  for (const u of users) ensureUser(u.handle, u.name, u.persona);
++  for (const it of items) {
++    const row = createIntent(byHandle.get(it.owner)!, 'synthetic', it.spec, `${it.title} (تجريبي)`, new Date(now - it.ageHours * 3600_000));
++    if (it.live) { row.live = { lat: it.live.lat, lng: it.live.lng, accuracyM: it.live.accuracyM, at: new Date(now).toISOString() }; S.simLive.push(row.id); }
+   }
+-  for (const it of items) createIntent(byHandle.get(it.owner)!, 'synthetic', it.spec, `${it.title} (تجريبي)`, new Date(now - it.ageHours * 3600_000));
+   for (const row of [...S.intents]) matchIntent(row.id, 'seed');
++  seedDemoStores((h, n, p) => ensureUser(h, n, p));
+   save();
+ }
+ 
+-// ───────────── intents ─────────────
+-function createIntent(userId: string, realm: 'real' | 'synthetic', spec: IntentSpec, titleAr: string, createdAt = new Date()): IntentRow {
+-  const c = specToColumns(reg, spec);
+-  const id = nextId();
+-  const iso = createdAt.toISOString();
+-  const row: IntentRow = {
+-    id, vertical_id: c.vertical_id, public_id: uuid(), user_id: userId, realm, side: c.side, category_id: c.category_id, deal_type_id: c.deal_type_id,
+-    status: 'active', version: 1, title_ar: titleAr, source_text: null, point_place_id: c.point_place_id, scope_strength: c.scope_strength,
+-    scope_place_ids: c.scope_place_ids, price_op: c.price_op, price_lo: c.price_lo, price_hi: c.price_hi, currency: c.currency, price_unit: c.price_unit,
+-    price_strength: c.price_strength, negotiable: c.negotiable, when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar,
+-    attrs: c.attrs as IntentRow['attrs'], constraints: c.constraints as IntentRow['constraints'], expires_at: expiryFor(spec, createdAt).toISOString(),
+-    created_at: iso, updated_at: iso, created_key: `${iso}#${id.padStart(9, '0')}`,
+-    geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
+-  };
+-  S.intents.push(row);
+-  return row;
+-}
+-const intentById = (id: string) => S.intents.find((i) => i.id === id);
+-const intentByPublic = (pid: string) => S.intents.find((i) => i.public_id === pid);
+-
+-// ───────────── matching (same evaluator as the server; brute force over this small store) ─────────────
+-function matchIntent(intentId: string, trigger: 'interactive' | 'seed' | 'job' | 'edit' | 'status'): Run {
+-  const row = intentById(intentId)!;
+-  const me = rowToMatchable(reg, row);
+-  const run: Run = { intentId, version: row.version, candidates: 0, confirmed: 0, possible: 0, excluded: 0, exclusions: [] };
+-  const agg = new Map<string, { count: number; textAr: string }>();
+-  const mine = S.matches.filter((m) => m.a === intentId || m.b === intentId);
+-  if (row.status !== 'active') {
+-    for (const m of mine) if (m.state !== 'invalidated') { m.state = 'invalidated'; m.invalidReasonAr = row.status === 'paused' ? 'الطلب موقوف مؤقتًا' : row.status === 'expired' ? 'انتهت صلاحية الطلب' : 'الطلب مغلق'; m.updatedAt = nowIso(); emit(m.aUser, 'match_update'); emit(m.bUser, 'match_update'); }
+-    upsertRun(run);
+-    return run;
+-  }
+-  const counterSide: Side = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
+-  // same candidate pool as the server's retrieval: same realm/vertical/deal, compatible category (ancestor or descendant)
+-  const cat = reg.categoryById.get(row.category_id)!;
+-  const catSet = new Set([...cat.ancestors, ...cat.descendants]);
+-  const others = S.intents.filter((o) => o.id !== intentId && o.vertical_id === row.vertical_id && o.realm === row.realm && o.side === counterSide
+-    && o.deal_type_id === row.deal_type_id && catSet.has(o.category_id) && o.user_id !== row.user_id
+-    && (o.status === 'active' || mine.some((m) => m.a === o.id || m.b === o.id)));
+-  for (const o of others) {
+-    const other = rowToMatchable(reg, o);
+-    const v = evaluatePair(reg, me, other);
+-    run.candidates++;
+-    const peer = me.side === 'join';
+-    const [a, b] = peer ? (Number(me.id) < Number(other.id) ? [me, other] : [other, me]) : me.side === 'seek' ? [me, other] : [other, me];
+-    const prev = S.matches.find((m) => m.a === a.id && m.b === b.id);
+-    if (v.verdict === 'excluded') {
+-      run.excluded++;
+-      const code = v.exclusion?.code ?? 'excluded';
+-      const g = agg.get(code) ?? { count: 0, textAr: EXCLUSION_AR[code] ?? v.exclusion?.text ?? '' };
+-      g.count++; agg.set(code, g);
+-      if (prev && prev.state !== 'invalidated') { prev.state = 'invalidated'; prev.invalidReasonAr = v.exclusion?.text ?? 'لم تعد مطابقة'; prev.aVersion = a.version; prev.bVersion = b.version; prev.updatedAt = nowIso(); emit(a.userId, 'match_update'); emit(b.userId, 'match_update'); }
+-      continue;
+-    }
+-    const state = v.verdict === 'match' ? 'confirmed' : 'possible';
+-    run[state]++;
+-    if (prev) Object.assign(prev, { state, score: v.score, reasons: v.reasons, missing: v.missing, aVersion: a.version, bVersion: b.version, invalidReasonAr: null, updatedAt: nowIso() });
+-    else S.matches.push({ id: nextId(), publicId: uuid(), verticalId: row.vertical_id, kind: peer ? 'peer' : 'exchange', a: a.id, b: b.id, aUser: a.userId, bUser: b.userId, state, score: v.score, reasons: v.reasons, missing: v.missing, aVersion: a.version, bVersion: b.version, invalidReasonAr: null, firstAt: nowIso(), updatedAt: nowIso() });
+-    if ((!prev || prev.state === 'invalidated') && trigger !== 'seed') {
+-      const m = S.matches.find((x) => x.a === a.id && x.b === b.id)!;
+-      for (const [rec, mineI, theirs] of [[a, a, b], [b, b, a]] as const) {
+-        if (trigger === 'interactive' && rec.userId === me.userId) continue;
+-        notify(rec.userId, state === 'confirmed' ? 'match_new' : 'match_possible', state === 'confirmed' ? 'مطابقة جديدة مناسبة' : 'مطابقة محتملة تحتاج تأكيد', `«${intentById(theirs.id)!.title_ar}» يناسب «${intentById(mineI.id)!.title_ar}»`, { matchId: m.publicId }, `match:${a.id}:${b.id}`);
+-      }
+-    }
+-  }
+-  run.exclusions = [...agg.entries()].map(([code, g]) => ({ code, count: g.count, textAr: g.textAr })).sort((x, y) => y.count - x.count);
+-  upsertRun(run);
+-  return run;
+-}
+-function upsertRun(run: Run) { S.runs = S.runs.filter((r) => !(r.intentId === run.intentId && r.version === run.version)); S.runs.push(run); }
+-
+-const EXCLUSION_AR: Record<string, string> = {
+-  place_out_of_scope: 'خارج المكان الذي اشترطته', place_excluded: 'في مكان استثنيته', price_above_max: 'أعلى من حد السعر',
+-  price_below_min: 'أقل من الحد الأدنى للسعر', price_not_exact: 'السعر لا يساوي المطلوب بالضبط', attr_violation: 'لا يحقق شرطًا ملزمًا',
+-  date_no_overlap: 'موعد مختلف', deal_mismatch: 'نوع عملية مختلف', category_mismatch: 'صنف مختلف', side_mismatch: 'نفس الدور', same_owner: 'من نفس الحساب', inactive: 'غير نشط',
+-};
+-const MISSING_AR: Record<string, string> = { price: 'السعر', 'price.currency': 'عملة السعر', 'price.unit': 'وحدة السعر (شهري/سنوي…)', place: 'المكان', when: 'الموعد' };
+-
+-function notify(recipient: string, kind: string, titleAr: string, bodyAr: string | null, payload: Record<string, unknown>, dedupe: string) {
+-  if (S.notifications.some((n) => n.recipient === recipient && n.dedupe === dedupe)) return; // never duplicated
+-  S.notifications.push({ id: uuid(), recipient, kind, titleAr, bodyAr, payload, dedupe, createdAt: nowIso(), readAt: null });
+-  emit(recipient, 'notification');
+-}
+-
+-function emit(userId: string, type: string) {
+-  if (userId !== S.session) return;
+-  queueMicrotask(() => { for (const l of listeners) { l(type, counts(userId)); if (type !== 'counts') l('counts', counts(userId)); } });
+-}
+-export function onEvent(fn: (type: string, data: unknown) => void): () => void { listeners.add(fn); return () => listeners.delete(fn); }
+-
+ // ───────────── views ─────────────
+-function counts(userId: string) {
+-  return {
+-    requests: S.intents.filter((i) => i.user_id === userId && (i.side === 'seek' || i.side === 'join') && (i.status === 'active' || i.status === 'paused')).length,
+-    offers: S.intents.filter((i) => i.user_id === userId && i.side === 'provide' && (i.status === 'active' || i.status === 'paused')).length,
+-    matches: S.matches.filter((m) => (m.aUser === userId || m.bUser === userId) && m.state !== 'invalidated').length,
+-    unread: S.notifications.filter((n) => n.recipient === userId && !n.readAt).length,
+-  };
+-}
+-function matchCounts(intentId: string) {
+-  const ms = S.matches.filter((m) => m.a === intentId || m.b === intentId);
+-  return { confirmed: ms.filter((m) => m.state === 'confirmed').length, possible: ms.filter((m) => m.state === 'possible').length };
+-}
+-function card(row: IntentRow, withSpec = false) { return toCard(reg, row, matchCounts(row.id), withSpec); }
+ function matchCard(m: MatchRec, userId: string) {
+   const iAmA = m.aUser === userId;
+   const mine = intentById(iAmA ? m.a : m.b)!;
+   const other = intentById(iAmA ? m.b : m.a)!;
+-  const c = S.contacts.find((x) => x.matchId === m.id && (x.requester === userId || x.recipient === userId));
+-  let contact: Record<string, unknown> = { status: 'none' };
++  const c = S.contacts.find((x) => x.matchId === m.id && (x.requester === userId || x.recipient === userId) && x.status !== 'cancelled');
++  let contact: { status: string; requestId?: string; counterpart?: { displayName: string; phone?: string } } = { status: 'none' };
+   if (c) {
+     const out = c.requester === userId;
+     contact = { status: c.status === 'pending' ? (out ? 'pending_out' : 'pending_in') : c.status, requestId: c.id };
+-    if (c.status === 'accepted') { const u = S.users.find((x) => x.id === (out ? c.recipient : c.requester))!; contact.counterpart = { displayName: u.displayName, phone: u.phone ?? undefined }; }
++    if (c.status === 'accepted') contact.counterpart = { displayName: S.users.find((x) => x.id === (out ? c.recipient : c.requester))!.displayName };
+   }
+-  const defs = attributesFor(reg, reg.categoryById.get(other.category_id)!.code);
+-  return {
++  const out: Record<string, unknown> & { contact: typeof contact; state: string; mine: ReturnType<typeof card>; other: ReturnType<typeof card> } = {
+     id: m.publicId, state: m.state, score: m.score, kind: m.kind, mine: card(mine), other: card(other), reasons: m.reasons,
+-    missing: m.missing.map((k) => MISSING_AR[k] ?? (k.startsWith('attr.') ? defs.find((d) => d.key === k.slice(5))?.labelAr ?? k.slice(5) : k)),
+-    missingKeys: m.missing, contact, updatedAt: m.updatedAt, invalidReasonAr: m.invalidReasonAr ?? undefined,
++    missing: missingAr(m, other), missingKeys: m.missing, contact, updatedAt: m.updatedAt, invalidReasonAr: m.invalidReasonAr ?? undefined,
+   };
++  decorateMatchCard(out, m, userId); // name after accept; phone only while shared; connection {id, status, unread}
++  return out;
+ }
+-/** Offset pagination with exact totals (the demo store is small; the server uses keyset cursors). */
+-function page<T>(all: T[], q: URLSearchParams, def = 20) {
+-  const limit = Math.min(100, Math.max(1, Number(q.get('limit')) || def));
+-  const offset = Math.max(0, Number(q.get('cursor') ? atob(q.get('cursor')!) : 0) || 0);
+-  const items = all.slice(offset, offset + limit);
+-  return {
+-    items, total: all.length, limit,
+-    nextCursor: offset + limit < all.length ? btoa(String(offset + limit)) : null,
+-    prevCursor: offset > 0 ? btoa(String(Math.max(0, offset - limit))) : null,
+-    rangeStart: items.length ? offset + 1 : 0, rangeEnd: items.length ? offset + items.length : 0,
+-  };
++function matchCards(list: MatchRec[], userId: string) {
++  const cards = list.map((x) => matchCard(x, userId));
++  attachStoreInfo(cards, userId); // store badge, product photos, «٣ منتجات من متجر …»
++  return cards;
+ }
+ 
+ // ───────────── HTTP-shaped handler ─────────────
+-export class LocalError extends Error { status: number; code: string; constructor(status: number, code: string, msg: string) { super(msg); this.status = status; this.code = code; } }
+-const fail = (status: number, code: string, msg: string): never => { throw new LocalError(status, code, msg); };
+-
+-export async function handle(method: string, url: string, body: any): Promise<{ status: number; json: unknown }> {
+-  try { return { status: 200, json: await route(method, url, body ?? {}) }; }
+-  catch (e) {
+-    if (e instanceof LocalError) return { status: e.status, json: { error: e.code, messageAr: e.message } };
+-    console.error(e);
++export async function handle(method: string, url: string, body: unknown): Promise<{ status: number; json: unknown; contentType?: string | null }> {
++  try {
++    const r = await route(method, url, body ?? {});
++    if (r instanceof Reply) return { status: r.status, json: r.body, contentType: r.contentType };
++    return { status: 200, json: r };
++  } catch (e) {
++    if (e instanceof LocalError) return { status: e.status, json: { error: e.code, messageAr: e.message, ...(e.extra ?? {}) } };
++    console.warn('[web-demo] handler failed', method, url.split('?')[0], e);
+     return { status: 500, json: { error: 'internal', messageAr: 'صار خطأ في النسخة التجريبية. جرّب «إعادة ضبط البيانات».' } };
+   } finally { save(); }
+ }
+ 
+-function me(): User { const u = S.users.find((x) => x.id === S.session); if (!u) fail(401, 'unauthorized', 'سجّل الدخول أولًا'); return u!; }
+-const publicUser = (u: User) => ({ publicId: u.publicId, displayName: u.displayName, realm: u.realm });
+-
+ async function route(method: string, url: string, body: any): Promise<unknown> {
+   const u = new URL(url, 'http://local');
+   const p = u.pathname;
+   const q = u.searchParams;
+   let m: RegExpMatchArray | null;
++  refreshSimulatedDrivers();
+ 
+-  if (method === 'GET' && p === '/api/session') return { user: S.session ? publicUser(me()) : null };
+-  if (method === 'GET' && p === '/api/ai/status') return { mode: 'rules', keyConfigured: false, verified: false, model: null, labelAr: 'نسخة المتصفح — المحلّل المحلي (Jev يعمل فقط على الخادم)' };
+-  if (method === 'GET' && p === '/api/personas') return { items: PERSONAS.map((x) => ({ handle: x.handle, displayName: x.name, descriptionAr: x.persona })) };
++  // ── public routes
++  if (method === 'GET' && p === '/api/health') return { ok: true, db: 'browser-localStorage', worker: { lastBeatAt: nowIso() }, version: 'web-demo' };
++  if (method === 'GET' && p === '/api/session') return { user: S.session && S.users.some((x) => x.id === S.session) ? publicUser(me()) : null };
++  if (method === 'GET' && p === '/api/ai/status') return { mode: 'rules', keyConfigured: false, verified: false, lastSuccessAt: null, lastError: null, model: null, labelAr: 'نسخة المتصفح — المحلّل المحلي (Jev يعمل فقط على الخادم)' };
++  if (method === 'GET' && p === '/api/personas') {
++    // same order as the server: personas not in PERSONAS (the demo store's two) first, then PERSONAS' order
++    const order = PERSONAS.map((x) => x.handle as string);
++    const list = S.users.filter((x) => x.persona && x.handle).sort((a, b) => order.indexOf(a.handle!) - order.indexOf(b.handle!) || Number(a.id) - Number(b.id));
++    return { items: list.map((x) => ({ handle: x.handle, displayName: x.displayName, descriptionAr: x.persona })) };
++  }
+   if (method === 'GET' && p === '/api/taxonomy') return {
+     categories: reg.categories.filter((c) => c.depth > 0).map((c) => ({ code: c.code, labelAr: c.nameAr, deals: c.deals, vertical: c.verticalCode })),
+     places: reg.places.filter((x) => x.kind !== 'world').map((x) => ({ id: x.id, labelAr: x.nameAr, kind: x.kind, depth: x.depth })),
+   };
+   if (method === 'POST' && p === '/api/auth/demo-login') {
+     const user = S.users.find((x) => x.handle === body.handle && x.persona);
+-    if (!user) fail(404, 'not_found', 'الشخصية غير موجودة');
++    if (!user) fail(404, 'not_found', 'الشخصية التجريبية غير موجودة');
+     S.session = user!.id;
+     return { user: publicUser(user!) };
+   }
+-  if (method === 'POST' && p === '/api/auth/register') {
+-    const name = String(body.displayName ?? '').trim().slice(0, 80);
+-    if (!name) fail(400, 'bad_request', 'اكتب اسمك');
+-    // in the browser edition every account is synthetic: there are no real users here
+-    const user: User = { id: nextId(), publicId: uuid(), displayName: name, realm: 'synthetic', handle: null, persona: null, phone: body.phone ? String(body.phone).slice(0, 30) : null };
+-    S.users.push(user);
+-    S.session = user.id;
+-    return { user: publicUser(user) };
+-  }
+   if (method === 'POST' && p === '/api/auth/logout') { S.session = null; return { ok: true }; }
++  const acc = await accountRoutes(method, p, body);
++  if (acc !== null) return acc;
+ 
++  // ── everything below needs a session
+   const user = me();
+   if (method === 'GET' && p === '/api/me') return { user: publicUser(user), counts: counts(user.id) };
++  if (method === 'GET' && p === '/api/events') return fail(400, 'use_event_source', 'استخدم EventSource');
+ 
+   // conversations
+   if (method === 'POST' && p === '/api/conversations') {
+     for (const c of S.conversations) if (c.userId === user.id && (c.state === 'collecting' || c.state === 'asking')) c.state = 'cancelled';
+     const c: Conv = { publicId: uuid(), userId: user.id, state: 'collecting', draft: emptyDraft(), pending: null, turnResults: {}, updatedAt: nowIso() };
+     S.conversations.push(c);
++    S.conversations = S.conversations.filter((x) => x.state === 'collecting' || x.state === 'asking' || Date.now() - Date.parse(x.updatedAt) < 86400_000).slice(-50);
+     return { conversation: { id: c.publicId, state: c.state, turns: 0 } };
+   }
+   if (method === 'GET' && p === '/api/conversations/current') {
+@@ -284,30 +197,17 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
+     const v = validateSpec(reg, merged);
+     if (!v.ok) fail(422, 'invalid_spec', `تعديل غير صالح: ${v.issues.map((i) => i.code).join('، ')}`);
+     const spec = (v as { ok: true; spec: IntentSpec }).spec;
+-    const c = specToColumns(reg, spec);
+-    if (c.vertical_id !== row.vertical_id) fail(422, 'vertical_change', 'لا يمكن تغيير القطاع');
++    if (specToColumns(reg, spec).vertical_id !== row.vertical_id) fail(422, 'vertical_change', 'لا يمكن تغيير القطاع');
+     const title = titleOf(reg, { side: spec.side, category: spec.categoryCode, deal: spec.deal, placeIds: spec.side === 'seek' ? spec.place.scopePlaceIds : spec.place.pointPlaceId != null ? [spec.place.pointPlaceId] : [], whenLabel: spec.when?.label });
+-    Object.assign(row, {
+-      side: c.side, category_id: c.category_id, deal_type_id: c.deal_type_id, point_place_id: c.point_place_id, scope_strength: c.scope_strength, scope_place_ids: c.scope_place_ids,
+-      price_op: c.price_op, price_lo: c.price_lo, price_hi: c.price_hi, currency: c.currency, price_unit: c.price_unit, price_strength: c.price_strength, negotiable: c.negotiable,
+-      when_from: c.when_from, when_to: c.when_to, when_strength: c.when_strength, when_label_ar: c.when_label_ar, attrs: c.attrs, constraints: c.constraints,
+-      geo_lat: c.geo_lat, geo_lng: c.geo_lng, geo_accuracy_m: c.geo_accuracy_m, geo_source: c.geo_source, geo_at: c.geo_at, radius_km: c.radius_km, radius_strength: c.radius_strength, nearest: c.nearest,
+-      title_ar: row.realm === 'synthetic' && user.persona ? `${title} (تجريبي)` : title, version: row.version + 1, updated_at: nowIso(),
+-    });
++    updateIntentSpec(row, spec, row.realm === 'synthetic' && user.persona ? `${title} (تجريبي)` : title);
+     const run = matchIntent(row.id, 'edit');
+-    const inv = S.matches.filter((x) => (x.a === row.id || x.b === row.id) && x.state === 'invalidated').length;
+-    return { intent: card(row, true), run: { totals: { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates }, invalidated: inv } };
++    return { intent: card(row, true), run: { totals: { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates }, invalidated: run.invalidated, newMatches: run.newMatches } };
+   }
+   if ((m = p.match(/^\/api\/intents\/([\w-]+)\/status$/)) && method === 'POST') {
+     const row = own(m[1]!);
+-    const t: Record<string, [string[], string]> = { pause: [['active'], 'paused'], resume: [['paused'], 'active'], fulfill: [['active', 'paused'], 'fulfilled'], close: [['active', 'paused'], 'closed'] };
+-    const tr = t[body.action];
+-    if (!tr || !tr[0].includes(row.status)) fail(409, 'invalid_transition', 'لا يمكن تنفيذ هذا الإجراء على حالته الحالية');
+-    row.status = tr![1]; row.version++; row.updated_at = nowIso();
+-    const before = S.matches.filter((x) => (x.a === row.id || x.b === row.id) && x.state !== 'invalidated').length;
+-    matchIntent(row.id, 'status');
+-    const after = S.matches.filter((x) => (x.a === row.id || x.b === row.id) && x.state !== 'invalidated').length;
+-    return { intent: card(row), run: { invalidated: Math.max(0, before - after) } };
++    if (!setIntentStatus(row, body.action)) fail(409, 'invalid_transition', 'لا يمكن تنفيذ هذا الإجراء على حالته الحالية');
++    const run = matchIntent(row.id, 'status');
++    return { intent: card(row), run: { invalidated: run.invalidated, totals: { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates } } };
+   }
+   if ((m = p.match(/^\/api\/intents\/([\w-]+)\/match$/)) && method === 'POST') {
+     const row = own(m[1]!);
+@@ -325,8 +225,18 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
+       if (run.exclusions.some((e) => e.code === 'price_above_max')) suggestionsAr.push('ارفع الحد الأقصى للسعر قليلًا');
+       if (run.exclusions.some((e) => e.code === 'attr_violation')) suggestionsAr.push('اجعل بعض الشروط تفضيلات بدل شروط ملزمة');
+     }
+-    return { intentId: row.public_id, version: row.version, status: 'done', totals: { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates }, exclusions: run.exclusions, truncated: false, page: { ...pg, items: pg.items.map((x) => matchCard(x, user.id)) }, suggestionsAr };
++    return { intentId: row.public_id, version: row.version, status: 'done', totals: { confirmed: run.confirmed, possible: run.possible, excluded: run.excluded, candidates: run.candidates }, exclusions: run.exclusions, truncated: false, page: { ...pg, items: matchCards(pg.items, user.id) }, suggestionsAr };
++  }
++  // V2.1 geo (src/server/routes/geo.ts): live pings for offers and the on-demand «nearest» view
++  if ((m = p.match(/^\/api\/intents\/([\w-]+)\/live$/)) && method === 'POST') return livePing(own(m[1]!), body);
++  if ((m = p.match(/^\/api\/intents\/([\w-]+)\/live(\/stop)?$/)) && ((method === 'DELETE' && !m[2]) || (method === 'POST' && m[2]))) {
++    const row = own(m[1]!);
++    const stopped = !!row.live;
++    row.live = null;
++    S.simLive = S.simLive.filter((x) => x !== row.id);
++    return { ok: true, stopped };
+   }
++  if ((m = p.match(/^\/api\/intents\/([\w-]+)\/nearby$/)) && method === 'GET') return nearby(own(m[1]!), q);
+ 
+   // matches
+   if (method === 'GET' && p === '/api/matches') {
+@@ -336,40 +246,19 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
+     if (q.get('intent')) { const r = own(q.get('intent')!); list = list.filter((x) => x.a === r.id || x.b === r.id); }
+     list.sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id));
+     const pg = page(list, q);
+-    return { ...pg, items: pg.items.map((x) => matchCard(x, user.id)) };
+-  }
+-  if ((m = p.match(/^\/api\/matches\/([\w-]+)\/contact$/)) && method === 'POST') {
+-    const mt = S.matches.find((x) => x.publicId === m![1] && (x.aUser === user.id || x.bUser === user.id));
+-    if (!mt) fail(404, 'not_found', 'غير موجود');
+-    if (mt!.state === 'invalidated') fail(409, 'match_invalidated', 'هذه المطابقة لم تعد صالحة');
+-    const other = mt!.aUser === user.id ? mt!.bUser : mt!.aUser;
+-    let c = S.contacts.find((x) => x.matchId === mt!.id && x.requester === user.id);
+-    if (!c) { c = { id: uuid(), matchId: mt!.id, requester: user.id, recipient: other, status: 'pending', createdAt: nowIso() }; S.contacts.push(c); }
+-    // demo only: the synthetic counterpart accepts after a few seconds (clearly announced)
+-    const counterpart = S.users.find((x) => x.id === other)!;
+-    if (!counterpart.persona || counterpart.handle === 'layla') {
+-      const cid = c.id;
+-      setTimeout(() => {
+-        const cc = S.contacts.find((x) => x.id === cid);
+-        if (!cc || cc.status !== 'pending') return;
+-        cc.status = 'accepted';
+-        notify(user.id, 'contact_accepted', 'تمت الموافقة على التواصل', 'قبول تلقائي في النسخة التجريبية — افتح المطابقة لترى الاسم والرقم (وهمي).', { matchId: mt!.publicId }, `contact-reply:${cid}`);
+-        emit(user.id, 'match_update');
+-        save();
+-      }, 3000);
+-    }
+-    return { contactRequest: { id: c.id, status: c.status } };
++    return { ...pg, items: matchCards(pg.items, user.id) };
+   }
++  const ownMatch = (pid: string) => { const x = S.matches.find((y) => y.publicId === pid && (y.aUser === user.id || y.bUser === user.id)); if (!x) fail(404, 'not_found', 'غير موجود'); return x!; };
++  if ((m = p.match(/^\/api\/matches\/([\w-]+)$/)) && method === 'GET') return { match: matchCards([ownMatch(m[1]!)], user.id)[0] };
++  if ((m = p.match(/^\/api\/matches\/([\w-]+)\/contact$/)) && method === 'POST') return requestContact(user, ownMatch(m[1]!));
+   if ((m = p.match(/^\/api\/contact-requests\/([\w-]+)\/respond$/)) && method === 'POST') {
+-    const c = S.contacts.find((x) => x.id === m![1] && x.recipient === user.id && x.status === 'pending');
+-    if (!c) fail(404, 'not_found', 'الطلب غير موجود أو تمت الإجابة عليه');
+-    c!.status = body.accept ? 'accepted' : 'declined';
+-    return { contactRequest: { id: c!.id, status: c!.status } };
++    if (typeof body.accept !== 'boolean') fail(400, 'bad_request', 'طلب غير صالح');
++    return respondContact(user, m[1]!, body.accept);
+   }
+ 
+   // notifications (recipient only)
+   if (method === 'GET' && p === '/api/notifications') {
+-    const all = S.notifications.filter((n) => n.recipient === user.id && (q.get('unread') !== '1' || !n.readAt)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
++    const all = S.notifications.filter((n) => n.recipient === user.id && ((q.get('unread') !== '1' && q.get('unread') !== 'true') || !n.readAt)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+     const pg = page(all, q);
+     return { ...pg, items: pg.items.map((n) => ({ id: n.id, kind: n.kind, titleAr: n.titleAr, bodyAr: n.bodyAr, payload: n.payload, createdAt: n.createdAt, readAt: n.readAt })), unread: counts(user.id).unread };
+   }
+@@ -388,6 +277,7 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
+ 
+   // demo: a counterpart arrives later (the "worker" runs after a short delay, like the server's queue)
+   if (method === 'POST' && p === '/api/demo/simulate') {
++    if (user.realm !== 'synthetic') fail(403, 'synthetic_only', 'المحاكاة متاحة فقط في الوضع التجريبي');
+     const target = [...S.intents].reverse().find((i) => i.user_id === user.id && i.status === 'active' && (i.side === 'seek' || i.side === 'join') && matchCounts(i.id).confirmed + matchCounts(i.id).possible === 0);
+     if (!target) fail(404, 'nothing_to_simulate', 'لا يوجد طلب نشط بدون مطابقات. احفظ طلبًا أولًا.');
+     const spec = counterpartFor(reg, intentToSpec(reg, target!));
+@@ -400,9 +290,70 @@ async function route(method: string, url: string, body: any): Promise<unknown> {
+     return { created: { id: row.public_id }, noteAr: 'أُضيف عرض تجريبي جديد. سيصلك تنبيه بعد لحظات عندما يُطابَق في الخلفية.' };
+   }
+ 
+-  return fail(404, 'not_found', 'المسار غير موجود في النسخة التجريبية');
++  // feature modules
++  const conn = connectionRoutes(method, p, q, body, user);
++  if (conn !== null) return conn;
++  const cat = await catalogRoutes(method, p, q, body, user);
++  if (cat !== null) return cat;
++  const accS = await accountSessionRoutes(method, p, body, user);
++  if (accS !== null) return accS;
++
++  // not part of the contract this edition knows: log it loudly (the e2e spec requires this list to stay empty)
++  const key = `${method} ${p.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, ':id')}`;
++  if (!unimplemented.includes(key)) unimplemented.push(key);
++  console.warn('[web-demo] unimplemented endpoint', key);
++  return fail(404, 'not_implemented_in_browser', 'هذه الميزة غير متاحة في نسخة المتصفح بعد.');
++}
++
++// ───────────── geo ─────────────
++function livePing(row: IntentRow, b: any) {
++  const ok = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi;
++  if (!ok(b.lat, -90, 90) || !ok(b.lng, -180, 180) || !ok(b.accuracyM, 0, 100_000)) fail(400, 'bad_request', 'إحداثيات غير صالحة');
++  if (b.accuracyM > PRECISE_FIX_MAX_M) fail(422, 'inaccurate_fix', 'دقة الموقع ضعيفة (أكثر من 3 كم). جرّب في مكان مفتوح أو فعّل GPS.');
++  if (row.side !== 'provide' && row.side !== 'join') fail(422, 'live_not_allowed', 'مشاركة الموقع المباشر متاحة للعروض والأنشطة فقط');
++  if (row.status !== 'active') fail(409, 'inactive', 'العرض غير نشط — استأنفه أولًا لمشاركة موقعك');
++  const t = Date.now();
++  if (row.live && t - Date.parse(row.live.at) < 10_000) {
++    return new Reply(429, { error: 'rate_limited', messageAr: 'تحديث الموقع متكرر جدًا — مرة كل 10 ثوانٍ على الأكثر' });
++  }
++  const startedAt = row.live ? row.live.at : new Date(t).toISOString();
++  row.live = { lat: b.lat, lng: b.lng, accuracyM: Math.round(b.accuracyM), at: new Date(t).toISOString() };
++  return { live: { sharing: true, fresh: true, labelAr: 'متصل الآن', updatedAt: row.live.at, expiresAt: new Date(t + 600_000).toISOString(), startedAt, minIntervalSec: 10, ttlSec: 600 } };
+ }
+ 
++/** GET /api/intents/:id/nearby — src/geo/nearby.ts over this store (origin: GPS, live, or the typed place's centre). */
++function nearby(row: IntentRow, q: URLSearchParams) {
++  const limit = Math.min(50, Math.max(1, Number(q.get('limit')) || 10));
++  if (row.status !== 'active') fail(409, 'inactive', 'الطلب غير نشط');
++  const now = new Date();
++  const stated = rowToMatchable(reg, row);
++  const meI = stated.radiusKm || stated.nearest ? stated : { ...stated, nearest: true };
++  const from = effectivePoint(reg, meI, now);
++  if (!from) fail(422, 'no_location', 'لا نعرف موقع هذا الطلب. استخدم «موقعي الحالي» أو حدّد المكان.');
++  const counterSide = meI.side === 'join' ? 'join' : meI.side === 'seek' ? 'provide' : 'seek';
++  const cat = reg.categoryById.get(row.category_id)!;
++  const catSet = new Set([...cat.ancestors, ...cat.descendants]);
++  const scored = S.intents
++    .filter((o) => o.id !== row.id && o.status === 'active' && o.realm === row.realm && o.side === counterSide && o.vertical_id === row.vertical_id && o.deal_type_id === row.deal_type_id && catSet.has(o.category_id) && o.user_id !== row.user_id)
++    .map((o) => { const other = rowToMatchable(reg, o); const v = evaluatePair(reg, meI, other, { now }); const to = effectivePoint(reg, other, now); return { o, other, v, to, km: to ? haversineKm(from!, to) : null }; })
++    .filter((x) => x.v.verdict !== 'excluded')
++    .sort((x, y) => (x.km ?? Infinity) - (y.km ?? Infinity) || y.v.score - x.v.score);
++  const items = scored.slice(0, limit).map(({ o, other, v, to, km }) => {
++    const ls = liveState(other, now);
++    const rd = km === null ? null : roundDistance(km);
++    const mt = S.matches.find((x) => x.state !== 'invalidated' && ((x.a === row.id && x.b === o.id) || (x.b === row.id && x.a === o.id)));
++    return {
++      intent: toCard(reg, o, undefined, false),
++      distance: rd ? { ar: rd.ar, km: rd.km, lt1: rd.lt1, approximate: !!to && (to.uncKm > 0 || from!.uncKm > 0) } : null,
++      live: ls ? { fresh: ls.fresh, labelAr: ls.labelAr } : null,
++      freshnessAr: to?.kind === 'live' ? ls!.labelAr : ls && !ls.fresh ? ls.labelAr : to?.kind === 'gps' ? 'موقع ثابت' : to?.kind === 'place' ? 'موقع تقريبي' : 'الموقع غير معروف',
++      verdict: v.verdict === 'match' ? 'confirmed' : 'possible', score: v.score, reasons: v.reasons, matchId: mt?.publicId ?? null,
++    };
++  });
++  return { items, limitAr: boundAr(reg, meI) ?? `الأقرب أولًا (حتى ${defaultNearestKm(reg, cat.code)} كم)`, from: from!.kind, truncated: scored.length > limit };
++}
++
++// ───────────── conversation turn ─────────────
+ function turn(user: User, convId: string, body: any) {
+   const c = S.conversations.find((x) => x.publicId === convId && x.userId === user.id);
+   if (!c) return fail(404, 'not_found', 'المحادثة غير موجودة');
+@@ -434,8 +385,7 @@ function turn(user: User, convId: string, body: any) {
+       const defs = attributesFor(reg, spec.categoryCode);
+       const key = ['subject', 'appliance', 'make'].map((k) => { const val = spec.attrs[k] ?? spec.constraints.find((x) => x.key === k && x.op === 'eq')?.value; return val === undefined ? null : defs.find((d) => d.key === k)?.values?.find((x) => x.code === val)?.labelAr ?? null; }).find(Boolean);
+       const base = titleOf(reg, out.draft);
+-      const row = createIntent(user.id, user.realm, spec, key ? `${base} (${key})` : base);
+-      row.source_text = text;
++      const row = createIntent(user.id, user.realm, spec, key ? `${base} (${key})` : base, new Date(), text);
+       c.draft = out.draft; c.pending = null; c.state = 'saved'; c.intentId = row.id;
+       result = { conversation: conv('saved'), action: 'saved', summary: summarize(reg, out.draft), intent: card(row), understanding };
+     }
+@@ -444,3 +394,4 @@ function turn(user: User, convId: string, body: any) {
+   if (turnId) c.turnResults[turnId] = result;
+   return result;
+ }
++
+diff --git a/ultra-link/web-demo/main.ts b/ultra-link/web-demo/main.ts
+index aaa7075..c9f0059 100644
+--- a/ultra-link/web-demo/main.ts
++++ b/ultra-link/web-demo/main.ts
+@@ -1,22 +1,88 @@
+-// Browser-edition entry: route /api/* to the in-browser backend, provide a local EventSource,
+-// disable speech RECOGNITION (the published page's frame refuses the microphone), then boot the real app.
+-import { handle, init, onEvent, resetDemo } from './local-api.ts';
++// Browser-edition entry: route /api/* (fetch AND XMLHttpRequest — photo uploads use XHR for progress) to the
++// in-browser backend, provide a local EventSource, disable speech RECOGNITION and geolocation (the published page's
++// frame refuses the microphone and the position), show the edition banner, then boot the real app.
++import { handle, init, initMedia, onEvent, resetDemo, unimplemented } from './local-api.ts';
+ 
+-init();
++const info = init();
++await initMedia().catch(() => 0);
+ 
++const toPath = (u: string) => (/^[a-z]+:/i.test(u) ? (u.startsWith('http') ? new URL(u).pathname + new URL(u).search : u) : u);
++const isApi = (path: string) => path.startsWith('/api/');
++const pause = () => new Promise((r) => setTimeout(r, 60)); // keep the UI's state transitions visible, like a real network hop
++
++function decodeBody(body: unknown): unknown {
++  if (body == null) return undefined;
++  if (typeof body === 'string') { try { return JSON.parse(body); } catch { return undefined; } }
++  if (body instanceof Blob) return body;
++  if (body instanceof ArrayBuffer) return new Blob([body]);
++  if (ArrayBuffer.isView(body)) return new Blob([body as unknown as ArrayBuffer]);
++  return undefined;
++}
++
++// ───────────── fetch ─────────────
+ const realFetch = window.fetch.bind(window);
+ window.fetch = (async (input: RequestInfo | URL, initArg?: RequestInit) => {
+   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+-  const path = url.startsWith('http') ? new URL(url).pathname + new URL(url).search : url;
+-  if (!path.startsWith('/api/')) return realFetch(input as RequestInfo, initArg);
+-  const method = (initArg?.method ?? 'GET').toUpperCase();
+-  let body: unknown = undefined;
+-  if (initArg?.body && typeof initArg.body === 'string') { try { body = JSON.parse(initArg.body); } catch { body = undefined; } }
+-  await new Promise((r) => setTimeout(r, 60)); // keep the UI's state transitions visible, like a real network hop
++  const path = toPath(url);
++  if (!isApi(path)) return realFetch(input as RequestInfo, initArg);
++  const method = (initArg?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
++  const body = decodeBody(initArg?.body ?? (input instanceof Request && method !== 'GET' ? await input.clone().blob() : undefined));
++  await pause();
+   const res = await handle(method, path, body);
++  if (res.json instanceof Blob) return new Response(res.json, { status: res.status, headers: { 'content-type': res.contentType ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' } });
+   return new Response(JSON.stringify(res.json), { status: res.status, headers: { 'content-type': 'application/json' } });
+ }) as typeof fetch;
+ 
++// ───────────── XMLHttpRequest (only /api/* is handled locally; everything else is the browser's own) ─────────────
++const NativeXHR = window.XMLHttpRequest;
++interface LocalXhr { method: string; path: string; status: number; text: string; state: number }
++const localXhr = new WeakMap<XMLHttpRequest, LocalXhr>();
++class DemoXHR extends NativeXHR {
++  override open(method: string, url: string | URL, async = true, user?: string | null, password?: string | null): void {
++    const path = toPath(typeof url === 'string' ? url : url.href);
++    if (isApi(path)) { localXhr.set(this, { method: method.toUpperCase(), path, status: 0, text: '', state: 1 }); return; }
++    localXhr.delete(this);
++    super.open(method, url, async, user, password);
++  }
++  override setRequestHeader(name: string, value: string): void { if (!localXhr.has(this)) super.setRequestHeader(name, value); }
++  override getResponseHeader(name: string): string | null {
++    return localXhr.has(this) ? (name.toLowerCase() === 'content-type' ? 'application/json' : null) : super.getResponseHeader(name);
++  }
++  override abort(): void { if (!localXhr.has(this)) super.abort(); }
++  override send(body?: Document | XMLHttpRequestBodyInit | null): void {
++    const loc = localXhr.get(this);
++    if (!loc) { super.send(body); return; }
++    const payload = decodeBody(body);
++    const total = payload instanceof Blob ? payload.size : 0;
++    void (async () => {
++      const progress = (loaded: number) => this.upload.dispatchEvent(new ProgressEvent('progress', { lengthComputable: total > 0, loaded, total }));
++      if (total) { progress(Math.round(total / 2)); await pause(); progress(total); }
++      try {
++        const res = await handle(loc.method, loc.path, payload);
++        loc.status = res.status;
++        loc.text = res.json instanceof Blob ? '' : JSON.stringify(res.json);
++        loc.state = 4;
++        this.dispatchEvent(new Event('readystatechange'));
++        this.dispatchEvent(new ProgressEvent('load'));
++      } catch {
++        loc.state = 4;
++        this.dispatchEvent(new ProgressEvent('error'));
++      }
++      this.dispatchEvent(new ProgressEvent('loadend'));
++    })();
++  }
++}
++// status / responseText / response / readyState are accessors on the native prototype: answer locally for /api/*
++for (const [key, pick] of [['status', (l: LocalXhr) => l.status], ['responseText', (l: LocalXhr) => l.text], ['response', (l: LocalXhr) => l.text], ['readyState', (l: LocalXhr) => l.state]] as const) {
++  const nativeGet = Object.getOwnPropertyDescriptor(NativeXHR.prototype, key)?.get;
++  Object.defineProperty(DemoXHR.prototype, key, {
++    configurable: true,
++    get(this: XMLHttpRequest) { const l = localXhr.get(this); return l ? pick(l) : nativeGet?.call(this); },
++  });
++}
++window.XMLHttpRequest = DemoXHR as unknown as typeof XMLHttpRequest;
++
++// ───────────── EventSource('/api/events') ─────────────
+ class LocalEventSource {
+   url: string; readyState = 1; onerror: ((e: unknown) => void) | null = null;
+   private handlers = new Map<string, Set<(e: { data: string }) => void>>();
+@@ -31,28 +97,70 @@ class LocalEventSource {
+ }
+ (window as unknown as { EventSource: unknown }).EventSource = LocalEventSource;
+ 
+-// The published page cannot use the microphone; without this the app would show a misleading
+-// "allow the microphone" error. Typing works; questions are still spoken when an Arabic voice exists.
++// ───────────── microphone and position: refused by the published page's frame ─────────────
++// Without this the app would show a misleading "allow the microphone" error. Typing works; questions are still spoken
++// when an Arabic voice exists.
+ try {
+   Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true });
+   Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true });
+ } catch { /* ignore */ }
++// The frame refuses geolocation: answer every request with the browser's own "permission denied" error, so the app
++// shows its existing Arabic message («لم تسمح بتحديد الموقع…») and the user types the place instead.
++const denied = () => ({ code: 1, message: 'Geolocation is not available in the browser edition', PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 } as GeolocationPositionError);
++let watchSeq = 0;
++const demoGeolocation = {
++  getCurrentPosition(_ok: PositionCallback, err?: PositionErrorCallback | null) { setTimeout(() => err?.(denied()), 250); },
++  watchPosition(_ok: PositionCallback, err?: PositionErrorCallback | null) { const id = ++watchSeq; setTimeout(() => err?.(denied()), 250); return id; },
++  clearWatch(_id: number) { /* nothing to stop */ },
++};
++try { Object.defineProperty(navigator, 'geolocation', { value: demoGeolocation, configurable: true }); } catch { /* ignore */ }
++
++// Live location sharing (offers: «شارك موقعي المباشر»; chat: «شارك موقعي لمدة …») cannot work without a position:
++// show a clear «غير متاح في نسخة المتصفح» state on those controls instead of letting them fail.
++const LIVE_NOTE = 'غير متاح في نسخة المتصفح: مشاركة الموقع المباشر تحتاج GPS، والصفحة المنشورة لا تسمح بتحديد الموقع.';
++let noteSeq = 0;
++function markLiveUnavailable(rootEl: ParentNode) {
++  const targets = [
++    ...rootEl.querySelectorAll<HTMLElement>('.geo-live:not([data-demo-unavailable])'),
++    ...rootEl.querySelectorAll<HTMLElement>('.cx-tools [role="group"][aria-label="شارك موقعي لمدة"]:not([data-demo-unavailable])'),
++  ];
++  for (const el of targets) {
++    el.dataset.demoUnavailable = '1';
++    const note = document.createElement('p');
++    note.className = 'demo-unavailable';
++    note.id = `demo-live-note-${++noteSeq}`;
++    note.textContent = LIVE_NOTE;
++    for (const b of el.querySelectorAll<HTMLButtonElement>('button')) { b.disabled = true; b.setAttribute('aria-describedby', note.id); }
++    el.after(note);
++  }
++}
++new MutationObserver(() => markLiveUnavailable(document)).observe(document.documentElement, { childList: true, subtree: true });
+ 
+-// Demo banner with a data reset (synthetic data lives only in this browser)
++// ───────────── banner with a data reset (synthetic data lives only in this browser) ─────────────
+ function banner() {
+   const bar = document.createElement('div');
+   bar.className = 'demo-edition-bar';
+   bar.setAttribute('role', 'note');
+-  const text = document.createElement('span');
+-  text.textContent = 'نسخة تجريبية داخل المتصفح: اكتب طلبك (الميكروفون والموقع غير متاحين في الصفحة المنشورة). بيانات اصطناعية محفوظة على جهازك فقط.';
++  const text = document.createElement('div');
++  text.className = 'demo-edition-text';
++  const line = (cls: string, s: string) => { const p = document.createElement('p'); p.className = cls; p.textContent = s; return p; };
++  text.append(
++    line('demo-edition-main', 'نسخة تجريبية داخل المتصفح: اكتب طلبك. بيانات اصطناعية محفوظة على جهازك فقط.'),
++    line('demo-edition-sim', 'محاكاة: الردود في المحادثات آلية ومعلَّمة، والسائقون والمتجر شخصيات اصطناعية، ولا ميكروفون ولا GPS في هذه الصفحة.'),
++  );
++  if (info.reset === 'old-version' || info.reset === 'corrupt') text.append(line('demo-edition-note', 'حُدّثت نسخة المتصفح، فأُعيد ضبط البيانات التجريبية.'));
+   const btn = document.createElement('button');
+   btn.type = 'button';
+   btn.className = 'demo-edition-reset';
+   btn.textContent = 'إعادة ضبط البيانات';
+-  btn.addEventListener('click', () => { resetDemo(); location.reload(); });
++  btn.addEventListener('click', async () => { btn.disabled = true; await resetDemo(); location.reload(); });
+   bar.append(text, btn);
+   document.body.prepend(bar);
+ }
+ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', banner); else banner();
+ 
++// for tests and the curious: endpoints the app called that this edition does not implement (must stay empty)
++(window as unknown as { __ulDemo: unknown }).__ulDemo = { edition: 'browser', unimplemented };
++
++// @ts-expect-error -- the app is plain JavaScript without type declarations
+ await import('../public/js/app.js');
+diff --git a/ultra-link/web-demo/media.ts b/ultra-link/web-demo/media.ts
+new file mode 100644
+index 0000000..d716f38
+--- /dev/null
++++ b/ultra-link/web-demo/media.ts
+@@ -0,0 +1,148 @@
++// Browser edition — product photos. The server walks JPEG/PNG/WebP containers and strips EXIF/GPS/XMP byte by byte
++// (src/catalog/media.ts, Node Buffers). Here the same refusals apply (type by MAGIC BYTES, 5 MB, 50 MP / 16,384 px per
++// side), and metadata is removed by RE-ENCODING the decoded pixels through a <canvas> (a canvas export carries no EXIF,
++// GPS, XMP, IPTC or comments). The result is a JPEG of at most MAX_SIDE px per side, kept in IndexedDB (not
++// localStorage, which is small) and shown through a data: URL. The edition caps the total photo storage (BUDGET_BYTES).
++
++export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
++const MAX_PIXELS = 50_000_000;
++const MAX_DIM = 16_384;
++const MAX_SIDE = 1280;
++export const BUDGET_BYTES = 25 * 1024 * 1024;
++const DB_NAME = 'ultra-link-demo-media';
++const OS = 'photos';
++
++export type Sniffed = 'jpeg' | 'png' | 'webp';
++export function sniff(b: Uint8Array): Sniffed | null {
++  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
++  if (b.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v)) return 'png';
++  if (b.length >= 12 && String.fromCharCode(...b.subarray(0, 4)) === 'RIFF' && String.fromCharCode(...b.subarray(8, 12)) === 'WEBP') return 'webp';
++  return null;
++}
++
++/** Width × height from the container headers (before any decoding), or null when not found. */
++export function headerDims(b: Uint8Array, t: Sniffed): { width: number; height: number } | null {
++  const u16 = (i: number) => (b[i]! << 8) | b[i + 1]!;
++  const u32 = (i: number) => ((b[i]! << 24) >>> 0) + (b[i + 1]! << 16) + (b[i + 2]! << 8) + b[i + 3]!;
++  if (t === 'png') return b.length >= 24 ? { width: u32(16), height: u32(20) } : null;
++  if (t === 'jpeg') {
++    let i = 2;
++    while (i + 9 < b.length) {
++      if (b[i] !== 0xff) { i++; continue; }
++      const marker = b[i + 1]!;
++      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
++      const len = u16(i + 2);
++      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { height: u16(i + 5), width: u16(i + 7) };
++      i += 2 + len;
++    }
++    return null;
++  }
++  // WebP: VP8X canvas (24-bit), VP8L (14-bit), VP8 (14-bit)
++  const chunk = String.fromCharCode(...b.subarray(12, 16));
++  const le24 = (i: number) => b[i]! | (b[i + 1]! << 8) | (b[i + 2]! << 16);
++  if (chunk === 'VP8X' && b.length >= 30) return { width: le24(24) + 1, height: le24(27) + 1 };
++  if (chunk === 'VP8L' && b.length >= 25) { const v = b[21]! | (b[22]! << 8) | (b[23]! << 16) | (b[24]! << 24); return { width: (v & 0x3fff) + 1, height: ((v >> 14) & 0x3fff) + 1 }; }
++  if (chunk === 'VP8 ' && b.length >= 30) return { width: (b[26]! | (b[27]! << 8)) & 0x3fff, height: (b[28]! | (b[29]! << 8)) & 0x3fff };
++  return null;
++}
++
++export class MediaRefusal extends Error {
++  status: number; code: string;
++  constructor(status: number, code: string, msg: string) { super(msg); this.status = status; this.code = code; }
++}
++
++export interface CleanPhoto { blob: Blob; width: number; height: number; mime: 'image/jpeg' }
++
++/** Validate and re-encode an uploaded image. Throws MediaRefusal with the server's status codes. */
++export async function cleanPhoto(input: Blob): Promise<{ photo: CleanPhoto; bytes: Uint8Array }> {
++  if (!input.size) throw new MediaRefusal(400, 'empty_upload', 'لم يصل أي ملف');
++  if (input.size > PHOTO_MAX_BYTES) throw new MediaRefusal(413, 'too_large', 'الصورة أكبر من ٥ ميغابايت');
++  const bytes = new Uint8Array(await input.arrayBuffer());
++  const type = sniff(bytes);
++  if (!type) throw new MediaRefusal(415, 'unsupported_type', 'الملف ليس صورة JPEG أو PNG أو WebP');
++  const dims = headerDims(bytes, type);
++  if (!dims || !dims.width || !dims.height) throw new MediaRefusal(422, 'bad_image', 'الصورة تالفة أو غير مكتملة');
++  if (dims.width > MAX_DIM || dims.height > MAX_DIM || dims.width * dims.height > MAX_PIXELS) throw new MediaRefusal(422, 'too_many_pixels', 'أبعاد الصورة كبيرة جدًا (الحد ٥٠ ميغابكسل)');
++  let bmp: ImageBitmap;
++  try {
++    bmp = await createImageBitmap(new Blob([bytes], { type: `image/${type}` }), { imageOrientation: 'from-image' });
++  } catch { throw new MediaRefusal(422, 'bad_image', 'الصورة تالفة أو غير مكتملة'); }
++  try {
++    let side = MAX_SIDE;
++    for (let attempt = 0; attempt < 3; attempt++) {
++      const k = Math.min(1, side / Math.max(bmp.width, bmp.height));
++      const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
++      const canvas = document.createElement('canvas');
++      canvas.width = w; canvas.height = h;
++      const ctx = canvas.getContext('2d');
++      if (!ctx) throw new MediaRefusal(422, 'bad_image', 'تعذّرت معالجة الصورة في هذا المتصفح');
++      ctx.fillStyle = '#ffffff'; // JPEG has no transparency
++      ctx.fillRect(0, 0, w, h);
++      ctx.drawImage(bmp, 0, 0, w, h);
++      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', attempt ? 0.72 : 0.84));
++      if (!blob) throw new MediaRefusal(422, 'bad_image', 'تعذّرت معالجة الصورة في هذا المتصفح');
++      if (blob.size <= 700 * 1024 || attempt === 2) return { photo: { blob, width: w, height: h, mime: 'image/jpeg' }, bytes };
++      side = Math.round(side * 0.75);
++    }
++  } finally { bmp.close(); }
++  throw new MediaRefusal(422, 'bad_image', 'تعذّرت معالجة الصورة');
++}
++
++// ───────────── IndexedDB (blobs) + in-memory data: URLs for display ─────────────
++const urls = new Map<string, string>();
++let dbp: Promise<IDBDatabase | null> | null = null;
++function db(): Promise<IDBDatabase | null> {
++  dbp ??= new Promise((resolve) => {
++    try {
++      const req = indexedDB.open(DB_NAME, 1);
++      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(OS)) req.result.createObjectStore(OS); };
++      req.onsuccess = () => resolve(req.result);
++      req.onerror = () => resolve(null);
++      req.onblocked = () => resolve(null);
++    } catch { resolve(null); }
++  });
++  return dbp;
++}
++function tx<T>(mode: IDBTransactionMode, fn: (os: IDBObjectStore) => IDBRequest<T>): Promise<T | null> {
++  return db().then((d) => new Promise<T | null>((resolve) => {
++    if (!d) { resolve(null); return; }
++    try {
++      const r = fn(d.transaction(OS, mode).objectStore(OS));
++      r.onsuccess = () => resolve(r.result);
++      r.onerror = () => resolve(null);
++    } catch { resolve(null); }
++  }));
++}
++const toDataUrl = (b: Blob) => new Promise<string>((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result)); fr.onerror = () => reject(fr.error); fr.readAsDataURL(b); });
++
++/** Keep a photo: IndexedDB when available ('idb'), else only for this page's lifetime ('memory'). */
++export async function putPhoto(id: string, blob: Blob): Promise<'idb' | 'memory'> {
++  urls.set(id, await toDataUrl(blob));
++  const ok = await tx('readwrite', (os) => os.put(blob, id));
++  return ok === null ? 'memory' : 'idb';
++}
++export async function deletePhotoBlob(id: string): Promise<void> {
++  urls.delete(id);
++  await tx('readwrite', (os) => os.delete(id));
++}
++export const photoUrl = (id: string): string | null => urls.get(id) ?? null;
++export async function photoBlob(id: string): Promise<Blob | null> {
++  const b = await tx<Blob>('readonly', (os) => os.get(id) as IDBRequest<Blob>);
++  if (b) return b;
++  const u = urls.get(id);
++  return u ? (await fetch(u)).blob() : null;
++}
++/** Load the stored photos (ids) into display URLs; returns the ids that could not be found. */
++export async function loadPhotos(ids: string[]): Promise<string[]> {
++  const missing: string[] = [];
++  for (const id of ids) {
++    if (urls.has(id)) continue;
++    const b = await tx<Blob>('readonly', (os) => os.get(id) as IDBRequest<Blob>);
++    if (b) urls.set(id, await toDataUrl(b)); else missing.push(id);
++  }
++  return missing;
++}
++export async function clearPhotos(): Promise<void> {
++  urls.clear();
++  await tx('readwrite', (os) => os.clear());
++}
+diff --git a/ultra-link/web-demo/tsconfig.json b/ultra-link/web-demo/tsconfig.json
+index 69f9eef..200306d 100644
+--- a/ultra-link/web-demo/tsconfig.json
++++ b/ultra-link/web-demo/tsconfig.json
+@@ -2,8 +2,7 @@
+   "extends": "../tsconfig.json",
+   "compilerOptions": {
+     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+-    "types": ["node"],
+-    "allowJs": false
++    "types": ["node"]
+   },
+   "include": ["./*.ts"]
+ }
+diff --git a/ultra-link/web-demo/virtual.d.ts b/ultra-link/web-demo/virtual.d.ts
+new file mode 100644
+index 0000000..0bf8ce1
+--- /dev/null
++++ b/ultra-link/web-demo/virtual.d.ts
+@@ -0,0 +1,6 @@
++// Build-time data module (web-demo/build.ts): the demo store's data, read from src/seed/stores-demo.ts in Node at
++// build time — that module imports the server's database code, so the browser bundle cannot import it directly.
++declare module 'virtual:stores-demo' {
++  export const DEMO_STORE: typeof import('../src/seed/stores-demo.ts').DEMO_STORE;
++  export const DEMO_STORE_LINES: typeof import('../src/seed/stores-demo.ts').DEMO_STORE_LINES;
++}

@@ -1,0 +1,1773 @@
+diff --git a/ultra-link/migrations/0007_links.sql b/ultra-link/migrations/0007_links.sql
+new file mode 100644
+index 0000000..349c5a2
+--- /dev/null
++++ b/ultra-link/migrations/0007_links.sql
+@@ -0,0 +1,131 @@
++-- 0007_links.sql — Ultra Link V2.4 "share links" (owner: links role; design: docs/FEATURES-V2.md §3,
++-- details: docs/LINKS.md).
++--
++--  1. links: one shareable, unlisted link. public_id = 13 random base62 characters (77 bits, CHECKed), the only id a
++--     visitor ever sees. realm is the OWNER's realm, copied by a trigger (never from the client): a synthetic owner's
++--     links are synthetic and are labelled «(تجريبي)» on the public page.
++--     kind: intent | product | store | place | collection. Single-item kinds hold exactly one row in link_items; a
++--     collection holds 1..50 ordered rows (enforced by the service; position ≤ 50 by CHECK).
++--     Lifetime: duration 24h | 7d | 30d | until_stopped → expires_at (NULL only for until_stopped, CHECKed).
++--     status live | ended (end_reason stopped | expired | unavailable). Readers treat a live row whose expires_at
++--     passed, or whose items have all been unavailable for 7 days (unavailable_since), as ended at once; the worker's
++--     link_sweep then writes the final status. view_count: a plain counter for the owner — no visitor IP or
++--     identifier is stored anywhere (de-duplication, if any, is an in-memory salted hash, see docs/LINKS.md §5).
++--  2. link_items: the ordered entries of a link. item_no is stable per link (never reused) and is the public "ref" of
++--     an entry; position is the order (UNIQUE DEFERRABLE so a reorder is one UPDATE). Targets by kind:
++--       intent | product → (vertical_id, intent_id)  — FK to intents (a deleted product keeps its closed intent;
++--                                                       the missing store_items row makes it «غير متاح»)
++--       store            → store_id                   — ON DELETE SET NULL (entry stays, shows «غير متاح»)
++--       link             → child_link_id              — ON DELETE SET NULL (same)
++--       place            → place_id (registry) XOR (approx_lat, approx_lng) rounded to 0.01° (~1 km) by the column
++--                          type itself: numeric(4,2)/(5,2) cannot hold a precise GPS fix.
++--     A trigger enforces (a) every target belongs to the link's owner, (b) nesting depth ≤ 2: a child link must not
++--     contain links and a link that is itself inside another link cannot receive links — which also rules out
++--     cycles (a self-reference is refused by a CHECK). The service takes a per-owner advisory lock around structure
++--     changes, so two concurrent edits cannot both pass these checks.
++--
++-- Locks: new tables only (no rewrite of existing tables); milliseconds on the app DB.
++-- Rollback (forward-only runner; inverse statements):
++--   DROP TABLE link_items, links; DROP FUNCTION ul_links_realm(), ul_links_item_check();
++-- Tests: test/integration/links-*.test.ts.
++
++SET LOCAL lock_timeout = '10s';
++
++-- ───────────── 1. links ─────────────
++CREATE TABLE links (
++  id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
++  public_id         text NOT NULL CHECK (public_id ~ '^[0-9A-Za-z]{13}$'),
++  owner_id          bigint NOT NULL REFERENCES users (id) ON DELETE CASCADE,
++  realm             text NOT NULL CHECK (realm IN ('real', 'synthetic')),      -- = users.realm of owner_id (trigger)
++  kind              text NOT NULL CHECK (kind IN ('intent', 'product', 'store', 'place', 'collection')),
++  title_ar          text CHECK (title_ar IS NULL OR char_length(title_ar) BETWEEN 1 AND 80),
++  note_ar           text CHECK (note_ar IS NULL OR char_length(note_ar) BETWEEN 1 AND 500),
++  duration          text NOT NULL CHECK (duration IN ('24h', '7d', '30d', 'until_stopped')),
++  expires_at        timestamptz,
++  status            text NOT NULL DEFAULT 'live' CHECK (status IN ('live', 'ended')),
++  end_reason        text CHECK (end_reason IN ('stopped', 'expired', 'unavailable')),
++  ended_at          timestamptz,
++  unavailable_since timestamptz,                -- every item unavailable since (set/cleared by the sweep)
++  next_item_no      smallint NOT NULL DEFAULT 1 CHECK (next_item_no BETWEEN 1 AND 32000),
++  view_count        bigint NOT NULL DEFAULT 0 CHECK (view_count >= 0),
++  last_viewed_at    timestamptz,
++  version           integer NOT NULL DEFAULT 1 CHECK (version > 0),
++  created_at        timestamptz NOT NULL DEFAULT now(),
++  updated_at        timestamptz NOT NULL DEFAULT now(),
++  CONSTRAINT links_public_id_key UNIQUE (public_id),
++  CONSTRAINT links_expiry_chk CHECK ((duration = 'until_stopped') = (expires_at IS NULL)),
++  CONSTRAINT links_status_chk CHECK (((status = 'live') = (end_reason IS NULL)) AND ((end_reason IS NULL) = (ended_at IS NULL)))
++) WITH (fillfactor = 90);  -- view counter updates stay HOT
++-- «روابطي»: the owner's list, keyset (created_at DESC, id DESC); also the users FK cascade
++CREATE INDEX links_owner_idx ON links (owner_id, created_at DESC, id DESC);
++-- link_sweep walks the live links in id order
++CREATE INDEX links_live_idx ON links (id) WHERE status = 'live';
++
++CREATE FUNCTION ul_links_realm() RETURNS trigger LANGUAGE plpgsql AS $$
++BEGIN
++  SELECT u.realm INTO NEW.realm FROM users u WHERE u.id = NEW.owner_id;
++  RETURN NEW;
++END $$;
++CREATE TRIGGER links_realm_trg BEFORE INSERT OR UPDATE OF owner_id, realm ON links
++  FOR EACH ROW EXECUTE FUNCTION ul_links_realm();
++
++-- ───────────── 2. link_items ─────────────
++CREATE TABLE link_items (
++  link_id       bigint NOT NULL REFERENCES links (id) ON DELETE CASCADE,
++  item_no       smallint NOT NULL CHECK (item_no > 0),
++  position      smallint NOT NULL CHECK (position BETWEEN 1 AND 50),
++  kind          text NOT NULL CHECK (kind IN ('intent', 'product', 'store', 'place', 'link')),
++  vertical_id   smallint,
++  intent_id     bigint,
++  store_id      bigint REFERENCES stores (id) ON DELETE SET NULL,
++  child_link_id bigint REFERENCES links (id) ON DELETE SET NULL,
++  place_id      integer REFERENCES places (id),
++  approx_lat    numeric(4, 2) CHECK (approx_lat BETWEEN -90 AND 90),
++  approx_lng    numeric(5, 2) CHECK (approx_lng BETWEEN -180 AND 180),
++  desc_ar       text CHECK (desc_ar IS NULL OR char_length(desc_ar) BETWEEN 1 AND 300),
++  created_at    timestamptz NOT NULL DEFAULT now(),
++  PRIMARY KEY (link_id, item_no),
++  CONSTRAINT link_items_position_key UNIQUE (link_id, position) DEFERRABLE INITIALLY IMMEDIATE,
++  FOREIGN KEY (vertical_id, intent_id) REFERENCES intents (vertical_id, id) ON DELETE CASCADE,
++  CONSTRAINT link_items_target_chk CHECK (CASE kind
++    WHEN 'intent'  THEN vertical_id IS NOT NULL AND intent_id IS NOT NULL AND store_id IS NULL AND child_link_id IS NULL AND place_id IS NULL AND approx_lat IS NULL
++    WHEN 'product' THEN vertical_id IS NOT NULL AND intent_id IS NOT NULL AND store_id IS NULL AND child_link_id IS NULL AND place_id IS NULL AND approx_lat IS NULL
++    WHEN 'store'   THEN vertical_id IS NULL AND intent_id IS NULL AND child_link_id IS NULL AND place_id IS NULL AND approx_lat IS NULL
++    WHEN 'link'    THEN vertical_id IS NULL AND intent_id IS NULL AND store_id IS NULL AND place_id IS NULL AND approx_lat IS NULL
++    WHEN 'place'   THEN vertical_id IS NULL AND intent_id IS NULL AND store_id IS NULL AND child_link_id IS NULL AND ((place_id IS NOT NULL) <> (approx_lat IS NOT NULL))
++  END),
++  CONSTRAINT link_items_point_chk CHECK ((approx_lat IS NULL) = (approx_lng IS NULL)),
++  CONSTRAINT link_items_desc_chk CHECK (desc_ar IS NULL OR kind = 'place'),
++  CONSTRAINT link_items_self_chk CHECK (child_link_id IS NULL OR child_link_id <> link_id)
++);
++-- "is this link inside another link?" (nesting rule) and the SET NULL cascades
++CREATE INDEX link_items_child_idx ON link_items (child_link_id) WHERE child_link_id IS NOT NULL;
++CREATE INDEX link_items_store_idx ON link_items (store_id) WHERE store_id IS NOT NULL;
++CREATE INDEX link_items_intent_idx ON link_items (vertical_id, intent_id) WHERE intent_id IS NOT NULL;
++
++CREATE FUNCTION ul_links_item_check() RETURNS trigger LANGUAGE plpgsql AS $$
++DECLARE lo bigint; o bigint;
++BEGIN
++  SELECT l.owner_id INTO lo FROM links l WHERE l.id = NEW.link_id;
++  IF NEW.kind IN ('intent', 'product') THEN
++    SELECT i.user_id INTO o FROM intents i WHERE i.vertical_id = NEW.vertical_id AND i.id = NEW.intent_id;
++  ELSIF NEW.kind = 'store' AND NEW.store_id IS NOT NULL THEN
++    SELECT s.owner_id INTO o FROM stores s WHERE s.id = NEW.store_id;
++  ELSIF NEW.kind = 'link' AND NEW.child_link_id IS NOT NULL THEN
++    SELECT c.owner_id INTO o FROM links c WHERE c.id = NEW.child_link_id;
++    IF EXISTS (SELECT 1 FROM link_items x WHERE x.link_id = NEW.child_link_id AND x.kind = 'link') THEN
++      RAISE EXCEPTION 'link_items: link % already contains links (max depth 2)', NEW.child_link_id USING ERRCODE = 'check_violation';
++    END IF;
++    IF EXISTS (SELECT 1 FROM link_items x WHERE x.child_link_id = NEW.link_id) THEN
++      RAISE EXCEPTION 'link_items: link % is inside another link (max depth 2)', NEW.link_id USING ERRCODE = 'check_violation';
++    END IF;
++  ELSE
++    RETURN NEW;  -- place, or a target that was deleted (SET NULL)
++  END IF;
++  IF o IS DISTINCT FROM lo THEN
++    RAISE EXCEPTION 'link_items: the target of link % does not belong to its owner', NEW.link_id USING ERRCODE = 'check_violation';
++  END IF;
++  RETURN NEW;
++END $$;
++CREATE TRIGGER link_items_check_trg BEFORE INSERT OR UPDATE OF link_id, kind, vertical_id, intent_id, store_id, child_link_id ON link_items
++  FOR EACH ROW EXECUTE FUNCTION ul_links_item_check();
+diff --git a/ultra-link/public/link.html b/ultra-link/public/link.html
+new file mode 100644
+index 0000000..2c6a0f2
+--- /dev/null
++++ b/ultra-link/public/link.html
+@@ -0,0 +1,36 @@
++<!doctype html>
++<html lang="ar" dir="rtl">
++<head>
++  <meta charset="utf-8">
++  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
++  <meta name="color-scheme" content="dark">
++  <meta name="theme-color" content="#060914">
++  <!-- unlisted: links are seen only by people who hold them; never indexed or cached by search engines -->
++  <meta name="robots" content="noindex, nofollow, noarchive">
++  <meta name="referrer" content="no-referrer">
++  <!-- deliberately generic: link previews in chat apps never show the shared content -->
++  <meta name="description" content="رابط مشاركة من ألترا لينك.">
++  <meta property="og:title" content="رابط مشاركة — ألترا لينك">
++  <meta property="og:description" content="افتح الرابط لترى ما شاركه صاحبه.">
++  <title>رابط مشاركة — ألترا لينك</title>
++  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23060914'/%3E%3Ccircle cx='12' cy='16' r='6.5' fill='none' stroke='%234ff0d2' stroke-width='3'/%3E%3Ccircle cx='20' cy='16' r='6.5' fill='none' stroke='%238b7bff' stroke-width='3'/%3E%3C/svg%3E">
++  <link rel="stylesheet" href="/css/app.css">
++  <link rel="stylesheet" href="/css/links.css">
++  <script type="module" src="/js/link-view.js"></script>
++</head>
++<body class="lk-page">
++  <!-- /js/link-view.js replaces this static loading screen. No inline scripts (CSP: script-src 'self'). -->
++  <div id="link-app" class="boot">
++    <div class="boot-screen" role="status">
++      <svg class="logo-mark" viewBox="0 0 32 32" width="56" height="56" aria-hidden="true" focusable="false">
++        <circle cx="12" cy="16" r="7.2" fill="none" stroke="#4ff0d2" stroke-width="3"/>
++        <circle cx="20" cy="16" r="7.2" fill="none" stroke="#8b7bff" stroke-width="3"/>
++        <circle cx="16" cy="16" r="1.9" fill="#eef2ff"/>
++      </svg>
++      <p class="boot-name">ألترا لينك</p>
++      <p class="boot-note">جارٍ فتح الرابط…</p>
++    </div>
++  </div>
++  <noscript><p class="noscript">لعرض هذا الرابط فعّل JavaScript في المتصفح.</p></noscript>
++</body>
++</html>
+diff --git a/ultra-link/src/links/graph.ts b/ultra-link/src/links/graph.ts
+new file mode 100644
+index 0000000..af86e56
+--- /dev/null
++++ b/ultra-link/src/links/graph.ts
+@@ -0,0 +1,144 @@
++// Loading links with their entries and targets in a few batched queries, and the ONE availability rule that the public
++// page, «روابطي» and the sweep share (docs/LINKS.md §3):
++//   intent  → the intent is active (paused / closed / fulfilled / expired → «غير متاح»); if it is a store product, its
++//             store must also be active
++//   product → the intent is active AND still linked to its store (a deleted product is unlinked) AND the store is active
++//   store   → the store exists, is active and has at least one active product
++//   place   → always available
++//   link    → the child link exists, is live (not stopped / expired) and has at least one available entry
++import type { Queryable } from '../db/pool.ts';
++import { INTENT_COLS, type IntentRow } from '../repo/intents.ts';
++import { effectiveStatus, type EndReason, type ItemKind, type LinkKind } from './model.ts';
++
++export interface LinkRow {
++  id: string; public_id: string; owner_id: string; realm: 'real' | 'synthetic'; kind: LinkKind; title_ar: string | null; note_ar: string | null;
++  duration: '24h' | '7d' | '30d' | 'until_stopped'; expires_at: Date | null; status: 'live' | 'ended'; end_reason: EndReason | null; ended_at: Date | null;
++  unavailable_since: Date | null; next_item_no: number; view_count: string; last_viewed_at: Date | null; version: number;
++  created_at: Date; updated_at: Date; created_key: string;
++}
++export interface ItemRow {
++  link_id: string; item_no: number; position: number; kind: ItemKind; vertical_id: number | null; intent_id: string | null;
++  store_id: string | null; child_link_id: string | null; place_id: number | null; approx_lat: number | null; approx_lng: number | null; desc_ar: string | null;
++}
++export type IntentInfo = IntentRow & {
++  si_store_id: string | null; store_pos: number | null; item_name: string | null; store_status: 'active' | 'paused' | null;
++  store_name: string | null; store_public_id: string | null; store_place_id: number | null;
++};
++export interface StoreInfo {
++  id: string; public_id: string; owner_id: string; realm: 'real' | 'synthetic'; name_ar: string; description_ar: string | null;
++  place_id: number; hours_ar: string | null; status: 'active' | 'paused'; active_count: number;
++}
++
++export const LINK_COLS = `l.id, l.public_id, l.owner_id, l.realm, l.kind, l.title_ar, l.note_ar, l.duration, l.expires_at, l.status, l.end_reason,
++  l.ended_at, l.unavailable_since, l.next_item_no, l.view_count, l.last_viewed_at, l.version, l.created_at, l.updated_at, l.created_at::text AS created_key`;
++export const ITEM_COLS = `li.link_id, li.item_no, li.position, li.kind, li.vertical_id, li.intent_id, li.store_id, li.child_link_id, li.place_id,
++  li.approx_lat::float8 AS approx_lat, li.approx_lng::float8 AS approx_lng, li.desc_ar`;
++export const STORE_COLS = `s.id, s.public_id, s.owner_id, s.realm, s.name_ar, s.description_ar, s.place_id, s.hours_ar, s.status,
++  (SELECT count(*)::int FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
++    WHERE si.store_id = s.id AND i.status = 'active') AS active_count`;
++
++const normLink = (r: any): LinkRow => ({ ...r, id: String(r.id), owner_id: String(r.owner_id) });
++const normItem = (r: any): ItemRow => ({ ...r, link_id: String(r.link_id), intent_id: r.intent_id == null ? null : String(r.intent_id), store_id: r.store_id == null ? null : String(r.store_id), child_link_id: r.child_link_id == null ? null : String(r.child_link_id) });
++
++export async function linkByPublicId(db: Queryable, publicId: string, ownerId?: string, lock = ''): Promise<LinkRow | null> {
++  const { rows } = ownerId === undefined
++    ? await db.query({ name: 'ullnk_by_pid', text: `SELECT ${LINK_COLS} FROM links l WHERE l.public_id = $1`, values: [publicId] })
++    : await db.query(`SELECT ${LINK_COLS} FROM links l WHERE l.public_id = $1 AND l.owner_id = $2 ${lock}`, [publicId, ownerId]);
++  return rows[0] ? normLink(rows[0]) : null;
++}
++
++export async function linksByIds(db: Queryable, ids: string[]): Promise<LinkRow[]> {
++  if (!ids.length) return [];
++  const { rows } = await db.query(`SELECT ${LINK_COLS} FROM links l WHERE l.id = ANY($1::bigint[])`, [ids]);
++  return rows.map(normLink);
++}
++
++export async function itemsOf(db: Queryable, linkIds: string[]): Promise<Map<string, ItemRow[]>> {
++  const out = new Map<string, ItemRow[]>(linkIds.map((id) => [id, []]));
++  if (!linkIds.length) return out;
++  const { rows } = await db.query(`SELECT ${ITEM_COLS} FROM link_items li WHERE li.link_id = ANY($1::bigint[]) ORDER BY li.link_id, li.position`, [linkIds]);
++  for (const r of rows.map(normItem)) out.get(r.link_id)!.push(r);
++  return out;
++}
++
++export async function intentsByKeys(db: Queryable, keys: { v: number; id: string }[]): Promise<Map<string, IntentInfo>> {
++  const out = new Map<string, IntentInfo>();
++  if (!keys.length) return out;
++  const { rows } = await db.query(
++    `SELECT ${INTENT_COLS}, si.store_id AS si_store_id, si.position AS store_pos, si.name_ar AS item_name, s.status AS store_status,
++            s.name_ar AS store_name, s.public_id AS store_public_id, s.place_id AS store_place_id
++       FROM unnest($1::smallint[], $2::bigint[]) AS x(v, id)
++       JOIN intents i ON i.vertical_id = x.v AND i.id = x.id
++       LEFT JOIN store_items si ON si.vertical_id = i.vertical_id AND si.intent_id = i.id
++       LEFT JOIN stores s ON s.id = si.store_id`,
++    [keys.map((k) => k.v), keys.map((k) => k.id)]);
++  for (const r of rows) out.set(`${r.vertical_id}:${r.id}`, { ...r, si_store_id: r.si_store_id == null ? null : String(r.si_store_id) });
++  return out;
++}
++
++export async function storesByIds(db: Queryable, ids: string[]): Promise<Map<string, StoreInfo>> {
++  const out = new Map<string, StoreInfo>();
++  if (!ids.length) return out;
++  const { rows } = await db.query(`SELECT ${STORE_COLS} FROM stores s WHERE s.id = ANY($1::bigint[])`, [ids]);
++  for (const r of rows) out.set(String(r.id), { ...r, id: String(r.id), owner_id: String(r.owner_id) });
++  return out;
++}
++
++/** Everything needed to render or judge a set of links: their entries, child links (one level), intents and stores. */
++export interface Graph {
++  links: Map<string, LinkRow>;
++  items: Map<string, ItemRow[]>;
++  intents: Map<string, IntentInfo>;
++  stores: Map<string, StoreInfo>;
++}
++
++export async function loadGraph(db: Queryable, roots: LinkRow[]): Promise<Graph> {
++  const links = new Map(roots.map((l) => [l.id, l]));
++  const items = await itemsOf(db, roots.map((l) => l.id));
++  const childIds = [...new Set([...items.values()].flat().filter((i) => i.kind === 'link' && i.child_link_id).map((i) => i.child_link_id!))].filter((id) => !links.has(id));
++  if (childIds.length) {
++    for (const c of await linksByIds(db, childIds)) links.set(c.id, c);
++    for (const [k, v] of await itemsOf(db, childIds)) items.set(k, v);
++  }
++  const all = [...items.values()].flat();
++  const keys = new Map<string, { v: number; id: string }>();
++  for (const i of all) if (i.intent_id && i.vertical_id != null) keys.set(`${i.vertical_id}:${i.intent_id}`, { v: i.vertical_id, id: i.intent_id });
++  const [intents, stores] = await Promise.all([
++    intentsByKeys(db, [...keys.values()]),
++    storesByIds(db, [...new Set(all.filter((i) => i.store_id).map((i) => i.store_id!))]),
++  ]);
++  return { links, items, intents, stores };
++}
++
++export const intentOf = (g: Graph, it: ItemRow): IntentInfo | undefined => (it.intent_id ? g.intents.get(`${it.vertical_id}:${it.intent_id}`) : undefined);
++
++/** Is this entry available right now? (rule in the header) */
++export function itemAvailable(g: Graph, it: ItemRow, now: Date, depth = 1): boolean {
++  switch (it.kind) {
++    case 'intent': {
++      const i = intentOf(g, it);
++      if (!i || i.status !== 'active') return false;
++      return i.si_store_id == null || i.store_status === 'active';
++    }
++    case 'product': {
++      const i = intentOf(g, it);
++      return !!i && i.status === 'active' && i.si_store_id != null && i.store_status === 'active';
++    }
++    case 'store': {
++      const s = it.store_id ? g.stores.get(it.store_id) : undefined;
++      return !!s && s.status === 'active' && s.active_count > 0;
++    }
++    case 'place':
++      return true;
++    case 'link': {
++      const c = it.child_link_id ? g.links.get(it.child_link_id) : undefined;
++      if (!c || depth >= 2 || !effectiveStatus(c, now).live) return false;
++      return (g.items.get(c.id) ?? []).some((x) => itemAvailable(g, x, now, depth + 1));
++    }
++  }
++}
++
++export function availableCount(g: Graph, linkId: string, now: Date): { total: number; available: number } {
++  const list = g.items.get(linkId) ?? [];
++  return { total: list.length, available: list.filter((x) => itemAvailable(g, x, now)).length };
++}
+diff --git a/ultra-link/src/links/ids.ts b/ultra-link/src/links/ids.ts
+new file mode 100644
+index 0000000..1f5035e
+--- /dev/null
++++ b/ultra-link/src/links/ids.ts
+@@ -0,0 +1,24 @@
++// Share-link ids (V2.4, docs/LINKS.md §4). 13 characters of base62 from the OS CSPRNG: 13 × log2(62) ≈ 77.4 bits.
++// (12 base62 characters would be 71.4 bits — just under the 72-bit floor — hence 13.) Alphanumeric only, so chat apps'
++// auto-linkers never cut a trailing "-" or "_". Rejection sampling (bytes ≥ 248 are dropped) keeps every character
++// uniformly distributed: 248 = 4 × 62.
++import { randomBytes } from 'node:crypto';
++
++export const LINK_ID_LEN = 13;
++export const LINK_ID_RE = /^[0-9A-Za-z]{13}$/;
++export const LINK_ID_BITS = LINK_ID_LEN * Math.log2(62);
++const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
++
++export function newLinkId(rand: (n: number) => Uint8Array = randomBytes): string {
++  let out = '';
++  while (out.length < LINK_ID_LEN) {
++    for (const b of rand(24)) {
++      if (b >= 248) continue;
++      out += ALPHABET[b % 62];
++      if (out.length === LINK_ID_LEN) break;
++    }
++  }
++  return out;
++}
++
++export const isLinkId = (v: unknown): v is string => typeof v === 'string' && LINK_ID_RE.test(v);
+diff --git a/ultra-link/src/links/jobs.ts b/ultra-link/src/links/jobs.ts
+new file mode 100644
+index 0000000..83c6ce4
+--- /dev/null
++++ b/ultra-link/src/links/jobs.ts
+@@ -0,0 +1,88 @@
++// Worker job of the share-links feature. Registered in src/worker/main.ts with ONE line:
++//   if (job.kind.startsWith('link_')) return (await import('../links/jobs.ts')).runLinkJob(pool, job);
++//
++// link_sweep (hourly chain, see schedule.ts):
++//   1. live links whose time ran out → ended / expired;
++//   2. every other live link: are ALL of its entries unavailable (graph.ts rule)? → remember since when
++//      (unavailable_since); one available entry again → forget it; all unavailable for 7 days → ended / unavailable,
++//      and the owner gets one notification.
++// Readers do not wait for this: effectiveStatus() applies both rules at read time. The sweep only writes them down
++// (so «روابطي» filters and the counters are cheap) and starts the 7-day clock. Idempotent: every UPDATE re-checks its
++// condition (status = 'live'), and the notification has a per-link dedupe key.
++import type pg from 'pg';
++import type { Job } from '../repo/jobs.ts';
++import { notify } from '../repo/notifications.ts';
++import { availableCount, LINK_COLS, loadGraph, type LinkRow } from './graph.ts';
++import { UNAVAILABLE_MS } from './model.ts';
++import { LINK_SWEEP_KIND, scheduleLinkSweep } from './schedule.ts';
++
++export { LINK_SWEEP_KIND } from './schedule.ts';
++
++export async function runLinkJob(pool: pg.Pool, job: Job): Promise<'done' | 'superseded'> {
++  if (job.kind === LINK_SWEEP_KIND) {
++    await sweepLinks(pool);
++    const more = (await pool.query("SELECT EXISTS (SELECT 1 FROM links WHERE status = 'live') AS more")).rows[0].more;
++    if (more) await scheduleLinkSweep(pool);
++    return 'done';
++  }
++  throw new Error(`unknown job kind ${job.kind}`);
++}
++
++export interface LinkSweepResult { expired: number; markedUnavailable: number; cleared: number; endedUnavailable: number; checked: number }
++
++export async function sweepLinks(pool: pg.Pool, opts: { now?: Date; batch?: number; max?: number } = {}): Promise<LinkSweepResult> {
++  const now = opts.now ?? new Date();
++  const batch = opts.batch ?? 200;
++  const max = opts.max ?? 20_000;
++  const out: LinkSweepResult = { expired: 0, markedUnavailable: 0, cleared: 0, endedUnavailable: 0, checked: 0 };
++
++  // 1. time ran out (ended_at = the moment it expired, not the moment the sweep noticed)
++  for (;;) {
++    const r = await pool.query(
++      `UPDATE links SET status = 'ended', end_reason = 'expired', ended_at = expires_at, version = version + 1, updated_at = $1
++        WHERE id IN (SELECT id FROM links WHERE status = 'live' AND expires_at <= $1 ORDER BY id LIMIT 1000)`, [now]);
++    out.expired += r.rowCount ?? 0;
++    if ((r.rowCount ?? 0) < 1000) break;
++  }
++
++  // 2. all entries unavailable → start / keep / clear the 7-day clock, end after 7 days
++  let after = '0';
++  while (out.checked < max) {
++    const { rows } = await pool.query(`SELECT ${LINK_COLS} FROM links l WHERE l.status = 'live' AND l.id > $1 ORDER BY l.id LIMIT $2`, [after, batch]);
++    if (!rows.length) break;
++    const links: LinkRow[] = rows.map((r) => ({ ...r, id: String(r.id), owner_id: String(r.owner_id) }));
++    after = links[links.length - 1]!.id;
++    out.checked += links.length;
++    const g = await loadGraph(pool, links);
++    for (const l of links) {
++      const c = availableCount(g, l.id, now);
++      const allUnavailable = c.total > 0 && c.available === 0;
++      if (!allUnavailable) {
++        if (l.unavailable_since) {
++          const r = await pool.query("UPDATE links SET unavailable_since = NULL WHERE id = $1 AND status = 'live'", [l.id]);
++          out.cleared += r.rowCount ?? 0;
++        }
++        continue;
++      }
++      if (!l.unavailable_since) {
++        const r = await pool.query("UPDATE links SET unavailable_since = $2 WHERE id = $1 AND status = 'live' AND unavailable_since IS NULL", [l.id, now]);
++        out.markedUnavailable += r.rowCount ?? 0;
++        continue;
++      }
++      if (new Date(l.unavailable_since).getTime() + UNAVAILABLE_MS <= now.getTime()) {
++        const r = await pool.query(
++          `UPDATE links SET status = 'ended', end_reason = 'unavailable', ended_at = $2, version = version + 1, updated_at = $2
++            WHERE id = $1 AND status = 'live' RETURNING owner_id, public_id, title_ar`, [l.id, now]);
++        if (r.rows[0]) {
++          out.endedUnavailable++;
++          await notify(pool, {
++            recipientId: String(r.rows[0].owner_id), kind: 'link_ended', titleAr: 'انتهى رابط مشاركة',
++            bodyAr: `${r.rows[0].title_ar ? `«${r.rows[0].title_ar}» — ` : ''}كل عناصره غير متاحة منذ ٧ أيام، فأُوقف تلقائيًا. يمكنك إنشاء رابط جديد من «روابطي».`,
++            payload: { linkId: r.rows[0].public_id }, dedupeKey: `link-ended:${r.rows[0].public_id}`,
++          }).catch(() => false);
++        }
++      }
++    }
++  }
++  return out;
++}
+diff --git a/ultra-link/src/links/model.ts b/ultra-link/src/links/model.ts
+new file mode 100644
+index 0000000..5140857
+--- /dev/null
++++ b/ultra-link/src/links/model.ts
+@@ -0,0 +1,141 @@
++// Share links — constants, shapes and pure helpers (V2.4, docs/LINKS.md). No I/O here: everything is unit-testable.
++import type { Registry } from '../domain/registry.ts';
++import type { DealCode, Side } from '../domain/types.ts';
++import { nearestCity } from '../conversation/engine.ts';
++
++export const LINK_KINDS = ['intent', 'product', 'store', 'place', 'collection'] as const;
++export type LinkKind = (typeof LINK_KINDS)[number];
++export const ITEM_KINDS = ['intent', 'product', 'store', 'place', 'link'] as const;
++export type ItemKind = (typeof ITEM_KINDS)[number];
++
++/** Lifetimes the owner can pick (ms); until_stopped = no expiry. */
++export const DURATIONS = { '24h': 24 * 3_600_000, '7d': 7 * 86_400_000, '30d': 30 * 86_400_000, until_stopped: null } as const;
++export type Duration = keyof typeof DURATIONS;
++export const DURATION_KEYS = ['24h', '7d', '30d', 'until_stopped'] as const satisfies readonly Duration[];
++
++export const LINK_LIMITS = {
++  itemsPerCollection: 50,
++  /** a collection may contain links; those may not contain links (depth ≤ 2) */
++  maxDepth: 2,
++  linksPerOwner: 500,
++  titleChars: 80,
++  noteChars: 500,
++  descChars: 300,
++  /** a link whose items have ALL been unavailable this long ends by itself */
++  unavailableDays: 7,
++  /** products shown per store entry: a store link / a store inside a collection / a «عرض المزيد» page */
++  storePageTop: 24,
++  storePageNested: 6,
++  storePageMore: 24,
++} as const;
++export const UNAVAILABLE_MS = LINK_LIMITS.unavailableDays * 86_400_000;
++
++export const UNAVAILABLE_AR = 'غير متاح';
++export const ENDED_AR = 'انتهى هذا الرابط';
++export const NOT_FOUND_AR = 'هذا الرابط غير موجود. تأكّد أنك نسخته كاملًا.';
++export const DEMO_AR = 'تجريبي';
++
++export function expiresAtFor(duration: Duration, now: Date): Date | null {
++  const ms = DURATIONS[duration];
++  return ms === null ? null : new Date(now.getTime() + ms);
++}
++
++export type EndReason = 'stopped' | 'expired' | 'unavailable';
++export interface LinkTimes { status: 'live' | 'ended'; end_reason: EndReason | null; expires_at: string | Date | null; unavailable_since: string | Date | null; ended_at?: string | Date | null }
++
++/**
++ * The status a visitor sees NOW. A live row whose time ran out, or whose items have all been unavailable for 7 days,
++ * is already ended — the worker's sweep only writes it down later, so the page never depends on the sweep's timing.
++ */
++export function effectiveStatus(l: LinkTimes, now: Date): { live: boolean; reason: EndReason | null } {
++  if (l.status === 'ended') return { live: false, reason: l.end_reason ?? 'stopped' };
++  if (l.expires_at && new Date(l.expires_at).getTime() <= now.getTime()) return { live: false, reason: 'expired' };
++  if (l.unavailable_since && new Date(l.unavailable_since).getTime() + UNAVAILABLE_MS <= now.getTime()) return { live: false, reason: 'unavailable' };
++  return { live: true, reason: null };
++}
++
++/** The same rule in SQL (alias = the links row, now = a timestamptz parameter). */
++export const liveSql = (alias: string, now: string) =>
++  `(${alias}.status = 'live' AND (${alias}.expires_at IS NULL OR ${alias}.expires_at > ${now}) AND (${alias}.unavailable_since IS NULL OR ${alias}.unavailable_since > ${now} - interval '${LINK_LIMITS.unavailableDays} days'))`;
++
++/** Approximate points are stored rounded to 0.01° (≈ 1.1 km of latitude, ≈ 0.9 km of longitude at 36°N). */
++export function roundCoord(v: number): number {
++  return Math.round(v * 100) / 100;
++}
++
++/** «(تجريبي)» on synthetic titles that do not carry it yet. */
++export function demoTitle(t: string, synthetic: boolean): string {
++  return synthetic && !t.includes(DEMO_AR) ? `${t} (${DEMO_AR})` : t;
++}
++
++// ───────────── public refs ─────────────
++// An entry of a link is addressed by its item_no ("3"); an entry of a child link by "3.2"; a product of a store
++// entry by its catalog position ("3-17", "3.2-17"). Refs are positions inside THIS link, never database ids.
++export interface Ref { top: number; child: number | null; product: number | null }
++const REF_RE = /^([1-9]\d{0,4})(?:\.([1-9]\d{0,4}))?(?:-([1-9]\d{0,8}))?$/;
++export function parseRef(s: unknown): Ref | null {
++  if (typeof s !== 'string' || s.length > 24) return null;
++  const m = REF_RE.exec(s);
++  if (!m) return null;
++  return { top: Number(m[1]), child: m[2] ? Number(m[2]) : null, product: m[3] ? Number(m[3]) : null };
++}
++export const refOf = (top: number, child?: number | null, product?: number | null) =>
++  `${top}${child ? `.${child}` : ''}${product ? `-${product}` : ''}`;
++
++// ───────────── places ─────────────
++export interface PlaceView {
++  nameAr: string | null;
++  approx: boolean;
++  /** approximate points only: two decimals at most */
++  lat?: number;
++  lng?: number;
++  nearAr: string | null;
++  descAr: string | null;
++  mapUrl: string | null;
++}
++
++export function placeView(reg: Registry, it: { place_id: number | null; approx_lat: number | string | null; approx_lng: number | string | null; desc_ar: string | null }): PlaceView {
++  if (it.place_id != null) {
++    const p = reg.placeById.get(it.place_id);
++    const parent = p?.parent ? reg.placeByCode.get(p.parent) : undefined;
++    const name = p ? (parent && parent.kind !== 'world' && parent.kind !== 'country' ? `${p.nameAr}، ${parent.nameAr}` : p.nameAr) : null;
++    return { nameAr: name, approx: false, nearAr: null, descAr: it.desc_ar, mapUrl: p ? `https://www.openstreetmap.org/search?query=${encodeURIComponent(p.nameAr)}` : null };
++  }
++  const lat = roundCoord(Number(it.approx_lat));
++  const lng = roundCoord(Number(it.approx_lng));
++  const near = nearestCity(reg, lat, lng);
++  const f = (v: number) => v.toFixed(2);
++  return {
++    nameAr: null, approx: true, lat, lng, nearAr: near != null ? reg.placeById.get(near)?.nameAr ?? null : null, descAr: it.desc_ar,
++    mapUrl: `https://www.openstreetmap.org/?mlat=${f(lat)}&mlon=${f(lng)}#map=13/${f(lat)}/${f(lng)}`,
++  };
++}
++
++export function placeTitle(v: PlaceView): string {
++  if (!v.approx) return v.nameAr ?? 'مكان';
++  return v.nearAr ? `مكان تقريبي قرب ${v.nearAr}` : 'مكان تقريبي';
++}
++
++// ───────────── «احفظ كطلب مشابه» ─────────────
++/**
++ * A sentence for the composer that the app's own understanding turns into the counterpart of a shared item: an offer
++ * → a request («بدي إلكترونيات للشراء في إعزاز»), a request → an offer, an activity → joining it. Built from the
++ * category's name, the deal and the place (never the owner's own wording, which may contain personal details).
++ * The visitor edits it before sending; nothing is saved automatically.
++ */
++export function composeText(reg: Registry, side: Side, categoryCode: string, deal: DealCode, placeId: number | null): string {
++  const cat = reg.categoryByCode.get(categoryCode);
++  const name = cat?.nameAr ?? 'هذا';
++  const place = placeId != null ? reg.placeById.get(placeId) : undefined;
++  const where = place && place.kind !== 'world' ? ` في ${place.nameAr}` : '';
++  if (side === 'provide') return `بدي ${name}${deal === 'sale' ? ' للشراء' : deal === 'rent' ? ' للإيجار' : ''}${where}`;
++  if (side === 'seek') return `عندي ${name}${deal === 'sale' ? ' للبيع' : deal === 'rent' ? ' للإيجار' : ''}${where}`;
++  return `بدي شارك ب${name}${where}`;
++}
++
++export const SIDE_AR: Record<Side, string> = { provide: 'عرض', seek: 'طلب', join: 'نشاط مشترك' };
++
++export function defaultTitle(kind: LinkKind, firstTitle: string | null, itemCount: number): string {
++  if (kind !== 'collection') return firstTitle ?? 'رابط مشاركة';
++  return itemCount === 1 ? 'مجموعة من عنصر واحد' : itemCount === 2 ? 'مجموعة من عنصرين' : itemCount <= 10 ? `مجموعة من ${itemCount} عناصر` : `مجموعة من ${itemCount} عنصرًا`;
++}
+diff --git a/ultra-link/src/links/public.ts b/ultra-link/src/links/public.ts
+new file mode 100644
+index 0000000..573dec6
+--- /dev/null
++++ b/ultra-link/src/links/public.ts
+@@ -0,0 +1,203 @@
++// The public view of a link (GET /api/l/:id) — what an anonymous visitor may see, built from a whitelist.
++// NEVER on this page: phone numbers, display names / user ids / emails, precise coordinates (GPS or live), internal
++// numeric ids, intent / store / photo uuids, the owner's source text, match counts. Products are addressed by refs
++// (positions inside the link, see model.ts) and their photos by /api/l/<link>/photos/<ref>/<slot>.
++// Synthetic links and their entries carry «(تجريبي)».
++import type { Queryable } from '../db/pool.ts';
++import type { Registry } from '../domain/registry.ts';
++import { INTENT_COLS, toCard, type IntentRow } from '../repo/intents.ts';
++import { photosFor, storeLabel } from '../catalog/repo.ts';
++import { intentOf, itemAvailable, linkByPublicId, loadGraph, type Graph, type ItemRow, type LinkRow, type StoreInfo } from './graph.ts';
++import {
++  defaultTitle, demoTitle, effectiveStatus, LINK_LIMITS, placeTitle, placeView, refOf, SIDE_AR, UNAVAILABLE_AR,
++  type Duration, type EndReason, type ItemKind, type LinkKind, type PlaceView,
++} from './model.ts';
++
++export interface PublicPhoto { url: string; width: number; height: number }
++export interface PublicProducts { items: PublicItem[]; total: number; nextCursor: string | null }
++export interface PublicItem {
++  ref: string;
++  kind: ItemKind;
++  available: boolean;
++  /** «غير متاح» when not available (no other detail is shown then) */
++  statusAr: string | null;
++  titleAr: string;
++  side?: 'seek' | 'provide' | 'join';
++  sideAr?: string;
++  categoryAr?: string;
++  dealAr?: string;
++  placeAr?: string | null;
++  priceAr?: string | null;
++  whenAr?: string | null;
++  chips?: { labelAr: string; valueAr: string }[];
++  photos?: PublicPhoto[];
++  /** a product: the store it belongs to */
++  store?: { nameAr: string; placeAr: string | null };
++  /** a store entry: profile + a first page of its active products */
++  storeInfo?: { descriptionAr: string | null; placeAr: string | null; hoursAr: string | null; products: PublicProducts };
++  place?: PlaceView;
++  /** a link inside a collection: its own entries (one level) */
++  link?: { kind: LinkKind; titleAr: string; noteAr: string | null; items: PublicItem[] };
++  /** «تواصل» applies (an available request / offer / product / store) */
++  contact: boolean;
++}
++export interface PublicLink {
++  id: string;
++  url: string;
++  kind: LinkKind;
++  titleAr: string;
++  noteAr: string | null;
++  synthetic: boolean;
++  demoLabelAr: string | null;
++  duration: Duration;
++  expiresAt: string | null;
++  items: PublicItem[];
++  counts: { items: number; available: number };
++  privacyAr: string;
++}
++
++export type PublicResult =
++  | { state: 'not_found' }
++  | { state: 'ended'; reason: EndReason; row: LinkRow }
++  | { state: 'live'; row: LinkRow; view: PublicLink };
++
++const PRIVACY_AR = 'لا يظهر هنا رقم صاحب الرابط ولا اسمه ولا موقعه الدقيق. التواصل يتم داخل ألترا لينك وبموافقته.';
++
++export async function publicLink(db: Queryable, reg: Registry, publicId: string, now: Date): Promise<PublicResult> {
++  const row = await linkByPublicId(db, publicId);
++  if (!row) return { state: 'not_found' };
++  const st = effectiveStatus(row, now);
++  if (!st.live) return { state: 'ended', reason: st.reason!, row };
++  const g = await loadGraph(db, [row]);
++  const synthetic = row.realm === 'synthetic';
++  const ctx: Ctx = { db, reg, g, now, linkId: row.public_id, synthetic, photoKeys: new Map() };
++  const top = g.items.get(row.id) ?? [];
++  const items: PublicItem[] = [];
++  for (const it of top) items.push(await entryView(ctx, it, refOf(it.item_no), 1, row.kind === 'store' ? LINK_LIMITS.storePageTop : LINK_LIMITS.storePageNested));
++  await attachPhotos(ctx);
++  const first = items[0]?.titleAr ?? null;
++  const title = demoTitle(row.title_ar ?? defaultTitle(row.kind, first, items.length), synthetic);
++  return {
++    state: 'live', row,
++    view: {
++      id: row.public_id, url: `/l/${row.public_id}`, kind: row.kind, titleAr: title, noteAr: row.note_ar, synthetic,
++      demoLabelAr: synthetic ? 'رابط تجريبي: بيانات اصطناعية للعرض فقط (تجريبي)' : null,
++      duration: row.duration, expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
++      items, counts: { items: items.length, available: items.filter((i) => i.available).length }, privacyAr: PRIVACY_AR,
++    },
++  };
++}
++
++interface Ctx {
++  db: Queryable; reg: Registry; g: Graph; now: Date; linkId: string; synthetic: boolean;
++  /** products on the page → their intent key, for one batched photo query (never serialised) */
++  photoKeys: Map<PublicItem, { v: number; id: string }>;
++}
++type IntentLike = IntentRow & { item_name?: string | null; si_store_id?: string | null; store_name?: string | null; store_place_id?: number | null };
++
++async function entryView(ctx: Ctx, it: ItemRow, ref: string, depth: number, storePage: number): Promise<PublicItem> {
++  const { g, reg } = ctx;
++  const available = itemAvailable(g, it, ctx.now, depth);
++  const base = { ref, kind: it.kind, available, statusAr: available ? null : UNAVAILABLE_AR, contact: false };
++  switch (it.kind) {
++    case 'intent':
++    case 'product': {
++      const i = intentOf(g, it);
++      if (!i) return { ...base, titleAr: it.kind === 'product' ? 'منتج لم يعد متاحًا' : 'عنصر لم يعد متاحًا' };
++      return intentView(ctx, i, base, available);
++    }
++    case 'store': {
++      const s = it.store_id ? g.stores.get(it.store_id) : undefined;
++      if (!s) return { ...base, titleAr: 'متجر لم يعد متاحًا' };
++      const title = storeLabel(s.name_ar, s.realm === 'synthetic');
++      if (!available) return { ...base, titleAr: title };
++      return { ...base, titleAr: title, contact: true, storeInfo: { descriptionAr: s.description_ar, placeAr: reg.placeById.get(s.place_id)?.nameAr ?? null, hoursAr: s.hours_ar, products: await storeProducts(ctx, s, ref, null, storePage) } };
++    }
++    case 'place': {
++      const p = placeView(reg, it);
++      return { ...base, titleAr: placeTitle(p), place: p };
++    }
++    case 'link': {
++      const c = it.child_link_id ? g.links.get(it.child_link_id) : undefined;
++      if (!c) return { ...base, titleAr: 'رابط لم يعد متاحًا' };
++      const childItems = g.items.get(c.id) ?? [];
++      const firstTitle = childItems[0] ? titleOfEntry(ctx, childItems[0]) : null;
++      const title = demoTitle(c.title_ar ?? defaultTitle(c.kind, firstTitle, childItems.length), ctx.synthetic);
++      if (!available) return { ...base, titleAr: title };
++      const inner: PublicItem[] = [];
++      for (const x of childItems) inner.push(await entryView(ctx, x, refOf(it.item_no, x.item_no), depth + 1, LINK_LIMITS.storePageNested));
++      return { ...base, titleAr: title, link: { kind: c.kind, titleAr: title, noteAr: c.note_ar, items: inner } };
++    }
++  }
++}
++
++function titleOfEntry(ctx: Ctx, it: ItemRow): string | null {
++  if (it.kind === 'intent' || it.kind === 'product') { const i = intentOf(ctx.g, it); return i ? (i.item_name ?? i.title_ar) : null; }
++  if (it.kind === 'store') { const s = it.store_id ? ctx.g.stores.get(it.store_id) : undefined; return s ? storeLabel(s.name_ar, s.realm === 'synthetic') : null; }
++  if (it.kind === 'place') return placeTitle(placeView(ctx.reg, it));
++  return null;
++}
++
++function intentView(ctx: Ctx, i: IntentLike, base: Omit<PublicItem, 'titleAr'>, available: boolean): PublicItem {
++  const synthetic = i.realm === 'synthetic';
++  const product = i.si_store_id != null;
++  const title = demoTitle(product && i.item_name ? i.item_name : i.title_ar, synthetic);
++  if (!available) return { ...base, titleAr: title };
++  const c = toCard(ctx.reg, i);
++  const out: PublicItem = {
++    ...base, titleAr: title, contact: true,
++    side: c.side, sideAr: SIDE_AR[c.side], categoryAr: c.categoryAr, dealAr: c.dealAr, placeAr: c.placeAr, priceAr: c.priceAr, whenAr: c.whenAr,
++    chips: c.chips.map((x) => ({ labelAr: x.labelAr, valueAr: x.valueAr })),
++  };
++  if (product && i.store_name) out.store = { nameAr: storeLabel(i.store_name, synthetic), placeAr: i.store_place_id != null ? ctx.reg.placeById.get(i.store_place_id)?.nameAr ?? null : null };
++  if (product) ctx.photoKeys.set(out, { v: i.vertical_id, id: String(i.id) });
++  return out;
++}
++
++/** A keyset page of a store's ACTIVE products in catalog order (cursor = the last catalog position). */
++export async function storeProducts(ctx: Ctx, s: StoreInfo, entryRef: string, after: number | null, limit: number): Promise<PublicProducts> {
++  const { rows } = await ctx.db.query(
++    `SELECT ${INTENT_COLS}, si.position AS store_pos, si.name_ar AS item_name, si.store_id AS si_store_id
++       FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
++      WHERE si.store_id = $1 AND i.status = 'active' AND si.position > $2
++      ORDER BY si.position LIMIT $3`,
++    [s.id, after ?? 0, limit + 1]);
++  const page = rows.slice(0, limit);
++  const items = page.map((r) => intentView(ctx, { ...r, si_store_id: String(r.si_store_id), store_name: null, store_place_id: null },
++    { ref: `${entryRef}-${r.store_pos}`, kind: 'product', available: true, statusAr: null, contact: true }, true));
++  const last = page[page.length - 1];
++  return { items, total: s.active_count, nextCursor: rows.length > limit && last ? String(last.store_pos) : null };
++}
++
++/** Photo urls for every product on the page (one query), then the internal keys are dropped. */
++export async function attachPhotos(ctx: Ctx): Promise<void> {
++  if (!ctx.photoKeys.size) return;
++  const photos = await photosFor(ctx.db, [...ctx.photoKeys.values()]);
++  for (const [item, k] of ctx.photoKeys) {
++    item.photos = (photos.get(`${k.v}:${k.id}`) ?? []).map((p) => ({ url: `/api/l/${ctx.linkId}/photos/${item.ref}/${p.slot}`, width: p.width, height: p.height }));
++  }
++  ctx.photoKeys.clear();
++}
++
++/** «عرض المزيد» for a store entry: the next page of its active products (GET /api/l/:id/store/:ref?cursor=). */
++export async function publicStorePage(db: Queryable, reg: Registry, publicId: string, ref: { top: number; child: number | null }, after: number | null, now: Date): Promise<PublicProducts | 'not_found' | 'ended'> {
++  const row = await linkByPublicId(db, publicId);
++  if (!row) return 'not_found';
++  if (!effectiveStatus(row, now).live) return 'ended';
++  const g = await loadGraph(db, [row]);
++  const top = (g.items.get(row.id) ?? []).find((x) => x.item_no === ref.top);
++  if (!top) return 'not_found';
++  let entry: ItemRow | undefined = top;
++  let depth = 1;
++  if (ref.child != null) {
++    if (top.kind !== 'link' || !itemAvailable(g, top, now)) return 'not_found';
++    entry = (g.items.get(top.child_link_id!) ?? []).find((x) => x.item_no === ref.child);
++    depth = 2;
++  }
++  if (!entry || entry.kind !== 'store' || !itemAvailable(g, entry, now, depth)) return 'not_found';
++  const ctx: Ctx = { db, reg, g, now, linkId: row.public_id, synthetic: row.realm === 'synthetic', photoKeys: new Map() };
++  const page = await storeProducts(ctx, g.stores.get(entry.store_id!)!, ref.child != null ? `${ref.top}.${ref.child}` : String(ref.top), after, LINK_LIMITS.storePageMore);
++  await attachPhotos(ctx);
++  return page;
++}
++
+diff --git a/ultra-link/src/links/schedule.ts b/ultra-link/src/links/schedule.ts
+new file mode 100644
+index 0000000..4dbad57
+--- /dev/null
++++ b/ultra-link/src/links/schedule.ts
+@@ -0,0 +1,20 @@
++// Job scheduling for share links (kept apart from jobs.ts so the service can enqueue without an import cycle).
++//   link_sweep — a self-rescheduling chain with one job per time slot (dedupe key link_sweep:<slot>): started when a link
++//                is created, continued by each run while live links exist. Two chains started twice merge on the slot key.
++import type { Queryable } from '../db/pool.ts';
++import { enqueue } from '../repo/jobs.ts';
++
++export const LINK_SWEEP_KIND = 'link_sweep';
++
++/** Sweep period (env UL_LINK_SWEEP_MS, default 1 h: lifetimes are hours/days and readers apply them exactly anyway). */
++export function linkSweepIntervalMs(): number {
++  const n = Number(process.env.UL_LINK_SWEEP_MS ?? 3_600_000);
++  return Number.isFinite(n) && n >= 1000 ? n : 3_600_000;
++}
++
++/** Enqueue the sweep of the NEXT slot (no-op when it is already pending). */
++export async function scheduleLinkSweep(db: Queryable, now = Date.now()): Promise<void> {
++  const every = linkSweepIntervalMs();
++  const slot = Math.floor(now / every) + 1;
++  await enqueue(db, LINK_SWEEP_KIND, {}, { dedupeKey: `${LINK_SWEEP_KIND}:${slot}`, runAt: new Date(slot * every), priority: 200 });
++}
+diff --git a/ultra-link/src/links/service.ts b/ultra-link/src/links/service.ts
+new file mode 100644
+index 0000000..e7a6920
+--- /dev/null
++++ b/ultra-link/src/links/service.ts
+@@ -0,0 +1,551 @@
++// Share links — use cases (V2.4, docs/LINKS.md). HTTP-free: routes map LinkError to {error, messageAr}.
++//
++// Ownership: every owner operation is scoped in SQL (owner_id = the session user); someone else's link, intent, product,
++// store or link target is "not found" (404), never "forbidden". Structure changes (create, add / remove / reorder entries,
++// delete) run under a per-owner advisory lock, so the nesting rules (depth ≤ 2, no cycles, ≤ 50 entries) checked here
++// and by the 0007 trigger cannot be raced by two parallel requests of the same owner.
++// Time: every function takes `now` (the routes pass their injectable clock), so expiry is testable without waiting.
++import type pg from 'pg';
++import { withTx, type Queryable } from '../db/pool.ts';
++import type { Registry } from '../domain/registry.ts';
++import { INTENT_COLS } from '../repo/intents.ts';
++import { decodeCursor, encodeCursor, type Page } from '../repo/paging.ts';
++import type { SessionUser } from '../repo/users.ts';
++import { storeLabel } from '../catalog/repo.ts';
++import { newLinkId } from './ids.ts';
++import {
++  availableCount, intentOf, itemAvailable, itemsOf, LINK_COLS, linkByPublicId, loadGraph, type Graph, type IntentInfo, type ItemRow, type LinkRow, type StoreInfo,
++} from './graph.ts';
++import {
++  composeText, defaultTitle, demoTitle, effectiveStatus, expiresAtFor, LINK_LIMITS, liveSql, placeTitle, placeView, roundCoord, UNAVAILABLE_MS,
++  type Duration, type EndReason, type ItemKind, type LinkKind, type Ref,
++} from './model.ts';
++import { scheduleLinkSweep } from './schedule.ts';
++
++export class LinkError extends Error {
++  readonly status: number;
++  readonly code: string;
++  constructor(status: number, code: string, messageAr: string) { super(messageAr); this.status = status; this.code = code; }
++}
++const notFound = () => new LinkError(404, 'not_found', 'غير موجود');
++const ended = () => new LinkError(409, 'link_ended', 'انتهى هذا الرابط. أنشئ رابطًا جديدًا بدلًا منه.');
++
++// ───────────── targets ─────────────
++export type TargetInput =
++  | { kind: 'intent'; intentId: string }
++  | { kind: 'product'; itemId: string }
++  | { kind: 'store'; storeId: string }
++  | { kind: 'place'; placeId?: number | null; lat?: number | null; lng?: number | null; descAr?: string | null }
++  | { kind: 'link'; linkId: string };
++
++interface Resolved {
++  kind: ItemKind; vertical_id: number | null; intent_id: string | null; store_id: string | null; child_link_id: string | null;
++  place_id: number | null; approx_lat: number | null; approx_lng: number | null; desc_ar: string | null; key: string;
++}
++const EMPTY = { vertical_id: null, intent_id: null, store_id: null, child_link_id: null, place_id: null, approx_lat: null, approx_lng: null, desc_ar: null };
++
++const clean = (s: string | null | undefined, max: number, field: string): string | null => {
++  if (s == null) return null;
++  const t = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim();
++  if (!t) return null;
++  if ([...t].length > max) throw new LinkError(400, 'too_long', `${field} أطول من ${max} حرفًا`);
++  return t;
++};
++
++async function resolveTarget(db: Queryable, reg: Registry, ownerId: string, t: TargetInput, now: Date): Promise<Resolved> {
++  switch (t.kind) {
++    case 'intent': {
++      const { rows } = await db.query(
++        `SELECT r.vertical_id, r.intent_id, i.status FROM intent_refs r JOIN intents i ON i.vertical_id = r.vertical_id AND i.id = r.intent_id
++          WHERE r.public_id = $1 AND r.user_id = $2`, [t.intentId, ownerId]);
++      if (!rows[0]) throw new LinkError(404, 'item_not_found', 'العنصر غير موجود');
++      if (!['active', 'paused'].includes(rows[0].status)) throw new LinkError(409, 'item_unavailable', 'لا يمكن مشاركة طلب أو عرض مغلق أو منتهٍ.');
++      return { ...EMPTY, kind: 'intent', vertical_id: rows[0].vertical_id, intent_id: String(rows[0].intent_id), key: `i:${rows[0].vertical_id}:${rows[0].intent_id}` };
++    }
++    case 'product': {
++      const { rows } = await db.query(
++        `SELECT si.vertical_id, si.intent_id, i.status FROM intent_refs r
++           JOIN store_items si ON si.vertical_id = r.vertical_id AND si.intent_id = r.intent_id
++           JOIN stores s ON s.id = si.store_id
++           JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
++          WHERE r.public_id = $1 AND s.owner_id = $2`, [t.itemId, ownerId]);
++      if (!rows[0]) throw new LinkError(404, 'item_not_found', 'المنتج غير موجود');
++      if (!['active', 'paused'].includes(rows[0].status)) throw new LinkError(409, 'item_unavailable', 'لا يمكن مشاركة منتج منتهٍ أو مُباع.');
++      return { ...EMPTY, kind: 'product', vertical_id: rows[0].vertical_id, intent_id: String(rows[0].intent_id), key: `i:${rows[0].vertical_id}:${rows[0].intent_id}` };
++    }
++    case 'store': {
++      const { rows } = await db.query('SELECT id FROM stores WHERE public_id = $1 AND owner_id = $2', [t.storeId, ownerId]);
++      if (!rows[0]) throw new LinkError(404, 'item_not_found', 'المتجر غير موجود');
++      return { ...EMPTY, kind: 'store', store_id: String(rows[0].id), key: `s:${rows[0].id}` };
++    }
++    case 'place': {
++      const desc = clean(t.descAr, LINK_LIMITS.descChars, 'الوصف');
++      if (t.placeId != null) {
++        const p = reg.placeById.get(t.placeId);
++        if (!p || p.kind === 'world' || p.kind === 'virtual') throw new LinkError(422, 'bad_place', 'اختر مكانًا من القائمة');
++        return { ...EMPTY, kind: 'place', place_id: p.id, desc_ar: desc, key: `p:${p.id}` };
++      }
++      if (t.lat == null || t.lng == null || !Number.isFinite(t.lat) || !Number.isFinite(t.lng) || Math.abs(t.lat) > 90 || Math.abs(t.lng) > 180) {
++        throw new LinkError(422, 'bad_place', 'حدّد مكانًا من القائمة أو نقطة تقريبية');
++      }
++      // PRIVACY: only the rounded point (≈ 1 km) is ever stored — the precise fix is dropped here
++      const lat = roundCoord(t.lat);
++      const lng = roundCoord(t.lng);
++      return { ...EMPTY, kind: 'place', approx_lat: lat, approx_lng: lng, desc_ar: desc, key: `pt:${lat},${lng}` };
++    }
++    case 'link': {
++      const { rows } = await db.query(`SELECT ${LINK_COLS} FROM links l WHERE l.public_id = $1 AND l.owner_id = $2`, [t.linkId, ownerId]);
++      const c = rows[0] as LinkRow | undefined;
++      if (!c) throw new LinkError(404, 'item_not_found', 'الرابط غير موجود');
++      if (!effectiveStatus(c, now).live) throw new LinkError(409, 'item_unavailable', 'الرابط المختار انتهى ولا يمكن إضافته.');
++      const nested = await db.query("SELECT 1 FROM link_items WHERE link_id = $1 AND kind = 'link' LIMIT 1", [c.id]);
++      if (nested.rows[0]) throw new LinkError(422, 'too_deep', 'هذه المجموعة تحتوي روابط أخرى. أقصى عمق مستويان: مجموعة ← روابط ← عناصر.');
++      return { ...EMPTY, kind: 'link', child_link_id: String(c.id), key: `l:${c.id}` };
++    }
++  }
++}
++
++const KIND_FOR: Record<Exclude<LinkKind, 'collection'>, ItemKind> = { intent: 'intent', product: 'product', store: 'store', place: 'place' };
++
++async function lockOwner(tx: Queryable, ownerId: string): Promise<void> {
++  await tx.query("SELECT pg_advisory_xact_lock(hashtext('ul_links'), hashtext($1))", [ownerId]);
++}
++
++async function insertItems(tx: Queryable, linkId: string, items: Resolved[], firstNo: number, firstPos: number): Promise<void> {
++  for (let k = 0; k < items.length; k++) {
++    const r = items[k]!;
++    await tx.query(
++      `INSERT INTO link_items (link_id, item_no, position, kind, vertical_id, intent_id, store_id, child_link_id, place_id, approx_lat, approx_lng, desc_ar)
++       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
++      [linkId, firstNo + k, firstPos + k, r.kind, r.vertical_id, r.intent_id, r.store_id, r.child_link_id, r.place_id, r.approx_lat, r.approx_lng, r.desc_ar]);
++  }
++}
++
++// ───────────── owner views ─────────────
++export interface OwnerItem {
++  key: number; ref: string; position: number; kind: ItemKind; available: boolean; titleAr: string; statusAr: string;
++  descAr: string | null; target: Record<string, string | number | null>;
++}
++export interface OwnerLink {
++  id: string; url: string; kind: LinkKind; titleAr: string; customTitle: boolean; noteAr: string | null; synthetic: boolean;
++  status: 'live' | 'ended'; endReason: EndReason | null; endedAt: string | null; duration: Duration; expiresAt: string | null;
++  views: number; lastViewedAt: string | null; counts: { items: number; available: number };
++  /** all entries unavailable since (the link ends by itself 7 days later: autoEndAt) */
++  unavailableSince: string | null; autoEndAt: string | null;
++  inCollection: boolean; containsLinks: boolean; version: number; createdAt: string; updatedAt: string;
++  items?: OwnerItem[];
++}
++
++const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
++const STATUS_AR: Record<string, string> = { active: 'نشط', paused: 'موقوف مؤقتًا', fulfilled: 'تمت التلبية', closed: 'مغلق', expired: 'منتهي الصلاحية' };
++
++function ownerItem(reg: Registry, g: Graph, it: ItemRow, now: Date): OwnerItem {
++  const available = itemAvailable(g, it, now);
++  const base = { key: it.item_no, ref: String(it.item_no), position: it.position, kind: it.kind, available, descAr: it.desc_ar };
++  switch (it.kind) {
++    case 'intent':
++    case 'product': {
++      const i = intentOf(g, it);
++      if (!i) return { ...base, titleAr: 'عنصر محذوف', statusAr: 'محذوف', target: {} };
++      const product = i.si_store_id != null;
++      const title = demoTitle(product && i.item_name ? i.item_name : i.title_ar, i.realm === 'synthetic');
++      const statusAr = it.kind === 'product' && !product ? 'حُذف من المتجر' : product && i.store_status === 'paused' ? 'المتجر موقوف' : STATUS_AR[i.status] ?? i.status;
++      return { ...base, titleAr: title, statusAr, target: product ? { itemId: i.public_id, storeId: i.store_public_id } : { intentId: i.public_id } };
++    }
++    case 'store': {
++      const s = it.store_id ? g.stores.get(it.store_id) : undefined;
++      if (!s) return { ...base, titleAr: 'متجر محذوف', statusAr: 'محذوف', target: {} };
++      return { ...base, titleAr: storeLabel(s.name_ar, s.realm === 'synthetic'), statusAr: s.status === 'paused' ? 'المتجر موقوف' : s.active_count ? `${s.active_count} منتج نشط` : 'لا منتجات نشطة', target: { storeId: s.public_id } };
++    }
++    case 'place': {
++      const p = placeView(reg, it);
++      return { ...base, titleAr: placeTitle(p), statusAr: p.approx ? 'نقطة تقريبية (≈ ١ كم)' : 'مكان', target: it.place_id != null ? { placeId: it.place_id } : { lat: p.lat ?? null, lng: p.lng ?? null } };
++    }
++    case 'link': {
++      const c = it.child_link_id ? g.links.get(it.child_link_id) : undefined;
++      if (!c) return { ...base, titleAr: 'رابط محذوف', statusAr: 'محذوف', target: {} };
++      const live = effectiveStatus(c, now).live;
++      const first = (g.items.get(c.id) ?? [])[0];
++      const firstTitle = first ? ownerItem(reg, g, first, now).titleAr : null;
++      return { ...base, titleAr: demoTitle(c.title_ar ?? defaultTitle(c.kind, firstTitle, (g.items.get(c.id) ?? []).length), c.realm === 'synthetic'), statusAr: live ? 'رابط نشط' : 'رابط منتهٍ', target: { linkId: c.public_id } };
++    }
++  }
++}
++
++async function ownerViews(db: Queryable, reg: Registry, rows: LinkRow[], now: Date, withItems: boolean): Promise<OwnerLink[]> {
++  if (!rows.length) return [];
++  const g = await loadGraph(db, rows);
++  const ids = rows.map((r) => r.id);
++  const inside = new Set((await db.query('SELECT DISTINCT child_link_id FROM link_items WHERE child_link_id = ANY($1::bigint[])', [ids])).rows.map((r) => String(r.child_link_id)));
++  return rows.map((r) => {
++    const st = effectiveStatus(r, now);
++    const entries = g.items.get(r.id) ?? [];
++    const items = entries.map((it) => ownerItem(reg, g, it, now));
++    const synthetic = r.realm === 'synthetic';
++    return {
++      id: r.public_id, url: `/l/${r.public_id}`, kind: r.kind,
++      titleAr: demoTitle(r.title_ar ?? defaultTitle(r.kind, items[0]?.titleAr ?? null, items.length), synthetic), customTitle: r.title_ar != null,
++      noteAr: r.note_ar, synthetic, status: st.live ? 'live' : 'ended', endReason: st.reason,
++      endedAt: iso(r.ended_at) ?? (st.reason === 'expired' ? iso(r.expires_at) : st.reason === 'unavailable' && r.unavailable_since ? iso(new Date(new Date(r.unavailable_since).getTime() + UNAVAILABLE_MS)) : null),
++      duration: r.duration, expiresAt: iso(r.expires_at), views: Number(r.view_count), lastViewedAt: iso(r.last_viewed_at),
++      counts: (({ total, available }) => ({ items: total, available }))(availableCount(g, r.id, now)),
++      unavailableSince: st.live ? iso(r.unavailable_since) : null,
++      autoEndAt: st.live && r.unavailable_since ? iso(new Date(new Date(r.unavailable_since).getTime() + UNAVAILABLE_MS)) : null,
++      inCollection: inside.has(r.id), containsLinks: entries.some((e) => e.kind === 'link'),
++      version: r.version, createdAt: iso(r.created_at)!, updatedAt: iso(r.updated_at)!,
++      ...(withItems ? { items } : {}),
++    };
++  });
++}
++
++async function ownLink(db: Queryable, ownerId: string, publicId: string, lock = ''): Promise<LinkRow> {
++  const r = await linkByPublicId(db, publicId, ownerId, lock);
++  if (!r) throw notFound();
++  return r;
++}
++
++export async function getLink(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, now: Date): Promise<OwnerLink> {
++  return (await ownerViews(pool, reg, [await ownLink(pool, user.id, publicId)], now, true))[0]!;
++}
++
++// ───────────── create ─────────────
++export interface CreateInput { kind: LinkKind; target?: TargetInput; items?: TargetInput[]; titleAr?: string | null; noteAr?: string | null; duration: Duration }
++
++export async function createLink(pool: pg.Pool, reg: Registry, user: SessionUser, input: CreateInput, now: Date): Promise<OwnerLink> {
++  const title = clean(input.titleAr, LINK_LIMITS.titleChars, 'العنوان');
++  const note = clean(input.noteAr, LINK_LIMITS.noteChars, 'الملاحظة');
++  const targets = input.kind === 'collection' ? input.items ?? [] : input.target ? [input.target] : [];
++  if (input.kind === 'collection') {
++    if (!targets.length) throw new LinkError(422, 'empty_collection', 'اختر عنصرًا واحدًا على الأقل للمجموعة');
++    if (targets.length > LINK_LIMITS.itemsPerCollection) throw new LinkError(422, 'too_many_items', `المجموعة تتسع لـ ${LINK_LIMITS.itemsPerCollection} عنصرًا على الأكثر`);
++  } else {
++    if (targets.length !== 1) throw new LinkError(400, 'bad_request', 'حدّد العنصر الذي تريد مشاركته');
++    if (targets[0]!.kind !== KIND_FOR[input.kind]) throw new LinkError(400, 'bad_request', 'نوع العنصر لا يناسب نوع الرابط');
++  }
++  const created = await withTx(pool, async (tx) => {
++    await lockOwner(tx, user.id);
++    const n = (await tx.query('SELECT count(*)::int AS n FROM links WHERE owner_id = $1', [user.id])).rows[0].n as number;
++    if (n >= LINK_LIMITS.linksPerOwner) throw new LinkError(409, 'link_limit', `وصلت إلى ${LINK_LIMITS.linksPerOwner} رابط. احذف روابط قديمة أولًا.`);
++    const resolved: Resolved[] = [];
++    const seen = new Set<string>();
++    for (const t of targets) {
++      const r = await resolveTarget(tx, reg, user.id, t, now);
++      if (seen.has(r.key)) throw new LinkError(422, 'duplicate_item', 'العنصر نفسه مكرر في المجموعة');
++      seen.add(r.key);
++      resolved.push(r);
++    }
++    const expires = expiresAtFor(input.duration, now);
++    let id: string | null = null;
++    let publicId = '';
++    for (let attempt = 0; attempt < 3 && !id; attempt++) {
++      publicId = newLinkId();
++      const { rows } = await tx.query(
++        `INSERT INTO links (public_id, owner_id, realm, kind, title_ar, note_ar, duration, expires_at, next_item_no, created_at, updated_at)
++         VALUES ($1, $2, 'real', $3, $4, $5, $6, $7, $8, $9, $9) ON CONFLICT (public_id) DO NOTHING RETURNING id`, // realm: trigger
++        [publicId, user.id, input.kind, title, note, input.duration, expires, resolved.length + 1, now]);
++      id = rows[0] ? String(rows[0].id) : null;
++    }
++    if (!id) throw new Error('could not allocate a link id');
++    await insertItems(tx, id, resolved, 1, 1);
++    await scheduleLinkSweep(tx, now.getTime());
++    return publicId;
++  });
++  return getLink(pool, reg, user, created, now);
++}
++
++// ───────────── list ─────────────
++export async function listLinks(pool: pg.Pool, reg: Registry, user: SessionUser, opts: { status: 'live' | 'ended' | 'all'; cursor?: string | null; dir?: 'next' | 'prev'; limit: number }, now: Date): Promise<Page<OwnerLink>> {
++  const filter = opts.status === 'live' ? liveSql('l', '$2') : opts.status === 'ended' ? `NOT ${liveSql('l', '$2')}` : '($2::timestamptz IS NOT NULL)';
++  const base = `FROM links l WHERE l.owner_id = $1 AND ${filter}`;
++  const total = Number((await pool.query(`SELECT count(*) ${base}`, [user.id, now])).rows[0].count);
++  const cur = decodeCursor(opts.cursor);
++  const prev = opts.dir === 'prev' && !!cur;
++  const params: unknown[] = [user.id, now, opts.limit + 1];
++  let keyset = '';
++  if (cur) { params.push(cur.k, cur.id); keyset = prev ? 'AND (l.created_at, l.id) > ($4::timestamptz, $5::bigint)' : 'AND (l.created_at, l.id) < ($4::timestamptz, $5::bigint)'; }
++  const { rows } = await pool.query(`SELECT ${LINK_COLS} ${base} ${keyset} ORDER BY l.created_at ${prev ? 'ASC' : 'DESC'}, l.id ${prev ? 'ASC' : 'DESC'} LIMIT $3`, params);
++  const hasMore = rows.length > opts.limit;
++  const page: LinkRow[] = rows.slice(0, opts.limit).map((r) => ({ ...r, id: String(r.id), owner_id: String(r.owner_id) }));
++  if (prev) page.reverse();
++  let rangeStart = 0;
++  if (page.length) rangeStart = Number((await pool.query(`SELECT count(*) ${base} AND (l.created_at, l.id) > ($3::timestamptz, $4::bigint)`, [user.id, now, page[0]!.created_key, page[0]!.id])).rows[0].count) + 1;
++  const items = await ownerViews(pool, reg, page, now, false);
++  const first = page[0];
++  const last = page[page.length - 1];
++  return {
++    items, total, limit: opts.limit,
++    nextCursor: last && (prev || hasMore) ? encodeCursor(last.created_key, last.id) : null,
++    prevCursor: first && rangeStart > 1 ? encodeCursor(first.created_key, first.id) : null,
++    rangeStart: items.length ? rangeStart : 0,
++    rangeEnd: items.length ? rangeStart + items.length - 1 : 0,
++  };
++}
++
++// ───────────── edit ─────────────
++function checkVersion(r: LinkRow, expected: number | undefined) {
++  if (expected !== undefined && expected !== r.version) throw new LinkError(409, 'version_conflict', 'تغيّر الرابط من مكان آخر. حدّث الصفحة.');
++}
++
++export async function updateLink(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, ch: { expectedVersion?: number; titleAr?: string | null; noteAr?: string | null; duration?: Duration }, now: Date): Promise<OwnerLink> {
++  await withTx(pool, async (tx) => {
++    const r = await ownLink(tx, user.id, publicId, 'FOR UPDATE');
++    checkVersion(r, ch.expectedVersion);
++    if (!effectiveStatus(r, now).live) throw ended();
++    const title = ch.titleAr === undefined ? r.title_ar : clean(ch.titleAr, LINK_LIMITS.titleChars, 'العنوان');
++    const note = ch.noteAr === undefined ? r.note_ar : clean(ch.noteAr, LINK_LIMITS.noteChars, 'الملاحظة');
++    const duration = ch.duration ?? r.duration;
++    // a new lifetime counts from now («٧ أيام» = seven days from this change)
++    const expires = ch.duration ? expiresAtFor(ch.duration, now) : r.expires_at;
++    await tx.query('UPDATE links SET title_ar = $2, note_ar = $3, duration = $4, expires_at = $5, version = version + 1, updated_at = $6 WHERE id = $1',
++      [r.id, title, note, duration, expires, now]);
++  });
++  return getLink(pool, reg, user, publicId, now);
++}
++
++/** Structure edits of a collection: add, remove, reorder (under the owner lock). */
++async function editCollection(pool: pg.Pool, user: SessionUser, publicId: string, expected: number | undefined, now: Date, fn: (tx: Queryable, r: LinkRow, items: ItemRow[]) => Promise<void>): Promise<void> {
++  await withTx(pool, async (tx) => {
++    await lockOwner(tx, user.id);
++    const r = await ownLink(tx, user.id, publicId, 'FOR UPDATE');
++    checkVersion(r, expected);
++    if (r.kind !== 'collection') throw new LinkError(422, 'not_a_collection', 'هذا الرابط لعنصر واحد. أنشئ مجموعة لتجمع عدة عناصر.');
++    if (!effectiveStatus(r, now).live) throw ended();
++    const items = (await itemsOf(tx, [r.id])).get(r.id) ?? [];
++    await fn(tx, r, items);
++    await tx.query('UPDATE links SET version = version + 1, updated_at = $2 WHERE id = $1', [r.id, now]);
++  });
++}
++
++export async function addItem(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, target: TargetInput, expected: number | undefined, now: Date): Promise<OwnerLink> {
++  await editCollection(pool, user, publicId, expected, now, async (tx, r, items) => {
++    if (items.length >= LINK_LIMITS.itemsPerCollection) throw new LinkError(422, 'too_many_items', `المجموعة تتسع لـ ${LINK_LIMITS.itemsPerCollection} عنصرًا على الأكثر`);
++    const res = await resolveTarget(tx, reg, user.id, target, now);
++    if (res.kind === 'link') {
++      if (res.child_link_id === r.id) throw new LinkError(422, 'cycle', 'لا يمكن وضع المجموعة داخل نفسها');
++      const inside = await tx.query('SELECT 1 FROM link_items WHERE child_link_id = $1 LIMIT 1', [r.id]);
++      if (inside.rows[0]) throw new LinkError(422, 'too_deep', 'هذه المجموعة موجودة داخل مجموعة أخرى، فلا يمكن أن تحتوي روابط. أقصى عمق مستويان.');
++    }
++    const keys = new Set(items.map(itemKey));
++    if (keys.has(res.key)) throw new LinkError(422, 'duplicate_item', 'العنصر موجود في المجموعة');
++    const pos = items.reduce((m, x) => Math.max(m, x.position), 0) + 1;
++    await insertItems(tx, r.id, [res], r.next_item_no, pos);
++    await tx.query('UPDATE links SET next_item_no = next_item_no + 1 WHERE id = $1', [r.id]);
++  });
++  return getLink(pool, reg, user, publicId, now);
++}
++
++function itemKey(i: ItemRow): string {
++  if (i.intent_id) return `i:${i.vertical_id}:${i.intent_id}`;
++  if (i.store_id) return `s:${i.store_id}`;
++  if (i.child_link_id) return `l:${i.child_link_id}`;
++  if (i.place_id != null) return `p:${i.place_id}`;
++  if (i.approx_lat != null) return `pt:${roundCoord(Number(i.approx_lat))},${roundCoord(Number(i.approx_lng))}`;
++  return `x:${i.item_no}`;
++}
++
++export async function removeItem(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, itemNo: number, expected: number | undefined, now: Date): Promise<OwnerLink> {
++  await editCollection(pool, user, publicId, expected, now, async (tx, r, items) => {
++    const it = items.find((x) => x.item_no === itemNo);
++    if (!it) throw notFound();
++    if (items.length <= 1) throw new LinkError(409, 'last_item', 'المجموعة تحتاج عنصرًا واحدًا على الأقل. أوقف الرابط أو احذفه بدلًا من ذلك.');
++    await tx.query('DELETE FROM link_items WHERE link_id = $1 AND item_no = $2', [r.id, itemNo]);
++    await tx.query('UPDATE link_items SET position = position - 1 WHERE link_id = $1 AND position > $2', [r.id, it.position]);
++  });
++  return getLink(pool, reg, user, publicId, now);
++}
++
++/** `order` = every item key of the collection, in the new order. */
++export async function reorderItems(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, order: number[], expected: number | undefined, now: Date): Promise<OwnerLink> {
++  await editCollection(pool, user, publicId, expected, now, async (tx, r, items) => {
++    const have = items.map((x) => x.item_no).sort((a, b) => a - b);
++    const want = [...order].sort((a, b) => a - b);
++    if (have.length !== want.length || have.some((v, k) => v !== want[k])) throw new LinkError(422, 'bad_order', 'الترتيب يجب أن يذكر كل عناصر المجموعة مرة واحدة');
++    // one statement: the DEFERRABLE unique (link_id, position) is checked at its end, so swaps are fine
++    await tx.query(
++      `UPDATE link_items li SET position = x.pos FROM unnest($2::smallint[], $3::smallint[]) AS x(no, pos)
++        WHERE li.link_id = $1 AND li.item_no = x.no`, [r.id, order, order.map((_, k) => k + 1)]);
++  });
++  return getLink(pool, reg, user, publicId, now);
++}
++
++/** Manual stop: immediate and final (idempotent). */
++export async function stopLink(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, now: Date): Promise<OwnerLink> {
++  await withTx(pool, async (tx) => {
++    const r = await ownLink(tx, user.id, publicId, 'FOR UPDATE');
++    if (r.status === 'ended') return;
++    const st = effectiveStatus(r, now);
++    const reason: EndReason = st.live ? 'stopped' : st.reason!;
++    await tx.query("UPDATE links SET status = 'ended', end_reason = $2, ended_at = $3, version = version + 1, updated_at = $3 WHERE id = $1", [r.id, reason, now]);
++  });
++  return getLink(pool, reg, user, publicId, now);
++}
++
++/** Delete: the link and its entries go; a collection that contained it keeps the entry as «غير متاح». */
++export async function deleteLink(pool: pg.Pool, user: SessionUser, publicId: string): Promise<void> {
++  await withTx(pool, async (tx) => {
++    await lockOwner(tx, user.id);
++    const r = await ownLink(tx, user.id, publicId, 'FOR UPDATE');
++    await tx.query('DELETE FROM links WHERE id = $1', [r.id]);
++  });
++}
++
++// ───────────── «مجموعة جديدة»: what can go into a collection ─────────────
++export async function candidates(pool: pg.Pool, reg: Registry, user: SessionUser, now: Date) {
++  const [links, stores, products, intents] = await Promise.all([
++    pool.query(`SELECT ${LINK_COLS}, EXISTS (SELECT 1 FROM link_items x WHERE x.link_id = l.id AND x.kind = 'link') AS has_links
++                  FROM links l WHERE l.owner_id = $1 AND ${liveSql('l', '$2')} ORDER BY l.created_at DESC, l.id DESC LIMIT 100`, [user.id, now]),
++    pool.query(`SELECT s.public_id, s.name_ar, s.realm, s.status,
++                  (SELECT count(*)::int FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id WHERE si.store_id = s.id AND i.status = 'active') AS active
++                  FROM stores s WHERE s.owner_id = $1 ORDER BY s.created_at, s.id`, [user.id]),
++    pool.query(`SELECT r.public_id, s.public_id AS store_public_id, si.name_ar, i.status, i.realm FROM stores s
++                  JOIN store_items si ON si.store_id = s.id
++                  JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
++                  JOIN intent_refs r ON r.vertical_id = si.vertical_id AND r.intent_id = si.intent_id
++                 WHERE s.owner_id = $1 AND i.status IN ('active','paused') ORDER BY s.created_at, si.position LIMIT 200`, [user.id]),
++    pool.query(`SELECT i.public_id, i.title_ar, i.side, i.status FROM intents i
++                 WHERE i.user_id = $1 AND i.status IN ('active','paused')
++                   AND NOT EXISTS (SELECT 1 FROM store_items si WHERE si.vertical_id = i.vertical_id AND si.intent_id = i.id)
++                 ORDER BY i.created_at DESC, i.id DESC LIMIT 100`, [user.id]),
++  ]);
++  const views = await ownerViews(pool, reg, links.rows.map((r) => ({ ...r, id: String(r.id), owner_id: String(r.owner_id) })), now, false);
++  return {
++    links: views.map((v, k) => ({ id: v.id, kind: v.kind, titleAr: v.titleAr, nestable: !links.rows[k].has_links, counts: v.counts })),
++    stores: stores.rows.map((s) => ({ id: s.public_id, labelAr: storeLabel(s.name_ar, s.realm === 'synthetic'), status: s.status, activeProducts: s.active })),
++    products: products.rows.map((p) => ({ id: p.public_id, storeId: p.store_public_id, nameAr: demoTitle(p.name_ar, p.realm === 'synthetic'), status: p.status })),
++    intents: intents.rows.map((i) => ({ id: i.public_id, titleAr: i.title_ar, side: i.side, status: i.status })),
++    places: reg.places.filter((p) => p.kind === 'city' || p.kind === 'region').map((p) => ({ id: p.id, labelAr: p.nameAr, kind: p.kind })),
++    limits: { itemsPerCollection: LINK_LIMITS.itemsPerCollection, titleChars: LINK_LIMITS.titleChars, noteChars: LINK_LIMITS.noteChars, descChars: LINK_LIMITS.descChars },
++  };
++}
++
++// ───────────── views ─────────────
++export async function recordView(db: Queryable, linkId: string, now: Date): Promise<void> {
++  await db.query('UPDATE links SET view_count = view_count + 1, last_viewed_at = $2 WHERE id = $1', [linkId, now]);
++}
++
++// ───────────── refs → targets (contact, photos) ─────────────
++type RefTarget =
++  | { status: 'missing' }
++  | { status: 'unavailable' }
++  | { status: 'ok'; kind: 'intent'; info: IntentInfo }
++  | { status: 'ok'; kind: 'store'; store: StoreInfo }
++  | { status: 'ok'; kind: 'other' };
++
++export async function resolveRef(db: Queryable, row: LinkRow, ref: Ref, now: Date): Promise<RefTarget> {
++  const g = await loadGraph(db, [row]);
++  let entry = (g.items.get(row.id) ?? []).find((x) => x.item_no === ref.top);
++  let depth = 1;
++  if (!entry) return { status: 'missing' };
++  if (ref.child != null) {
++    if (entry.kind !== 'link') return { status: 'missing' };
++    if (!itemAvailable(g, entry, now)) return { status: 'unavailable' };
++    entry = (g.items.get(entry.child_link_id!) ?? []).find((x) => x.item_no === ref.child);
++    depth = 2;
++    if (!entry) return { status: 'missing' };
++  }
++  if (!itemAvailable(g, entry, now, depth)) return { status: 'unavailable' };
++  if (ref.product != null) {
++    if (entry.kind !== 'store') return { status: 'missing' };
++    const { rows } = await db.query(
++      `SELECT ${INTENT_COLS}, si.store_id AS si_store_id, si.position AS store_pos, si.name_ar AS item_name, s.status AS store_status,
++              s.name_ar AS store_name, s.public_id AS store_public_id, s.place_id AS store_place_id
++         FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id JOIN stores s ON s.id = si.store_id
++        WHERE si.store_id = $1 AND si.position = $2`, [entry.store_id, ref.product]);
++    if (!rows[0]) return { status: 'missing' };
++    if (rows[0].status !== 'active') return { status: 'unavailable' };
++    return { status: 'ok', kind: 'intent', info: { ...rows[0], si_store_id: String(rows[0].si_store_id) } };
++  }
++  if (entry.kind === 'intent' || entry.kind === 'product') return { status: 'ok', kind: 'intent', info: intentOf(g, entry)! };
++  if (entry.kind === 'store') return { status: 'ok', kind: 'store', store: g.stores.get(entry.store_id!)! };
++  return { status: 'ok', kind: 'other' };
++}
++
++/** The photo behind /api/l/:id/photos/:ref/:slot — only for an available store product reachable through a live link. */
++export async function linkPhoto(db: Queryable, publicId: string, ref: Ref, slot: number, now: Date): Promise<{ sha256: Buffer; mime: string } | null> {
++  const row = await linkByPublicId(db, publicId);
++  if (!row || !effectiveStatus(row, now).live) return null;
++  const t = await resolveRef(db, row, ref, now);
++  if (t.status !== 'ok' || t.kind !== 'intent' || t.info.si_store_id == null || t.info.store_status !== 'active' || t.info.status !== 'active') return null;
++  const { rows } = await db.query(
++    `SELECT p.sha256, b.mime FROM store_item_photos p JOIN media_blobs b ON b.sha256 = p.sha256
++      WHERE p.vertical_id = $1 AND p.intent_id = $2 AND p.slot = $3`, [t.info.vertical_id, t.info.id, slot]);
++  return rows[0] ? { sha256: rows[0].sha256 as Buffer, mime: rows[0].mime as string } : null;
++}
++
++// ───────────── «تواصل» from a link ─────────────
++export type ContactStatus = 'none' | 'pending_out' | 'pending_in' | 'accepted' | 'declined';
++export type ContactPlan =
++  | { action: 'contact'; matchId: string; state: 'confirmed' | 'possible'; contactStatus: ContactStatus; connectionId: string | null; messageAr: string }
++  | { action: 'compose'; composeTextAr: string; messageAr: string };
++
++/**
++ * What «تواصل» does for a signed-in visitor (docs/LINKS.md §6). Contact in Ultra Link always goes through a MATCH and the
++ * counterpart's consent; a link does not open a side door. So: if one of the visitor's own requests already matches the
++ * item (or a product of the store), the answer is that match → the page sends the normal contact request
++ * (POST /api/matches/:id/contact). Otherwise the answer is a sentence for «احفظ كطلب مشابه»: the visitor saves a
++ * matching request in the app, the engine matches it, and contact follows the usual path.
++ */
++export async function contactPlan(pool: pg.Pool, reg: Registry, user: SessionUser, publicId: string, ref: Ref, now: Date): Promise<ContactPlan> {
++  const row = await linkByPublicId(pool, publicId);
++  if (!row) throw new LinkError(404, 'not_found', 'هذا الرابط غير موجود');
++  if (!effectiveStatus(row, now).live) throw new LinkError(404, 'link_ended', 'انتهى هذا الرابط');
++  if (row.owner_id === user.id) throw new LinkError(409, 'own_link', 'هذا رابطك أنت — شاركه مع غيرك.');
++  if (row.realm !== user.realm) {
++    throw new LinkError(409, 'realm_mismatch', row.realm === 'synthetic'
++      ? 'هذا رابط تجريبي (بيانات اصطناعية). لا يمكن التواصل معه من حساب حقيقي.'
++      : 'هذا رابط لحساب حقيقي. الحسابات التجريبية لا تتواصل مع الحسابات الحقيقية.');
++  }
++  const t = await resolveRef(pool, row, ref, now);
++  if (t.status === 'missing') throw new LinkError(404, 'item_not_found', 'العنصر غير موجود في هذا الرابط');
++  if (t.status === 'unavailable') throw new LinkError(409, 'item_unavailable', 'هذا العنصر غير متاح الآن');
++  if (t.kind === 'other') throw new LinkError(422, 'not_contactable', 'هذا العنصر مكان أو مجموعة — اختر عرضًا أو منتجًا للتواصل.');
++
++  const m = t.kind === 'intent'
++    ? (await pool.query(
++        `SELECT m.public_id, m.id, m.vertical_id, m.state FROM matches m
++          WHERE m.vertical_id = $1 AND ((m.b_intent_id = $2 AND m.a_user_id = $3) OR (m.a_intent_id = $2 AND m.b_user_id = $3))
++            AND m.state IN ('confirmed','possible')
++          ORDER BY (m.state = 'confirmed') DESC, m.score DESC, m.id DESC LIMIT 1`, [t.info.vertical_id, t.info.id, user.id])).rows[0]
++    : (await pool.query(
++        `SELECT m.public_id, m.id, m.vertical_id, m.state FROM store_items si
++           JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id AND i.status = 'active'
++           JOIN matches m ON m.vertical_id = si.vertical_id
++                         AND ((m.b_intent_id = si.intent_id AND m.a_user_id = $2) OR (m.a_intent_id = si.intent_id AND m.b_user_id = $2))
++          WHERE si.store_id = $1 AND m.state IN ('confirmed','possible')
++          ORDER BY (m.state = 'confirmed') DESC, m.score DESC, m.id DESC LIMIT 1`, [t.store.id, user.id])).rows[0];
++  if (m) {
++    const cr = await pool.query('SELECT status, requester_id FROM contact_requests WHERE vertical_id = $1 AND match_id = $2', [m.vertical_id, m.id]);
++    let status: ContactStatus = 'none';
++    if (cr.rows.some((r) => r.status === 'accepted')) status = 'accepted';
++    else if (cr.rows.some((r) => r.status === 'pending' && String(r.requester_id) === user.id)) status = 'pending_out';
++    else if (cr.rows.some((r) => r.status === 'pending')) status = 'pending_in';
++    else if (cr.rows.some((r) => r.status === 'declined' && String(r.requester_id) === user.id)) status = 'declined';
++    const conn = status === 'accepted' ? (await pool.query('SELECT public_id FROM connections WHERE vertical_id = $1 AND match_id = $2', [m.vertical_id, m.id])).rows[0] : null;
++    const messageAr = {
++      none: 'أحد طلباتك يطابق هذا العنصر. سنرسل لصاحبه طلب تواصل؛ يظهر اسمك له فقط إذا وافق.',
++      pending_out: 'سبق أن أرسلت طلب تواصل لهذا العنصر — بانتظار موافقة صاحبه.',
++      pending_in: 'صاحب هذا العنصر أرسل لك طلب تواصل. افتح «مطابقاتي» لقبوله أو رفضه.',
++      accepted: 'أنتما متصلان. افتح المحادثة من «مطابقاتي».',
++      declined: 'رفض صاحب هذا العنصر طلب التواصل السابق.',
++    }[status];
++    return { action: 'contact', matchId: m.public_id, state: m.state, contactStatus: status, connectionId: conn?.public_id ?? null, messageAr };
++  }
++  // no match yet → a request the app understands, for the visitor to edit and save
++  let basis: IntentInfo | null = t.kind === 'intent' ? t.info : null;
++  if (t.kind === 'store') {
++    const { rows } = await pool.query(
++      `SELECT ${INTENT_COLS} FROM store_items si JOIN intents i ON i.vertical_id = si.vertical_id AND i.id = si.intent_id
++        WHERE si.store_id = $1 AND i.status = 'active' ORDER BY si.position LIMIT 1`, [t.store.id]);
++    basis = rows[0] ?? null;
++  }
++  if (!basis) throw new LinkError(409, 'item_unavailable', 'هذا العنصر غير متاح الآن');
++  const cat = reg.categoryById.get(basis.category_id)!;
++  const deal = reg.dealById.get(basis.deal_type_id)!;
++  const place = basis.side === 'seek' ? (basis.scope_place_ids?.[0] ?? basis.point_place_id) : (basis.point_place_id ?? basis.scope_place_ids?.[0] ?? null);
++  return {
++    action: 'compose',
++    composeTextAr: composeText(reg, basis.side, cat.code, deal.code, place ?? null),
++    messageAr: 'التواصل في ألترا لينك يمرّ عبر مطابقة يوافق عليها الطرفان، ولا توجد بعد مطابقة بين طلباتك وهذا العنصر. احفظ طلبًا مشابهًا: إن توافقت الشروط يطابقه التطبيق فورًا، ثم ترسل طلب التواصل من هنا أو من «مطابقاتي».',
++  };
++}
++
+diff --git a/ultra-link/src/links/views.ts b/ultra-link/src/links/views.ts
+new file mode 100644
+index 0000000..7a0c18d
+--- /dev/null
++++ b/ultra-link/src/links/views.ts
+@@ -0,0 +1,50 @@
++// View counter de-duplication for share links (docs/LINKS.md §5). The ONLY thing stored is links.view_count (+ the time
++// of the last view). Nothing about the visitor reaches the database or the logs:
++//   * a view is counted once per (visitor, link) per 30 minutes, decided IN MEMORY by
++//     key = sha256(salt ‖ link id ‖ client address), truncated to 128 bits;
++//   * the salt is 16 random bytes held only in this process and replaced every 24 h; on replacement every key is
++//     forgotten, so an old key can never be linked to a new one and a key cannot be reversed without the salt;
++//   * the map is bounded (oldest dropped first) and lives only in this server process (a restart forgets it; with
++//     several servers a visitor may be counted once per server — accepted, documented);
++//   * the owner's own visits are not counted (the route skips them).
++import { createHash, randomBytes } from 'node:crypto';
++
++export interface ViewCounterOptions { ttlMs?: number; saltMs?: number; maxKeys?: number }
++
++export class ViewCounter {
++  private salt: Buffer = randomBytes(16);
++  private saltAt = -1;
++  private readonly seen = new Map<string, number>();
++  readonly ttlMs: number;
++  readonly saltMs: number;
++  readonly maxKeys: number;
++
++  constructor(opts: ViewCounterOptions = {}) {
++    this.ttlMs = opts.ttlMs ?? 30 * 60_000;
++    this.saltMs = opts.saltMs ?? 24 * 3_600_000;
++    this.maxKeys = opts.maxKeys ?? 100_000;
++  }
++
++  /** true → count this view; false → the same visitor saw this link less than ttlMs ago. */
++  shouldCount(linkId: string, client: string, now: number): boolean {
++    if (this.saltAt < 0 || now - this.saltAt >= this.saltMs || now < this.saltAt) {
++      this.salt = randomBytes(16);
++      this.saltAt = now;
++      this.seen.clear();
++    }
++    const key = createHash('sha256').update(this.salt).update(linkId).update('\u0000').update(client).digest('base64url').slice(0, 22);
++    const last = this.seen.get(key);
++    if (last !== undefined && now - last < this.ttlMs && now >= last) return false;
++    this.seen.delete(key);
++    this.seen.set(key, now);
++    if (this.seen.size > this.maxKeys) {
++      let drop = this.seen.size - Math.floor(this.maxKeys * 0.9);
++      for (const k of this.seen.keys()) { if (drop-- <= 0) break; this.seen.delete(k); }
++    }
++    return true;
++  }
++
++  /** for tests: the in-memory keys (salted hashes only) */
++  keys(): string[] { return [...this.seen.keys()]; }
++  get size(): number { return this.seen.size; }
++}
+diff --git a/ultra-link/src/server/routes/links.ts b/ultra-link/src/server/routes/links.ts
+new file mode 100644
+index 0000000..2d499ba
+--- /dev/null
++++ b/ultra-link/src/server/routes/links.ts
+@@ -0,0 +1,232 @@
++// Feature routes: share links (V2.4; docs/LINKS.md, contracts in docs/CONTRACTS.md «Share links»). A defineRoutes plugin,
++// so CSRF / auth / rate limits / error format / security headers are inherited.
++//
++// Public (no login; rate-limited per client IP; visitor IPs are kept out of the request log with logLevel 'warn'):
++//   GET  /l/:id                                  → the HTML shell (public/link.html) that loads /js/link-view.js
++//   GET  /api/l/:id                              → {link: PublicLink, viewer: {signedIn, own}}; 404 not_found | link_ended
++//   GET  /api/l/:id/store/:ref?cursor=           → {items, total, nextCursor}  («عرض المزيد» of a store entry)
++//   GET  /api/l/:id/photos/:ref/:slot            → a product photo reachable through this live link (else 404)
++// Signed-in visitor:
++//   POST /api/l/:id/contact          {ref}       → ContactPlan: {action:'contact', matchId, …} | {action:'compose', composeTextAr, …}
++// Owner (404 for anyone else's link):
++//   POST   /api/links                            {kind, target? | items?, titleAr?, noteAr?, duration} → {link}
++//   GET    /api/links?status=live|ended|all&cursor=&dir=&limit= → Page<OwnerLink> (exact total)
++//   GET    /api/links/candidates                 → what can go into a collection (my links, stores, products, intents, places)
++//   GET    /api/links/:id                        → {link: OwnerLink & {items}}
++//   PATCH  /api/links/:id                        {expectedVersion?, titleAr?, noteAr?, duration?} → {link}
++//   POST   /api/links/:id/items                  {expectedVersion?, item} → {link}            (collections)
++//   POST   /api/links/:id/items/:key/delete      {expectedVersion?} → {link}  (also DELETE /api/links/:id/items/:key)
++//   POST   /api/links/:id/order                  {expectedVersion?, items: key[]} → {link}
++//   POST   /api/links/:id/stop                   → {link}   (immediate, final, idempotent)
++//   DELETE /api/links/:id                        → {ok}     (also POST /api/links/:id/delete)
++import { readFileSync } from 'node:fs';
++import { join } from 'node:path';
++import type { FastifyReply, FastifyRequest } from 'fastify';
++import { z } from 'zod';
++import { defineRoutes, type RouteRateLimit, type UlRoutePlugin } from '../context.ts';
++import { UUID_RE, validCursor } from '../validate.ts';
++import { ROOT } from '../../lib/env.ts';
++import { MediaStore, defaultMediaDir } from '../../catalog/media-store.ts';
++import { isLinkId, LINK_ID_RE } from '../../links/ids.ts';
++import { DURATION_KEYS, ENDED_AR, LINK_KINDS, NOT_FOUND_AR, parseRef } from '../../links/model.ts';
++import { publicLink, publicStorePage } from '../../links/public.ts';
++import {
++  addItem, candidates, contactPlan, createLink, deleteLink, getLink, LinkError, linkPhoto, listLinks, recordView, removeItem, reorderItems, stopLink, updateLink,
++  type TargetInput,
++} from '../../links/service.ts';
++import { ViewCounter } from '../../links/views.ts';
++
++const UUID = z.string().regex(UUID_RE).transform((s) => s.toLowerCase());
++const LINK_ID = z.string().regex(LINK_ID_RE);
++// lengths in characters are checked by the service (after trimming); these bound the payload
++const optText = (max: number) => z.string().max(max * 4).nullable().optional();
++const Target = z.discriminatedUnion('kind', [
++  z.object({ kind: z.literal('intent'), intentId: UUID }),
++  z.object({ kind: z.literal('product'), itemId: UUID, storeId: UUID.optional() }),
++  z.object({ kind: z.literal('store'), storeId: UUID }),
++  z.object({
++    kind: z.literal('place'),
++    placeId: z.number().int().positive().max(2_000_000_000).nullable().optional(),
++    lat: z.number().min(-90).max(90).nullable().optional(),
++    lng: z.number().min(-180).max(180).nullable().optional(),
++    descAr: optText(300),
++  }),
++  z.object({ kind: z.literal('link'), linkId: LINK_ID }),
++]);
++const Version = z.number().int().positive().max(2_147_483_647).optional();
++const Create = z.object({
++  kind: z.enum(LINK_KINDS),
++  target: Target.optional(),
++  items: z.array(Target).max(60).optional(), // > 50 is refused by the service with a clear 422
++  titleAr: optText(80),
++  noteAr: optText(500),
++  duration: z.enum(DURATION_KEYS),
++});
++const Patch = z.object({ expectedVersion: Version, titleAr: optText(80), noteAr: optText(500), duration: z.enum(DURATION_KEYS).optional() });
++const AddItem = z.object({ expectedVersion: Version, item: Target });
++const Order = z.object({ expectedVersion: Version, items: z.array(z.number().int().min(1).max(32_000)).min(1).max(50) });
++const Contact = z.object({ ref: z.string().max(24) });
++
++const empty = (v: unknown) => (v === '' ? undefined : v);
++const ListQuery = z.object({
++  status: z.preprocess(empty, z.enum(['live', 'ended', 'all']).optional()),
++  cursor: z.preprocess(empty, z.string().optional().refine((c) => c === undefined || validCursor(c, 'ts'), { message: 'bad_cursor' })),
++  dir: z.preprocess(empty, z.enum(['next', 'prev']).optional()),
++  limit: z.preprocess(empty, z.string().regex(/^\d{1,3}$/).transform(Number).pipe(z.number().int().min(1).max(100)).optional()),
++});
++const MoreQuery = z.object({ cursor: z.preprocess(empty, z.string().regex(/^\d{1,9}$/).transform(Number).optional()) });
++
++export interface LinksRoutesOptions {
++  /** injectable clock (tests): expiry, auto-expiry and view de-duplication all read it */
++  now?: () => Date;
++  /** photo directory (default UL_MEDIA_DIR or var/media, the catalog's) */
++  mediaDir?: string;
++  /** public reads per minute per client IP (default 60; env UL_RL_LINK_READ_PER_MIN overrides, 0 = off) */
++  readPerMinute?: number;
++  photoPerMinute?: number;
++  views?: ViewCounter;
++}
++
++export const LINK_RATE_LIMITS = {
++  read: { name: 'link_read', perMinute: 60, by: 'ip' },
++  photo: { name: 'link_photo', perMinute: 300, by: 'ip' },
++  page: { name: 'link_page', perMinute: 120, by: 'ip' },
++  contact: { name: 'link_contact', perMinute: 20 },
++  write: { name: 'link_write', perMinute: 60 },
++} as const satisfies Record<string, RouteRateLimit>;
++
++export function linksRoutes(opts: LinksRoutesOptions = {}): UlRoutePlugin {
++  const clock = opts.now ?? (() => new Date());
++  return defineRoutes('links', async (app, ctx) => {
++    const media = new MediaStore(opts.mediaDir ?? defaultMediaDir());
++    const views = opts.views ?? new ViewCounter();
++    const read: RouteRateLimit = { ...LINK_RATE_LIMITS.read, perMinute: opts.readPerMinute ?? LINK_RATE_LIMITS.read.perMinute };
++    const photo: RouteRateLimit = { ...LINK_RATE_LIMITS.photo, perMinute: opts.photoPerMinute ?? LINK_RATE_LIMITS.photo.perMinute };
++    const write = { rateLimit: LINK_RATE_LIMITS.write };
++    let shell: string | null = null;
++    const shellHtml = () => (shell ??= readFileSync(join(ROOT, 'public', 'link.html'), 'utf8'));
++
++    app.setErrorHandler((err: any, _req, reply) => {
++      if (err instanceof LinkError) return reply.code(err.status).send({ error: err.code, messageAr: err.message });
++      throw err;
++    });
++
++    const me = (req: FastifyRequest) => ctx.user(req);
++    /** owner routes: a malformed id is 400 (like uuidParam), a well-formed id of someone else 404 */
++    const own = (req: FastifyRequest) => {
++      const id = (req.params as { id?: unknown }).id;
++      if (!isLinkId(id)) throw new LinkError(400, 'bad_id', 'معرّف غير صالح');
++      return id;
++    };
++    const unlisted = (reply: FastifyReply) => reply.header('X-Robots-Tag', 'noindex, nofollow, noarchive');
++
++    // ───────────── public page ─────────────
++    app.get<{ Params: { id: string } }>('/l/:id', { logLevel: 'warn', config: { public: true } }, async (req, reply) => {
++      if (!ctx.rateLimit(req, reply, LINK_RATE_LIMITS.page)) return reply;
++      unlisted(reply).header('Cache-Control', 'no-store').type('text/html; charset=utf-8');
++      // no database work here: the page asks /api/l/:id (rate-limited) for the content
++      return reply.code(isLinkId(req.params.id) ? 200 : 404).send(shellHtml());
++    });
++
++    app.get<{ Params: { id: string } }>('/api/l/:id', { logLevel: 'warn', config: { public: true, rateLimit: read } }, async (req, reply) => {
++      unlisted(reply);
++      const id = req.params.id;
++      if (!isLinkId(id)) throw new LinkError(404, 'not_found', NOT_FOUND_AR);
++      const now = clock();
++      const r = await publicLink(ctx.pool, ctx.reg, id, now);
++      if (r.state === 'not_found') throw new LinkError(404, 'not_found', NOT_FOUND_AR);
++      if (r.state === 'ended') throw new LinkError(404, 'link_ended', ENDED_AR);
++      const viewer = ctx.maybeUser(req);
++      const own = viewer?.id === r.row.owner_id;
++      // views: the owner's own visits are not counted; de-duplication is an in-memory salted hash (nothing stored)
++      if (!own && views.shouldCount(r.row.public_id, req.ip, now.getTime())) await recordView(ctx.pool, r.row.id, now);
++      return { link: r.view, viewer: { signedIn: !!viewer, own } };
++    });
++
++    app.get<{ Params: { id: string; ref: string } }>('/api/l/:id/store/:ref', { logLevel: 'warn', config: { public: true, rateLimit: read } }, async (req, reply) => {
++      unlisted(reply);
++      const q = ctx.parseQuery(MoreQuery, req.query);
++      const ref = parseRef(req.params.ref);
++      if (!isLinkId(req.params.id) || !ref || ref.product != null) throw new LinkError(404, 'not_found', 'غير موجود');
++      const page = await publicStorePage(ctx.pool, ctx.reg, req.params.id, ref, q.cursor ?? null, clock());
++      if (page === 'ended') throw new LinkError(404, 'link_ended', ENDED_AR);
++      if (page === 'not_found') throw new LinkError(404, 'not_found', 'غير موجود');
++      return page;
++    });
++
++    app.get<{ Params: { id: string; ref: string; slot: string } }>('/api/l/:id/photos/:ref/:slot', { logLevel: 'warn', config: { public: true, rateLimit: photo } }, async (req, reply) => {
++      const ref = parseRef(req.params.ref);
++      if (!isLinkId(req.params.id) || !ref || !/^[1-6]$/.test(req.params.slot)) throw new LinkError(404, 'not_found', 'غير موجود');
++      const p = await linkPhoto(ctx.pool, req.params.id, ref, Number(req.params.slot), clock());
++      const file = p ? await media.open(p.sha256.toString('hex')) : null;
++      if (!p || !file) throw new LinkError(404, 'not_found', 'غير موجود');
++      return unlisted(reply)
++        .header('Content-Type', p.mime)
++        .header('Content-Length', String(file.size))
++        .header('Content-Disposition', 'inline')
++        .header('X-Content-Type-Options', 'nosniff')
++        .header('Cross-Origin-Resource-Policy', 'same-origin')
++        .send(file.stream);
++    });
++
++    app.post<{ Params: { id: string } }>('/api/l/:id/contact', { logLevel: 'warn', config: { rateLimit: LINK_RATE_LIMITS.contact } }, async (req) => {
++      const { ref } = ctx.body(Contact, req);
++      const r = parseRef(ref);
++      if (!isLinkId(req.params.id)) throw new LinkError(404, 'not_found', NOT_FOUND_AR);
++      if (!r) throw new LinkError(404, 'item_not_found', 'العنصر غير موجود في هذا الرابط');
++      return contactPlan(ctx.pool, ctx.reg, me(req), req.params.id, r, clock());
++    });
++
++    // ───────────── owner ─────────────
++    app.post('/api/links', { config: write }, async (req) => {
++      const b = ctx.body(Create, req);
++      return { link: await createLink(ctx.pool, ctx.reg, me(req), { kind: b.kind, target: b.target as TargetInput | undefined, items: b.items as TargetInput[] | undefined, titleAr: b.titleAr, noteAr: b.noteAr, duration: b.duration }, clock()) };
++    });
++
++    app.get('/api/links', async (req) => {
++      const q = ctx.parseQuery(ListQuery, req.query);
++      return listLinks(ctx.pool, ctx.reg, me(req), { status: q.status ?? 'all', cursor: q.cursor, dir: q.dir === 'prev' ? 'prev' : 'next', limit: q.limit ?? 20 }, clock());
++    });
++
++    app.get('/api/links/candidates', async (req) => candidates(ctx.pool, ctx.reg, me(req), clock()));
++
++    app.get('/api/links/:id', async (req) => ({ link: await getLink(ctx.pool, ctx.reg, me(req), own(req), clock()) }));
++
++    app.patch('/api/links/:id', { config: write }, async (req) => {
++      const id = own(req);
++      const b = ctx.body(Patch, req);
++      return { link: await updateLink(ctx.pool, ctx.reg, me(req), id, { expectedVersion: b.expectedVersion, titleAr: b.titleAr, noteAr: b.noteAr, duration: b.duration }, clock()) };
++    });
++
++    app.post('/api/links/:id/items', { config: write }, async (req) => {
++      const id = own(req);
++      const b = ctx.body(AddItem, req);
++      return { link: await addItem(ctx.pool, ctx.reg, me(req), id, b.item as TargetInput, b.expectedVersion, clock()) };
++    });
++
++    const remove = async (req: FastifyRequest) => {
++      const id = own(req);
++      const key = (req.params as { key: string }).key;
++      if (!/^[1-9]\d{0,4}$/.test(key)) throw new LinkError(400, 'bad_id', 'معرّف غير صالح');
++      const b = ctx.body(z.object({ expectedVersion: Version }), req);
++      return { link: await removeItem(ctx.pool, ctx.reg, me(req), id, Number(key), b.expectedVersion, clock()) };
++    };
++    app.post('/api/links/:id/items/:key/delete', { config: write }, remove);
++    app.delete('/api/links/:id/items/:key', { config: write }, remove);
++
++    app.post('/api/links/:id/order', { config: write }, async (req) => {
++      const id = own(req);
++      const b = ctx.body(Order, req);
++      return { link: await reorderItems(ctx.pool, ctx.reg, me(req), id, b.items, b.expectedVersion, clock()) };
++    });
++
++    app.post('/api/links/:id/stop', { config: write }, async (req) => ({ link: await stopLink(ctx.pool, ctx.reg, me(req), own(req), clock()) }));
++
++    const del = async (req: FastifyRequest) => { await deleteLink(ctx.pool, me(req), own(req)); return { ok: true }; };
++    app.delete('/api/links/:id', { config: write }, del);
++    app.post('/api/links/:id/delete', { config: write }, del);
++  });
++}
++
++/** The plugin to register in src/server/routes/index.ts (FEATURE_ROUTES). */
++export default linksRoutes();
+diff --git a/ultra-link/src/worker/main.ts b/ultra-link/src/worker/main.ts
+index d6049bd..aa66a27 100644
+--- a/ultra-link/src/worker/main.ts
++++ b/ultra-link/src/worker/main.ts
+@@ -35,6 +35,7 @@ export async function runJob(pool: pg.Pool, reg: Registry, job: Job): Promise<'d
+     return 'done';
+   }
+   if (job.kind.startsWith('conn_')) return runConnectionJob(pool, job); // connections: archive sweep, location-share expiry
++  if (job.kind.startsWith('link_')) return (await import('../links/jobs.ts')).runLinkJob(pool, job); // share links: expiry + 7-day auto-expiry sweep
+   throw new Error(`unknown job kind ${job.kind}`);
+ }
+ 
+diff --git a/ultra-link/test/integration/links-helpers.ts b/ultra-link/test/integration/links-helpers.ts
+new file mode 100644
+index 0000000..93388ae
+--- /dev/null
++++ b/ultra-link/test/integration/links-helpers.ts
+@@ -0,0 +1,69 @@
++// Shared bits for test/integration/links-*.test.ts: an isolated app with the catalog + links plugins (and an injectable
++// clock), and quick ways to make stores, products, intents and links through the real HTTP API.
++import './server-env.ts';
++import assert from 'node:assert/strict';
++import { randomUUID } from 'node:crypto';
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { harness, Client, type Harness } from './server-helpers.ts';
++import { closeTolerant } from './catalog-helpers.ts';
++import { catalogRoutes } from '../../src/server/routes/catalog.ts';
++import { linksRoutes, type LinksRoutesOptions } from '../../src/server/routes/links.ts';
++import { ViewCounter } from '../../src/links/views.ts';
++
++export interface LinksEnv {
++  h: Harness;
++  mediaDir: string;
++  clock: { now: Date };
++  views: ViewCounter;
++  close: () => Promise<void>;
++}
++
++/** fresh DB + buildApp with ONLY the catalog and links plugins (as the integrator's index.ts will have them) */
++export async function linksEnv(tag: string, opts: Partial<LinksRoutesOptions> = {}): Promise<LinksEnv> {
++  const mediaDir = mkdtempSync(join(tmpdir(), `ul-links-${tag}-`));
++  const clock = { now: new Date() };
++  const views = new ViewCounter();
++  const h = await harness(`links_${tag}_${process.pid}`, {
++    featureRoutes: false,
++    routes: [catalogRoutes({ mediaDir }), linksRoutes({ now: () => clock.now, mediaDir, views, readPerMinute: 100_000, photoPerMinute: 100_000, ...opts })],
++  });
++  return { h, mediaDir, clock, views, close: async () => { await closeTolerant(h); rmSync(mediaDir, { recursive: true, force: true }); } };
++}
++
++let ipSeq = 10;
++/** a client with its own IP (public reads are rate-limited per IP) */
++export function client(h: Harness): Client { return new Client(h, `198.51.100.${ipSeq++ % 250}`); }
++
++export const placeId = (h: Harness, code: string) => h.db.reg.placeByCode.get(code)!.id;
++
++export async function mkStore(c: Client, h: Harness, name = 'محل الأمل للموبايلات', code = 'sy.aleppo.azaz') {
++  const r = await c.post('/api/stores', { nameAr: name, descriptionAr: 'موبايلات وإكسسوارات', placeId: placeId(h, code), contactPref: 'chat', hoursAr: 'من ٩ للـ ٨' });
++  assert.equal(r.status, 200, r.raw);
++  return r.body.store as { id: string; version: number; synthetic: boolean; labelAr: string };
++}
++
++/** preview → confirm every ok line; returns the products in catalog order */
++export async function importProducts(c: Client, storeId: string, text: string): Promise<{ id: string; nameAr: string; storeId: string; position: number }[]> {
++  const p = await c.post(`/api/stores/${storeId}/import/preview`, { text });
++  assert.equal(p.status, 200, p.raw);
++  const items = p.body.lines.filter((l: any) => l.ok).map((l: any) => l.item);
++  const r = await c.post(`/api/stores/${storeId}/import/confirm`, { importId: randomUUID(), items });
++  assert.equal(r.status, 200, r.raw);
++  return r.body.products;
++}
++
++export async function saved(c: Client, ...texts: string[]): Promise<{ id: string; titleAr: string; side: string }> {
++  const res = await c.dialogue(...texts);
++  assert.equal(res.action, 'saved', JSON.stringify(res).slice(0, 400));
++  return res.intent;
++}
++
++export async function mkLink(c: Client, body: Record<string, unknown>) {
++  const r = await c.post('/api/links', { duration: '7d', ...body });
++  assert.equal(r.status, 200, r.raw);
++  return r.body.link as { id: string; url: string; kind: string; version: number; items: { key: number; ref: string; available: boolean; titleAr: string }[]; [k: string]: any };
++}
++
++export const PHONE_LINES = 'ايفون 12 مستعمل - 300$\nايفون 11 نظيف ٢٥٠ دولار\nايفون 13 برو 500$';
