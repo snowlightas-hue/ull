@@ -21,6 +21,7 @@ const SPECS: Spec[] = [
   { name: 'voice-harness', file: 'test/e2e/voice-harness.spec.ts', kind: 'SIMULATED voice (mock Web Speech API), harness page', summary: /SIMULATED VOICE TESTS:.*$/m },
   { name: 'app-scenarios', file: 'test/e2e/app-scenarios.spec.ts', kind: 'real app, 6 README scenarios, 3 viewports (typed text + chips)', summary: /^ \d+\/\d+ scenario runs passed.*$/m },
   { name: 'app-a11y', file: 'test/e2e/app-a11y.spec.ts', kind: 'real app: keyboard, focus, mobile layout, contrast, reduced motion', summary: /^ \d+\/\d+ scenario runs passed.*$/m },
+  { name: 'connections', file: 'test/e2e/connections.spec.ts', kind: 'real app, two browsers: contact → chat, phone/location sharing, recovery', summary: /\d+\/\d+ scenario runs passed.*$/m },
   { name: 'integration-voice', file: 'test/e2e/integration-voice.spec.ts', kind: 'SIMULATED voice against the real app (isolated stack)', needsStack: true, summary: /(all checks passed.*|\d+ check\(s\) FAILED)$/m },
 ];
 

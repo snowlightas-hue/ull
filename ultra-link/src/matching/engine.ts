@@ -512,7 +512,7 @@ export async function hydrateMatches(db: Queryable, reg: Registry, userId: strin
   );
   const byId = new Map<string, IntentRow>(intents.rows.map((r: IntentRow) => [`${r.vertical_id}:${r.id}`, r]));
   const contacts = await db.query(
-    `SELECT c.public_id, c.vertical_id, c.match_id, c.requester_id, c.recipient_id, c.status, u.display_name, u.contact_phone
+    `SELECT c.public_id, c.vertical_id, c.match_id, c.requester_id, c.recipient_id, c.status, u.display_name
        FROM contact_requests c JOIN users u ON u.id = CASE WHEN c.requester_id = $1 THEN c.recipient_id ELSE c.requester_id END
       WHERE (c.vertical_id, c.match_id) IN (SELECT * FROM unnest($2::smallint[], $3::bigint[])) AND (c.requester_id = $1 OR c.recipient_id = $1)`,
     [userId, rows.map((m) => m.vertical_id), rows.map((m) => m.id)],
@@ -527,7 +527,7 @@ export async function hydrateMatches(db: Queryable, reg: Registry, userId: strin
     if (c) {
       const out = String(c.requester_id) === String(userId);
       contact = { status: c.status === 'pending' ? (out ? 'pending_out' : 'pending_in') : c.status === 'accepted' ? 'accepted' : 'declined', requestId: c.public_id };
-      if (c.status === 'accepted') contact.counterpart = { displayName: c.display_name, phone: c.contact_phone ?? undefined };
+      if (c.status === 'accepted') contact.counterpart = { displayName: c.display_name }; // the phone only through an explicit share (connections)
     }
     const otherCard = toCard(reg, other);
     const defs = attributesFor(reg, otherCard.categoryCode);

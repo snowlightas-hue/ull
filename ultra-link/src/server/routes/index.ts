@@ -3,5 +3,7 @@
 // import it here and append it to FEATURE_ROUTES. Order = registration order; a duplicate route fails fast.
 import type { UlRoutePlugin } from '../context.ts';
 import geo from './geo.ts';
+import connections from './connections.ts';
+import account from './account.ts';
 
-export const FEATURE_ROUTES: UlRoutePlugin[] = [geo];
+export const FEATURE_ROUTES: UlRoutePlugin[] = [geo, connections, account];
