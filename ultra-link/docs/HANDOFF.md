@@ -28,7 +28,7 @@ Last verified results (all on this commit's code):
 | unit | 212/212 |
 | integration: server, flows, connections, catalog, geo, matching, db | all green |
 | browser e2e (`node test/e2e/run.ts`) | 7/7 specs: UI preview 24, simulated voice 76, six README scenarios 252, accessibility 43, two-browser chat 32, stores 81, voice in the real app |
-| Docker stack | migrations 0001–0006, demo seed, health ok, simulated-voice e2e passes, restart keeps data |
+| Docker stack, from a fresh clone of the pushed branch with no `.env` | migrations 0001–0006, demo seed incl. the shop, health ok, simulated-voice e2e passes, «متجري» opens, restart keeps data |
 
 Not verified by anyone yet:
 - a **human voice** through a real microphone (all voice tests use a mock Web Speech API; checklist in `public/js/conversation/README.md` §7);
@@ -54,8 +54,11 @@ node scripts/corpus-report.ts           # training accuracy; add --holdout for t
    - Remaining work: tests, the «مشاركة» / «روابطي» UI, docs, and registering the plugin in `src/server/routes/index.ts`.
    - Rules: random unguessable ids, unlisted by default, expiry 24 h / 7 d / 30 d / until stopped, «غير متاح» items, nested collections up to depth 2, no phone/precise location/identity on the public page.
 3. **Browser edition**: apply `wip/browser-edition-parity.partial.patch`, finish `test/e2e/web-demo.spec.ts`, then `node web-demo/build.ts` and republish.
-4. **Review leftovers** (`docs/REVIEW.md` → "Integrator response"): drop style `'unsafe-inline'` from the CSP (m4) and rate-limit edits (m5).
-5. **Understanding**: the held-out set is weakest on conditions (≈49%) and attributes (≈57%). Improve only from training failures, and keep the held-out set unseen.
+4. **Small UX issue seen at handover**: «شارك موقعي المباشر» also appears on non-ride offers (e.g. a charger in a
+   shop). Limit `canShareLive` in `public/js/ui/geo.js` (and the server check in `src/server/routes/geo.ts`) to
+   transport offers.
+5. **Review leftovers** (`docs/REVIEW.md` → "Integrator response"): drop style `'unsafe-inline'` from the CSP (m4) and rate-limit edits (m5).
+6. **Understanding**: the held-out set is weakest on conditions (≈49%) and attributes (≈57%). Improve only from training failures, and keep the held-out set unseen.
 
 ## Rules this project keeps
 - **Secrets** live only in `ultra-link/.env`, which is git-ignored and never in Docker images: `TYPESAFE_API_KEY`, `UL_RECOVERY_PEPPER`, DB URLs. Never log or commit them.
