@@ -63,11 +63,14 @@ test('partition: rows of a vertical in the DEFAULT partition → one proposal wi
     { parent: 'intents', defaultPartition: 'intents_other', keyColumn: 'vertical_id', key: '8', rows: 120, label: 'transport' },
     { parent: 'matches', defaultPartition: 'matches_other', keyColumn: 'vertical_id', key: '8', rows: 30, label: 'transport' },
     { parent: 'intents', defaultPartition: 'intents_other', keyColumn: 'vertical_id', key: '9', rows: 0, label: 'x' },
-  ], META);
+  ], META, [
+    { constraint: 'a', table: 'intent_refs', refTable: 'intents', columns: ['vertical_id', 'intent_id'], refColumns: ['vertical_id', 'id'], partitionColumns: [], onDelete: 'c', refDeletes: 0 },
+    { constraint: 'b', table: 'contact_requests', refTable: 'matches', columns: ['vertical_id', 'match_id'], refColumns: ['vertical_id', 'id'], partitionColumns: [], onDelete: 'c', refDeletes: 0 },
+  ]);
   assert.equal(ps.length, 1);
   const p = ps[0]!;
   assert.equal(p.dedupeKey, 'partition:vertical:8');
-  assert.deepEqual(p.evidence, { intentsInDefault: 120, matchesInDefault: 30, defaultPartitions: ['intents_other', 'matches_other'] });
+  assert.deepEqual(p.evidence, { intentsInDefault: 120, matchesInDefault: 30, defaultPartitions: ['intents_other', 'matches_other'], movedWith: ['contact_requests', 'intent_refs'], guards: [] });
   const sql = p.draft!.sql;
   assert.match(sql, /^-- DRAFT migration proposed by the schema advisor/);
   assert.match(sql, /CREATE TABLE intents_transport PARTITION OF intents FOR VALUES IN \(8\);/);

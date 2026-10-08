@@ -1,7 +1,7 @@
 // Advisor rules: pure functions from collected statistics to proposals. No I/O here (unit-tested in
 // test/unit/advisor-rules.test.ts). Every proposal carries its evidence and a stable dedupe key; DDL proposals carry
 // a DRAFT (drafts.ts) that a human must review — nothing is ever applied automatically.
-import { createFkIndexSql, draftHeader, dropIndexSql, partitionMoveSql } from './drafts.ts';
+import { createFkIndexSql, draftHeader, dropIndexSql, movePlan, partitionMoveSql } from './drafts.ts';
 import {
   DEFAULT_THRESHOLDS, type Collected, type DefaultPartitionRows, type ExtractionStats, type ForeignKeyInfo, type IndexKeyInfo,
   type IndexStat, type MatchRunStats, type Proposal, type StatementStat, type TableScanStat, type Thresholds, type UnknownTermRow,
@@ -141,8 +141,9 @@ export function matchRunProposals(m: MatchRunStats, t: Thresholds = DEFAULT_THRE
 }
 
 // ───────────── partitions (rows routed to DEFAULT partitions) ─────────────
-export function partitionProposals(rows: DefaultPartitionRows[], c: Pick<Collected, 'target' | 'database' | 'collectedAt'>): Proposal[] {
+export function partitionProposals(rows: DefaultPartitionRows[], c: Pick<Collected, 'target' | 'database' | 'collectedAt'>, fks: ForeignKeyInfo[] = []): Proposal[] {
   const out: Proposal[] = [];
+  const plan = movePlan(fks);
   const intents = rows.filter((r) => r.parent === 'intents' && r.keyColumn === 'vertical_id' && r.rows > 0);
   for (const r of intents) {
     const m = rows.find((x) => x.parent === 'matches' && x.keyColumn === 'vertical_id' && x.key === r.key);
@@ -153,13 +154,13 @@ export function partitionProposals(rows: DefaultPartitionRows[], c: Pick<Collect
       title: `Give vertical ${r.key} (${code}) its own intents/matches partitions`,
       rationale: `${r.rows} intents (and ${m?.rows ?? 0} matches) of vertical ${r.key} live in the DEFAULT partitions ${r.defaultPartition}/${matchesDefault}. ` +
         'Matching filters by vertical, so these rows share indexes with every other unpartitioned vertical, and a later CREATE ... PARTITION OF ' +
-        'fails while they are there. The draft moves them with their dependants (same procedure as migrations/0002 §7).',
-      evidence: { intentsInDefault: r.rows, matchesInDefault: m?.rows ?? 0, defaultPartitions: [r.defaultPartition, matchesDefault] },
+        'fails while they are there. The draft moves them with every dependant found in the foreign-key graph (the procedure of migrations/0002 §7).',
+      evidence: { intentsInDefault: r.rows, matchesInDefault: m?.rows ?? 0, defaultPartitions: [r.defaultPartition, matchesDefault], movedWith: plan.dependants.map((d) => d.table), guards: plan.guards.map((g) => `${g.table}→${g.refTable}`) },
       proposal: { action: 'create_partitions', verticalId: Number(r.key), code, partitions: [`intents_${code}`, `matches_${code}`] },
       draft: { slug: `partition_vertical_${r.key}_${code}`, sql: '' },
     };
     out.push(withDraft(p, c,
-      partitionMoveSql({ verticalId: Number(r.key), code, intentsDefault: r.defaultPartition, matchesDefault }),
+      partitionMoveSql({ verticalId: Number(r.key), code, intentsDefault: r.defaultPartition, matchesDefault, plan }),
       'Takes ACCESS EXCLUSIVE locks on intents/matches and their DEFAULT partitions for the duration of the copy; the time grows with the ' +
       'rows moved (fine for thousands, plan a maintenance window for millions). Ids, public ids and match/contact history are preserved.',
       'DETACH PARTITION + re-insert into the DEFAULT partition with the same procedure in reverse (keep the copy tables).'));
@@ -286,7 +287,7 @@ export function buildProposals(c: Collected, t: Thresholds = DEFAULT_THRESHOLDS)
   const unused = unusedIndexProposals(c.indexes, c.statsAgeHours, c, t);
   if (unused.note) notes.push(unused.note);
   const all = [
-    ...partitionProposals(c.defaultPartitions, c),
+    ...partitionProposals(c.defaultPartitions, c, c.foreignKeys),
     ...missingFkIndexProposals(c.foreignKeys, c.indexKeys, c, notes),
     ...unused.proposals,
     ...statementProposals(c.statements, t),

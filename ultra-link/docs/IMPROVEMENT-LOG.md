@@ -42,6 +42,25 @@ Found (61 labeled dialogues): a bare amount answering «قديش السعر؟» 
 ### Cycle 7 — conditions and time (impact: correct exclusion & ranking)
 Found: «واحد» became Sunday through a synthesized «الاحد»; «اليوم» ignored outside activities; a seeker's «لعائلة» stored as a condition on the landlord; «مو بالطابق الأرضي», «مو أقل من غرفتين», «بين ٢٠٠ و٤٠٠ متر» lost their operators; «بس تكون / المهم» not read as binding; «يجي عالبيت» (home visit) and «الصف الخامس» (grade) unrecognized; verbs taken as car models. Effect: constraints 58.0% → 87.3%, time 82.2% → 95.3%, attrs 66.7% → 77.1%.
 
+### Cycle 8 — findings of the independent review (impact: no stuck conversations, nothing invented)
+Found by Role 8 (`docs/REVIEW.md`), each with a failing test first:
+- after 3 unanswered questions about the category, every later turn returned HTTP 500 (MAJOR-1);
+- giving up on the deal saved «بدي شقة بإعزاز» as a **purchase** the user never chose (MAJOR-2);
+- giving up on the place saved a seeker's request as "anywhere" (MAJOR-3);
+- «بدي بيعو» was not read as a sale, so the deal question came back three times (MAJOR-7);
+- keyboard focus fell to `<body>` after a quick-answer chip, after Esc in the editor, and after «طلب تواصل» (MAJOR-4/5);
+- a Jev 429 with a long `retry-after` overran the turn budget.
+
+Fix:
+- `essentialGap()` in `src/conversation/engine.ts`: the request is never saved while side, category, deal (multi-deal categories) or a seeker's place is unknown. The user is told exactly what is missing, and the next free answer is read against that field without counting as another question.
+- Levantine `-و` object forms and job statements in `src/nlu/parse.ts`.
+- Focus kept or restored in the UI, and stale list responses ignored.
+- An abortable retry sleep in `src/ai/jev-client.ts`.
+
+Effect: flows tests 15/18 → 18/18; dialogues 96.7% → 98.4%; a11y checks 40/43 → 43/43; the Jev budget tests went from `todo` to passing.
+
+Corpus note: the new `transport` category got 4 training and 3 held-out examples. The 3 held-out ones (h161–h163) were written by the integrator, who also writes the parser, so they are **not** independent. Treat held-out numbers for `transport` as optimistic until an independent author adds more.
+
 ## Held-out evaluation (honest generalization)
 `node scripts/corpus-report.ts --holdout` — 160 new utterances written by the product role without seeing the parser (13 places absent from training, average word overlap with the closest training sentence 0.21). Individual held-out failures are deliberately **not** printed or read.
 

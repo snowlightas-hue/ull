@@ -23,8 +23,19 @@ async function req(method, path, body) {
   return data;
 }
 
+// A conversation turn that races another turn of the same conversation gets 409 «busy». Turns carry a
+// clientTurnId and are idempotent on the server, so waiting briefly and resending is safe (twice at most).
+async function postRetryBusy(path, body) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await req('POST', path, body); } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 409 || e.code !== 'busy' || attempt >= 2) throw e;
+      await new Promise((r) => setTimeout(r, 150 + Math.random() * 200));
+    }
+  }
+}
+
 export const get = (path) => req('GET', path);
-export const post = (path, body) => req('POST', path, body);
+export const post = (path, body) => (body && body.clientTurnId ? postRetryBusy(path, body) : req('POST', path, body));
 export const patch = (path, body) => req('PATCH', path, body);
 
 export function qs(params) {

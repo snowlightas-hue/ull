@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { draftFileName, draftHeader, objectName, partitionMoveSql, quoteIdent, slugify } from '../../src/advisor/drafts.ts';
+import { draftFileName, draftHeader, movePlan, objectName, partitionMoveSql, quoteIdent, slugify } from '../../src/advisor/drafts.ts';
 import { assertReadOnlySql } from '../../src/advisor/collect.ts';
 import { PROPOSED_DIR, draftPath } from '../../src/advisor/store.ts';
 import { ROOT } from '../../src/lib/env.ts';
@@ -44,13 +44,43 @@ test('draft header: marked DRAFT / NOT APPLIED, carries the dedupe key, evidence
   assert.ok(h.split('\n').every((l) => l === '' || l.startsWith('--')), 'header is comments only');
 });
 
-test('partitionMoveSql: validates the vertical id and only touches the vertical it was asked for', () => {
-  assert.throws(() => partitionMoveSql({ verticalId: 1e9, code: 'x', intentsDefault: 'intents_other', matchesDefault: 'matches_other' }));
-  const sql = partitionMoveSql({ verticalId: 12, code: 'Pets & Animals', intentsDefault: 'intents_other', matchesDefault: 'matches_other' });
+// the FK graph of 0001–0003 plus two hypothetical later tables
+const fk = (table: string, columns: string[], refTable: string, refColumns: string[], onDelete = 'c') => ({ constraint: `${table}_fk`, table, refTable, columns, refColumns, onDelete });
+const GRAPH = [
+  fk('matches', ['vertical_id', 'a_intent_id'], 'intents', ['vertical_id', 'id']),
+  fk('intent_refs', ['vertical_id', 'intent_id'], 'intents', ['vertical_id', 'id']),
+  fk('intent_scopes', ['vertical_id', 'intent_id'], 'intents', ['vertical_id', 'id']),
+  fk('match_runs', ['vertical_id', 'intent_id'], 'intents', ['vertical_id', 'id']),
+  fk('live_positions', ['vertical_id', 'intent_id'], 'intents', ['vertical_id', 'id']),
+  fk('match_refs', ['vertical_id', 'match_id'], 'matches', ['vertical_id', 'id']),
+  fk('contact_requests', ['vertical_id', 'match_id'], 'matches', ['vertical_id', 'id']),
+  fk('connections', ['contact_vertical_id', 'contact_match_id', 'requester_id'], 'contact_requests', ['vertical_id', 'match_id', 'requester_id']),
+  fk('reviews', ['match_public_id'], 'match_refs', ['public_id'], 'a'),
+  fk('intents', ['user_id'], 'users', ['id']),
+];
+
+test('movePlan: cascading vertical-keyed dependants travel (parents first); anything else becomes a guard', () => {
+  const plan = movePlan(GRAPH);
+  assert.deepEqual(plan.dependants.map((d) => `${d.table}:${d.filterColumn}`), [
+    'contact_requests:vertical_id', 'connections:contact_vertical_id', 'intent_refs:vertical_id', 'intent_scopes:vertical_id', 'live_positions:vertical_id',
+    'match_refs:vertical_id', 'match_runs:vertical_id',
+  ]);
+  assert.deepEqual(plan.guards.map((g) => `${g.table}->${g.refTable}:${g.onDelete}`), ['reviews->match_refs:a']);
+});
+
+test('partitionMoveSql: validates the vertical id, moves exactly the planned tables, guards the rest', () => {
+  const plan = movePlan(GRAPH);
+  assert.throws(() => partitionMoveSql({ verticalId: 1e9, code: 'x', intentsDefault: 'intents_other', matchesDefault: 'matches_other', plan }));
+  const sql = partitionMoveSql({ verticalId: 12, code: 'Pets & Animals', intentsDefault: 'intents_other', matchesDefault: 'matches_other', plan });
   assert.match(sql, /CREATE TABLE intents_pets_animals PARTITION OF intents FOR VALUES IN \(12\);/);
-  const verticals = [...sql.matchAll(/vertical_id = (\d+)/g)].map((m) => m[1]);
+  assert.match(sql, /CREATE TEMP TABLE ul_mv12_connections ON COMMIT DROP AS SELECT \* FROM connections WHERE contact_vertical_id = 12;/);
+  const inserts = [...sql.matchAll(/^INSERT INTO (\w+) /gm)].map((m) => m[1]);
+  assert.deepEqual(inserts, ['intents', 'matches', 'contact_requests', 'connections', 'intent_refs', 'intent_scopes', 'live_positions', 'match_refs', 'match_runs']);
+  assert.match(sql, /IF EXISTS \(SELECT 1 FROM reviews x WHERE \(x\.match_public_id\) IN \(SELECT r\.public_id FROM ul_mv12_match_refs r\)\) THEN/);
+  assert.ok(sql.indexOf('FROM reviews x') < sql.indexOf('DELETE FROM matches_other'), 'guards run before anything is deleted');
+  const verticals = [...sql.matchAll(/(?:vertical_id|contact_vertical_id) = (\d+)/g)].map((m) => m[1]);
   assert.ok(verticals.length >= 10 && verticals.every((v) => v === '12'));
-  assert.doesNotMatch(sql, /^\s*(DROP|TRUNCATE)\b/im, "no DROP/TRUNCATE statement (only ON COMMIT DROP temp tables)");
+  assert.doesNotMatch(sql, /^\s*(DROP|TRUNCATE)\b/im, 'no DROP/TRUNCATE statement (only ON COMMIT DROP temp tables)');
 });
 
 test('assertReadOnlySql: SELECT/WITH only, single statement, no DDL/DML (keywords inside literals are fine)', () => {

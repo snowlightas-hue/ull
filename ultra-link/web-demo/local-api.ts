@@ -420,7 +420,7 @@ function turn(user: User, convId: string, body: any) {
     c.draft = out.draft; c.pending = out.next.question; c.state = 'asking';
     result = { conversation: conv('asking'), action: 'ask', question: out.next.question, summary: summarize(reg, out.draft), understanding };
   } else if (out.next.kind === 'unclear') {
-    c.draft = out.draft; c.pending = null; c.state = 'collecting';
+    c.draft = out.draft; c.pending = out.next.awaiting ?? null; c.state = 'collecting';
     result = { conversation: conv('collecting'), action: 'unclear', messageAr: out.next.messageAr, summary: summarize(reg, out.draft), understanding };
   } else {
     const v = validateSpec(reg, out.next.spec);

@@ -79,12 +79,60 @@ export function draftHeader(h: DraftHeader): string {
   ].join('\n');
 }
 
+export interface MoveDependant { table: string; filterColumn: string; parents: string[] }
+export interface MoveGuard { table: string; columns: string[]; refTable: string; refColumns: string[]; onDelete: string }
+
+/**
+ * Which rows must travel with a vertical when it leaves the DEFAULT partitions of `roots`, derived from the live FK
+ * graph: every table reaching a moved table through an ON DELETE CASCADE foreign key that carries vertical_id is
+ * copied and re-inserted (parents first); any other foreign key into a moved table becomes a guard that stops the
+ * draft if such rows exist (their rows would otherwise be deleted, nulled or block the delete).
+ */
+export function movePlan(fks: { constraint: string; table: string; refTable: string; columns: string[]; refColumns: string[]; onDelete: string }[], roots: string[] = ['intents', 'matches']): { dependants: MoveDependant[]; guards: MoveGuard[] } {
+  const moved = new Set(roots);
+  const found = new Map<string, MoveDependant>();
+  const guards: MoveGuard[] = [];
+  for (let frontier = [...roots]; frontier.length;) {
+    const next: string[] = [];
+    for (const fk of fks) {
+      if (!frontier.includes(fk.refTable) || roots.includes(fk.table)) continue;
+      const vi = fk.refColumns.indexOf('vertical_id');
+      if (fk.onDelete === 'c' && vi >= 0) {
+        const d = found.get(fk.table);
+        if (d) { if (!d.parents.includes(fk.refTable)) d.parents.push(fk.refTable); continue; }
+        found.set(fk.table, { table: fk.table, filterColumn: fk.columns[vi]!, parents: [fk.refTable] });
+        moved.add(fk.table);
+        next.push(fk.table);
+      } else {
+        guards.push({ table: fk.table, columns: fk.columns, refTable: fk.refTable, refColumns: fk.refColumns, onDelete: fk.onDelete });
+      }
+    }
+    frontier = next;
+  }
+  // parents of a dependant may include other dependants found later: also count FKs between moved tables
+  for (const fk of fks) {
+    const d = found.get(fk.table);
+    if (d && moved.has(fk.refTable) && !d.parents.includes(fk.refTable)) d.parents.push(fk.refTable);
+  }
+  const ordered: MoveDependant[] = [];
+  const placed = new Set(roots);
+  const pending = [...found.values()].sort((x, y) => x.table.localeCompare(y.table));
+  while (pending.length) {
+    const k = pending.findIndex((d) => d.parents.every((p) => placed.has(p) || p === d.table));
+    if (k < 0) throw new Error(`cyclic foreign keys among ${pending.map((d) => d.table).join(', ')}`);
+    const [d] = pending.splice(k, 1);
+    ordered.push(d!);
+    placed.add(d!.table);
+  }
+  return { dependants: ordered, guards: guards.filter((g) => !found.has(g.table)) };
+}
+
 /**
  * Give vertical `verticalId` its own intents/matches partitions, moving rows that already sit in the DEFAULT
- * partitions together with every dependant (same procedure as migrations/0002 §7, which the integration test
- * exercises). Partition names: <parent>_<code>.
+ * partitions together with every dependant found by movePlan() (the procedure of migrations/0002 §7, generalised
+ * to whatever tables exist when the draft is generated). Partition names: <parent>_<code>.
  */
-export function partitionMoveSql(a: { verticalId: number; code: string; intentsDefault: string; matchesDefault: string }): string {
+export function partitionMoveSql(a: { verticalId: number; code: string; intentsDefault: string; matchesDefault: string; plan: { dependants: MoveDependant[]; guards: MoveGuard[] } }): string {
   const v = Math.trunc(a.verticalId);
   if (!Number.isSafeInteger(v) || v < 0 || v > 32767) throw new Error(`bad vertical id ${a.verticalId}`);
   const code = slugify(a.code, 40);
@@ -92,42 +140,41 @@ export function partitionMoveSql(a: { verticalId: number; code: string; intentsD
   const mp = quoteIdent(`matches_${code}`);
   const idf = quoteIdent(a.intentsDefault);
   const mdf = quoteIdent(a.matchesDefault);
-  const t = (s: string) => `ul_mv${v}_${s}`;
-  return `SET LOCAL lock_timeout = '10s';
-
--- copy vertical ${v} rows and their dependants, delete them from the DEFAULT partitions (FK cascades remove the
--- dependants), create the partitions, re-insert everything with the same ids and public ids
-CREATE TEMP TABLE ${t('intents')} ON COMMIT DROP AS SELECT * FROM ${idf} WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('intent_refs')} ON COMMIT DROP AS SELECT * FROM intent_refs WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('intent_scopes')} ON COMMIT DROP AS SELECT * FROM intent_scopes WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('match_runs')} ON COMMIT DROP AS SELECT * FROM match_runs WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('matches')} ON COMMIT DROP AS SELECT * FROM ${mdf} WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('match_refs')} ON COMMIT DROP AS SELECT * FROM match_refs WHERE vertical_id = ${v};
-CREATE TEMP TABLE ${t('contact_requests')} ON COMMIT DROP AS SELECT * FROM contact_requests WHERE vertical_id = ${v};
-DELETE FROM ${mdf} WHERE vertical_id = ${v};
-DELETE FROM ${idf} WHERE vertical_id = ${v};
-CREATE TABLE ${ip} PARTITION OF intents FOR VALUES IN (${v});
-CREATE TABLE ${mp} PARTITION OF matches FOR VALUES IN (${v});
-INSERT INTO intents SELECT * FROM ${t('intents')};
-INSERT INTO intent_refs SELECT * FROM ${t('intent_refs')};
-INSERT INTO intent_scopes SELECT * FROM ${t('intent_scopes')};
-INSERT INTO match_runs OVERRIDING SYSTEM VALUE SELECT * FROM ${t('match_runs')};
-INSERT INTO matches SELECT * FROM ${t('matches')};
-INSERT INTO match_refs SELECT * FROM ${t('match_refs')};
-INSERT INTO contact_requests OVERRIDING SYSTEM VALUE SELECT * FROM ${t('contact_requests')};
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM ${idf} WHERE vertical_id = ${v}) OR EXISTS (SELECT 1 FROM ${mdf} WHERE vertical_id = ${v})
-     OR (SELECT count(*) FROM ${ip}) <> (SELECT count(*) FROM ${t('intents')})
-     OR (SELECT count(*) FROM ${mp}) <> (SELECT count(*) FROM ${t('matches')}) THEN
-    RAISE EXCEPTION 'vertical ${v} move incomplete';
-  END IF;
-END $$;
-
--- same autovacuum settings as the other partitions (migrations/0002 §8)
-ALTER TABLE ${ip} SET (autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_insert_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);
-ALTER TABLE ${mp} SET (autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_insert_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.05);
-`;
+  const t = (s: string) => quoteIdent(`ul_mv${v}_${s}`.slice(0, 63));
+  const deps = a.plan.dependants;
+  const lines: string[] = [`SET LOCAL lock_timeout = '10s';`, '',
+    `-- copy vertical ${v} rows and their dependants (${deps.map((d) => d.table).join(', ') || 'none'}), delete them from the DEFAULT`,
+    '-- partitions (FK cascades remove the dependants), create the partitions, re-insert everything with the same ids',
+    `CREATE TEMP TABLE ${t('intents')} ON COMMIT DROP AS SELECT * FROM ${idf} WHERE vertical_id = ${v};`,
+    `CREATE TEMP TABLE ${t('matches')} ON COMMIT DROP AS SELECT * FROM ${mdf} WHERE vertical_id = ${v};`,
+    ...deps.map((d) => `CREATE TEMP TABLE ${t(d.table)} ON COMMIT DROP AS SELECT * FROM ${quoteIdent(d.table)} WHERE ${quoteIdent(d.filterColumn)} = ${v};`)];
+  for (const g of a.plan.guards) {
+    const cols = g.columns.map((c) => `x.${quoteIdent(c)}`).join(', ');
+    const refs = g.refColumns.map((c) => `r.${quoteIdent(c)}`).join(', ');
+    lines.push(`DO $$ BEGIN  -- ${g.table} references ${g.refTable} without a vertical-scoped CASCADE (on delete: ${g.onDelete}); its rows cannot be moved automatically`,
+      `  IF EXISTS (SELECT 1 FROM ${quoteIdent(g.table)} x WHERE (${cols}) IN (SELECT ${refs} FROM ${t(g.refTable)} r)) THEN`,
+      `    RAISE EXCEPTION 'rows of ${g.table} reference vertical ${v} rows of ${g.refTable}: move them by hand first';`,
+      '  END IF;', 'END $$;');
+  }
+  lines.push(`DELETE FROM ${mdf} WHERE vertical_id = ${v};`, `DELETE FROM ${idf} WHERE vertical_id = ${v};`,
+    `CREATE TABLE ${ip} PARTITION OF intents FOR VALUES IN (${v});`, `CREATE TABLE ${mp} PARTITION OF matches FOR VALUES IN (${v});`,
+    `INSERT INTO intents OVERRIDING SYSTEM VALUE SELECT * FROM ${t('intents')};`,
+    `INSERT INTO matches OVERRIDING SYSTEM VALUE SELECT * FROM ${t('matches')};`,
+    ...deps.map((d) => `INSERT INTO ${quoteIdent(d.table)} OVERRIDING SYSTEM VALUE SELECT * FROM ${t(d.table)};`),
+    'DO $$',
+    'BEGIN',
+    `  IF EXISTS (SELECT 1 FROM ${idf} WHERE vertical_id = ${v}) OR EXISTS (SELECT 1 FROM ${mdf} WHERE vertical_id = ${v})`,
+    `     OR (SELECT count(*) FROM ${ip}) <> (SELECT count(*) FROM ${t('intents')})`,
+    `     OR (SELECT count(*) FROM ${mp}) <> (SELECT count(*) FROM ${t('matches')})`,
+    ...deps.map((d) => `     OR (SELECT count(*) FROM ${quoteIdent(d.table)} WHERE ${quoteIdent(d.filterColumn)} = ${v}) <> (SELECT count(*) FROM ${t(d.table)})`),
+    '  THEN',
+    `    RAISE EXCEPTION 'vertical ${v} move incomplete';`,
+    '  END IF;',
+    'END $$;', '',
+    '-- same autovacuum settings as the other partitions (migrations/0002 §8)',
+    `ALTER TABLE ${ip} SET (autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_insert_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);`,
+    `ALTER TABLE ${mp} SET (autovacuum_vacuum_scale_factor = 0.05, autovacuum_vacuum_insert_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.05);`, '');
+  return lines.join('\n');
 }
 
 export function createFkIndexSql(a: { table: string; columns: string[] }): { name: string; sql: string } {
