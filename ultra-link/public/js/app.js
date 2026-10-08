@@ -11,9 +11,12 @@ import { createVoice } from './conversation/voice.js';
 import { createConversationMachine } from './conversation/machine.js';
 import { createConnections, showRecoveryCode, confirmLogout, recoverSection } from './ui/connections.js';
 import { decorateIntentCards, decorateMatchCards, stopAllLiveSharing } from './ui/geo.js';
+import { createStoreUi } from './ui/store.js';
 
 const root = document.getElementById('app');
 const state = { me: null, shell: null, home: null, machine: null, taxonomy: null, lists: {}, events: null, lastIntent: null };
+// «متجري» (V2.3): opened from the «عروضي» tab, rendered inside it (ui/store.js)
+const storeUi = createStoreUi({ api, toast, onExit: () => loadTab('offers'), onChange: () => refreshCounts() });
 
 boot().catch((e) => {
   console.error(e);
@@ -169,6 +172,7 @@ const LIST = {
 
 async function loadTab(tab, cursor = null, dir = 'next') {
   if (tab === 'home') return;
+  if (tab === 'offers' && storeUi.isOpen()) return storeUi.refresh(); // «متجري» is open inside «عروضي»
   const cfg = LIST[tab];
   const el = state.shell.views[tab];
   const ls = (state.lists[tab] ??= { filter: tab === 'matches' ? 'active' : 'active', intent: null });
@@ -196,6 +200,7 @@ async function loadTab(tab, cursor = null, dir = 'next') {
       });
       if (state.me.user.realm === 'synthetic' && tab === 'requests') el.prepend(demoTools());
       decorateIntentCards(el, page.items, { api }); // live-location toggle on ride offers, distance chips
+      if (tab === 'offers') el.prepend(storeUi.entry(el)); // «متجري» entry card
     } else if (tab === 'matches') {
       renderMatchPage(el, page, {
         onPage, filter: ls.filter, onFilter: (f) => { ls.filter = f; loadTab(tab); },

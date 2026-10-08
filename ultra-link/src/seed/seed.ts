@@ -1,5 +1,6 @@
 // npm run db:seed [-- --test] [-- --no-demo] [-- --reset-demo] [-- --reference-only]
 // --reference-only: migrate + sync categories/places/attributes (idempotent), no demo data — run on every app start
+// --demo-if-new: like a full seed, but the synthetic demo data is added only when none exists yet (Docker start)
 import { loadEnv } from '../lib/env.ts';
 import { closePools, getPool } from '../db/pool.ts';
 import { migrate } from '../db/migrate.ts';
@@ -23,7 +24,9 @@ try {
     const after = await pool.query("SELECT count(*)::int AS n FROM users WHERE realm = 'real'");
     console.log(`removed ${del.rowCount} synthetic users (real users before=${before.rows[0].n}, after=${after.rows[0].n})`);
   }
-  if (!process.argv.includes('--no-demo')) await seedDemo(pool, reg);
+  const hasDemo = (await pool.query("SELECT 1 FROM users WHERE realm = 'synthetic' LIMIT 1")).rowCount! > 0;
+  if (process.argv.includes('--demo-if-new') && hasDemo) console.log('demo data already present — kept as is');
+  else if (!process.argv.includes('--no-demo')) await seedDemo(pool, reg);
 } catch (e) {
   console.error((e as Error).stack);
   process.exitCode = 1;

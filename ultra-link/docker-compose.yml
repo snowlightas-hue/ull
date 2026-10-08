@@ -1,0 +1,73 @@
+# Ultra Link on your own computer:   docker compose up -d   →   http://localhost:8080
+# Stop: docker compose down        Data (requests, accounts) stays in the "pgdata" volume until: docker compose down -v
+# Optional settings go in ultra-link/.env (never committed): TYPESAFE_API_KEY=..., UL_RECOVERY_PEPPER=<16+ random chars>
+name: ultra-link
+
+x-app-env: &app-env
+  DATABASE_URL: postgres://ultralink:${UL_DB_PASSWORD:-ultralink-local-only}@db:5432/ultralink
+  TZ: Asia/Damascus
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: ultralink
+      POSTGRES_PASSWORD: ${UL_DB_PASSWORD:-ultralink-local-only}
+      POSTGRES_DB: ultralink
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ultralink -d ultralink"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # one-shot: migrations + reference data on every start; demo personas only the first time
+  setup:
+    build: .
+    image: ultra-link-app
+    command: ["node", "src/seed/seed.ts", "--demo-if-new"]
+    environment: *app-env
+    env_file: [{ path: .env, required: false }]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  server:
+    image: ultra-link-app
+    command: ["node", "src/server/main.ts"]
+    environment:
+      <<: *app-env
+      HOST: 0.0.0.0
+      PORT: "8080"
+    env_file: [{ path: .env, required: false }]
+    ports:
+      - "127.0.0.1:${UL_PORT:-8080}:8080"   # only this computer can open it
+    volumes:
+      - media:/app/var/media
+    depends_on:
+      setup: { condition: service_completed_successfully }
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    image: ultra-link-app
+    command: ["node", "src/worker/main.ts"]
+    environment: *app-env
+    env_file: [{ path: .env, required: false }]
+    depends_on:
+      setup: { condition: service_completed_successfully }
+    init: true
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  media:

@@ -104,6 +104,10 @@ provision() {
       echo "DATABASE_ADMIN_URL=postgres://ultralink:$pw@127.0.0.1:$PORT/postgres"
     } >> "$ENV_FILE"
   fi
+  # HMAC pepper for account recovery codes (connections/recovery.ts); generated once, kept only in .env
+  if ! grep -q '^UL_RECOVERY_PEPPER=' "$ENV_FILE"; then
+    echo "UL_RECOVERY_PEPPER=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)" >> "$ENV_FILE"
+  fi
   for db in ultralink ultralink_test; do
     if [ -z "$(psql_admin -d postgres -c "SELECT 1 FROM pg_database WHERE datname='$db'")" ]; then
       psql_admin -d postgres -c "CREATE DATABASE $db OWNER ultralink;"

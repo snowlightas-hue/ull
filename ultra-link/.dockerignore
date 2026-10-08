@@ -1,0 +1,9 @@
+.env
+.env.*
+node_modules
+var
+backups
+bench/results
+test/e2e/artifacts
+web-demo/dist
+*.log
