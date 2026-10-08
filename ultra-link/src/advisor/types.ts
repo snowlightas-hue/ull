@@ -47,6 +47,8 @@ export interface IndexStat {
 
 export interface ForeignKeyInfo {
   constraint: string; table: string; refTable: string; columns: string[]; partitionColumns: string[];
+  /** referenced columns, aligned with `columns` */
+  refColumns: string[];
   /** pg_constraint.confdeltype: a = no action, r = restrict, c = cascade, n = set null, d = set default */
   onDelete: string;
   /** rows ever deleted from the referenced table (pg_stat_user_tables.n_tup_del, summed over partitions) */

@@ -68,12 +68,14 @@ export async function collect(client: pg.PoolClient, opts: { target: string; win
              (SELECT coalesce(sum(s.n_tup_del), 0) FROM pg_partition_tree(k.confrelid) p JOIN pg_stat_user_tables s ON s.relid = p.relid) AS ref_deletes,
              (SELECT array_agg(a.attname::text ORDER BY u.ord) FROM unnest(k.conkey) WITH ORDINALITY u(attnum, ord)
                 JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.attnum) AS cols,
+             (SELECT array_agg(a.attname::text ORDER BY u.ord) FROM unnest(k.confkey) WITH ORDINALITY u(attnum, ord)
+                JOIN pg_attribute a ON a.attrelid = k.confrelid AND a.attnum = u.attnum) AS ref_cols,
              coalesce((SELECT array_agg(a.attname::text) FROM pg_partitioned_table pt CROSS JOIN LATERAL unnest(pt.partattrs::int2[]) pa(attnum)
                 JOIN pg_attribute a ON a.attrelid = pt.partrelid AND a.attnum = pa.attnum WHERE pt.partrelid = k.conrelid), '{}') AS part_cols
         FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid JOIN pg_class rc ON rc.oid = k.confrelid
        WHERE k.contype = 'f' AND k.conparentid = 0 AND c.relnamespace = 'public'::regnamespace AND NOT c.relispartition
        ORDER BY c.relname, k.conname`)).map((r) => ({
-      constraint: r.conname, table: r.tbl, refTable: r.ref_table, columns: r.cols, partitionColumns: r.part_cols, onDelete: r.on_delete, refDeletes: num(r.ref_deletes),
+      constraint: r.conname, table: r.tbl, refTable: r.ref_table, columns: r.cols, refColumns: r.ref_cols, partitionColumns: r.part_cols, onDelete: r.on_delete, refDeletes: num(r.ref_deletes),
     }));
 
     const indexKeys: IndexKeyInfo[] = (await q(`

@@ -39,7 +39,7 @@ const REASON_CODES = [
   'deal_mismatch', 'category_mismatch', 'side_mismatch', 'date_overlap', 'date_no_overlap', 'date_unknown',
 ];
 const VERDICTS = ['match', 'possible', 'excluded'];
-const VERTICALS = ['real_estate', 'vehicles', 'services', 'education', 'activities', 'goods', 'help'];
+const VERTICALS = ['real_estate', 'vehicles', 'services', 'education', 'activities', 'goods', 'help', 'transport'];
 const UTTERANCE_KEYS = ['side', 'category', 'deal', 'places', 'price', 'when', 'attrs', 'constraints', 'mustAsk'];
 
 // ── helpers ──

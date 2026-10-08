@@ -1,0 +1,49 @@
+-- delete user 2602 (cascade; trigger lines show where the time goes) (executed inside a rolled-back transaction)
+DELETE FROM users WHERE id = '2602';
+
+Delete on users  (cost=0.42..2.64 rows=0 width=0) (actual time=0.036..0.037 rows=0 loops=1)
+  Buffers: shared hit=6
+  ->  Index Scan using users_pkey on users  (cost=0.42..2.64 rows=1 width=6) (actual time=0.023..0.024 rows=1 loops=1)
+        Index Cond: (id = '2602'::bigint)
+        Buffers: shared hit=4
+Planning Time: 0.047 ms
+Trigger for constraint sessions_user_id_fkey on users: time=0.021 calls=1
+Trigger for constraint conversations_user_id_fkey on users: time=0.013 calls=1
+Trigger for constraint intents_user_id_fkey on users: time=0.235 calls=1
+Trigger for constraint intent_refs_user_id_fkey on users: time=0.138 calls=1
+Trigger for constraint matches_a_user_id_fkey on users: time=0.139 calls=1
+Trigger for constraint matches_b_user_id_fkey on users: time=0.161 calls=1
+Trigger for constraint contact_requests_requester_id_fkey on users: time=0.026 calls=1
+Trigger for constraint contact_requests_recipient_id_fkey on users: time=0.018 calls=1
+Trigger for constraint notifications_recipient_id_fkey on users: time=0.073 calls=1
+Trigger for constraint intent_refs_vertical_id_intent_id_fkey1 on intents_real_estate: time=0.075 calls=5
+Trigger for constraint intent_scopes_vertical_id_intent_id_fkey1 on intents_real_estate: time=0.075 calls=5
+Trigger for constraint matches_vertical_id_a_intent_id_fkey1 on intents_real_estate: time=0.468 calls=5
+Trigger for constraint matches_vertical_id_b_intent_id_fkey1 on intents_real_estate: time=0.441 calls=5
+Trigger for constraint match_runs_vertical_id_intent_id_fkey1 on intents_real_estate: time=0.036 calls=5
+Trigger for constraint intent_refs_vertical_id_intent_id_fkey2 on intents_vehicles: time=0.065 calls=6
+Trigger for constraint intent_scopes_vertical_id_intent_id_fkey2 on intents_vehicles: time=0.068 calls=6
+Trigger for constraint matches_vertical_id_a_intent_id_fkey2 on intents_vehicles: time=0.417 calls=6
+Trigger for constraint matches_vertical_id_b_intent_id_fkey2 on intents_vehicles: time=0.441 calls=6
+Trigger for constraint match_runs_vertical_id_intent_id_fkey2 on intents_vehicles: time=0.032 calls=6
+Trigger for constraint intent_refs_vertical_id_intent_id_fkey3 on intents_services: time=0.035 calls=2
+Trigger for constraint intent_scopes_vertical_id_intent_id_fkey3 on intents_services: time=0.030 calls=2
+Trigger for constraint matches_vertical_id_a_intent_id_fkey3 on intents_services: time=0.218 calls=2
+Trigger for constraint matches_vertical_id_b_intent_id_fkey3 on intents_services: time=0.223 calls=2
+Trigger for constraint match_runs_vertical_id_intent_id_fkey3 on intents_services: time=0.015 calls=2
+Trigger for constraint intent_refs_vertical_id_intent_id_fkey5 on intents_activities: time=0.035 calls=2
+Trigger for constraint intent_scopes_vertical_id_intent_id_fkey5 on intents_activities: time=0.022 calls=2
+Trigger for constraint matches_vertical_id_a_intent_id_fkey5 on intents_activities: time=0.868 calls=2
+Trigger for constraint matches_vertical_id_b_intent_id_fkey5 on intents_activities: time=0.320 calls=2
+Trigger for constraint match_runs_vertical_id_intent_id_fkey5 on intents_activities: time=0.024 calls=2
+Trigger for constraint intent_refs_vertical_id_intent_id_fkey6 on intents_goods: time=0.039 calls=2
+Trigger for constraint intent_scopes_vertical_id_intent_id_fkey6 on intents_goods: time=0.035 calls=2
+Trigger for constraint matches_vertical_id_a_intent_id_fkey6 on intents_goods: time=0.203 calls=2
+Trigger for constraint matches_vertical_id_b_intent_id_fkey6 on intents_goods: time=0.160 calls=2
+Trigger for constraint match_runs_vertical_id_intent_id_fkey6 on intents_goods: time=0.013 calls=2
+Trigger for constraint match_refs_vertical_id_match_id_fkey1 on matches_real_estate: time=0.059 calls=4
+Trigger for constraint contact_requests_vertical_id_match_id_fkey1 on matches_real_estate: time=0.036 calls=4
+Trigger for constraint match_refs_vertical_id_match_id_fkey2 on matches_vehicles: time=0.012 calls=1
+Trigger for constraint contact_requests_vertical_id_match_id_fkey2 on matches_vehicles: time=0.007 calls=1
+Execution Time: 5.408 ms
+

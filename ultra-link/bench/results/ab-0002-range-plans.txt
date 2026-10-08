@@ -1,0 +1,32 @@
+-- variant 0002 (as migrated)
+Limit  (cost=6.33..6.42 rows=36 width=16) (actual time=0.043..0.047 rows=39 loops=1)
+  Buffers: shared hit=8
+  ->  Sort  (cost=6.33..6.42 rows=36 width=16) (actual time=0.043..0.044 rows=39 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 26kB
+        Buffers: shared hit=8
+        ->  Index Only Scan using intents_services_realm_side_deal_type_id_category_id_point__idx on intents_services intents  (cost=0.42..5.39 rows=36 width=16) (actual time=0.025..0.033 rows=39 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '3'::smallint) AND (category_id = ANY ('{301,300}'::integer[])) AND (point_lft >= 44000) AND (point_lft <= 45000))
+              Filter: ((user_id <> '50004'::bigint) AND (vertical_id = '3'::smallint))
+              Heap Fetches: 1
+              Buffers: shared hit=8
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.381 ms
+Execution Time: 0.065 ms
+
+-- variant 0001 (indexes recreated inside a rolled-back transaction)
+Limit  (cost=23.73..23.82 rows=36 width=16) (actual time=0.099..0.102 rows=39 loops=1)
+  Buffers: shared hit=46
+  ->  Sort  (cost=23.73..23.82 rows=36 width=16) (actual time=0.098..0.100 rows=39 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 26kB
+        Buffers: shared hit=46
+        ->  Index Scan using intents_services_realm_side_deal_type_id_category_id_point__idx on intents_services intents  (cost=0.42..22.80 rows=36 width=16) (actual time=0.025..0.088 rows=39 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '3'::smallint) AND (category_id = ANY ('{301,300}'::integer[])) AND (point_lft >= 44000) AND (point_lft <= 45000))
+              Filter: ((user_id <> '50004'::bigint) AND (vertical_id = '3'::smallint))
+              Buffers: shared hit=46
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.365 ms
+Execution Time: 0.121 ms

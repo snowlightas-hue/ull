@@ -142,7 +142,8 @@ export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser
           await tx.query("INSERT INTO conversation_messages (conversation_id, role, text, meta) VALUES ($1,'assistant',$2,$3)", [conv.id, out.next.question.text, JSON.stringify({ question: out.next.question })]);
           result = { conversation: convOut('asking'), action: 'ask', question: out.next.question, summary: summarize(reg, out.draft), understanding };
         } else if (out.next.kind === 'unclear') {
-          await saveConv(tx, conv, out.draft, null, 'collecting');
+          // `awaiting` keeps the next answer in context after a give-up, without counting as another question
+          await saveConv(tx, conv, out.draft, out.next.awaiting ?? null, 'collecting');
           result = { conversation: convOut('collecting'), action: 'unclear', messageAr: out.next.messageAr, summary: summarize(reg, out.draft), understanding };
         } else {
           const v = validateSpec(reg, out.next.spec);

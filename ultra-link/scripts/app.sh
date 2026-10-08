@@ -42,7 +42,7 @@ ours() {
 live_pid() {
   local name="$1" f="$RUN/$1.pid" pid
   [ -f "$f" ] || return 1
-  pid="$(tr -dc '0-9' < "$f" 2>/dev/null || true)"
+  pid="$(tr -dc '0-9' 2>/dev/null < "$f" || true)"
   if [ -n "$pid" ] && ours "$name" "$pid"; then echo "$pid"; return 0; fi
   rm -f "$f"
   echo "note: removed stale $name pidfile (pid ${pid:-?} is not a $name started by app.sh; left untouched)" >&2
@@ -70,8 +70,11 @@ start_proc() { # NAME
     return 1
   fi
   local launcher=(nohup); command -v setsid >/dev/null 2>&1 && launcher=(nohup setsid)
-  # the node process writes its own pid (UL_PIDFILE) so stop/status always target the real process
-  ( cd "$ROOT" && UL_PIDFILE="$pidf" NODE_USE_ENV_PROXY=1 PORT="$PORT" HOST="$HOST" "${launcher[@]}" node "$script" >> "$LOGS/$name.log" 2>&1 < /dev/null & )
+  # the node process writes its own pid (UL_PIDFILE) so stop/status always target the real process.
+  # All fds are redirected for the whole background subshell, and `exec` leaves no shell in between, so
+  # nothing keeps the caller's stdout/stderr pipe open (e.g. `app.sh start | tee`, CI, test runners).
+  ( cd "$ROOT" && UL_PIDFILE="$pidf" NODE_USE_ENV_PROXY=1 PORT="$PORT" HOST="$HOST" exec "${launcher[@]}" node "$script" ) >> "$LOGS/$name.log" 2>&1 < /dev/null &
+  disown 2>/dev/null || true
   for _ in $(seq 1 50); do [ -s "$pidf" ] && break; sleep 0.1; done
   sleep 0.3
   if pid="$(live_pid "$name" 2>/dev/null)"; then echo "$name started (pid $pid, log $LOGS/$name.log)"; return 0; fi
@@ -90,7 +93,7 @@ stop_proc() { # NAME
     kill -KILL "$pid" 2>/dev/null || true
   fi
   # the process removes its own pidfile; only clear it if it still names this pid
-  [ "$(tr -dc '0-9' < "$RUN/$name.pid" 2>/dev/null || true)" = "$pid" ] && rm -f "$RUN/$name.pid"
+  [ "$(tr -dc '0-9' 2>/dev/null < "$RUN/$name.pid" || true)" = "$pid" ] && rm -f "$RUN/$name.pid"
   echo "$name stopped (pid $pid)"
 }
 

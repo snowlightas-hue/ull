@@ -12,8 +12,12 @@
 import type { Registry } from '../domain/registry.ts';
 import { attributesFor, distanceKm, isCategoryWithin, isPlaceWithin } from '../domain/registry.ts';
 import { moneyText } from '../domain/format.ts';
-import type { AttrConstraint, AttrFact, AttrValue, DealCode, IntentSpec, MatchReason, PairVerdict, PriceSpec, PriceUnit, Side, Strength } from '../domain/types.ts';
+import type { AttrConstraint, AttrFact, AttrValue, DealCode, GeoPoint, IntentSpec, MatchReason, PairVerdict, PriceSpec, PriceUnit, Side, Strength } from '../domain/types.ts';
 import { normalizeAr } from '../nlu/arabic.ts';
+import { proximityApplies, proximityCheck } from '../geo/semantics.ts';
+
+/** A shared live position (src/geo/live.ts). `at` = time of the last accepted update. Never shown to others. */
+export interface LivePoint { lat: number; lng: number; accuracyM?: number | null; at: string }
 
 export interface MatchableIntent {
   id: string;
@@ -33,14 +37,29 @@ export interface MatchableIntent {
   attrs: Record<string, AttrFact>;
   constraints: AttrConstraint[];
   createdAt: string;
+  // ── proximity (V2.1, docs/GEO.md) — all optional: intents without them keep the place-only semantics
+  /** precise static point of the owner (browser GPS with consent) */
+  geo?: GeoPoint | null;
+  /** latest live position while the owner shares it (provide / join only) */
+  live?: LivePoint | null;
+  /** "ضمن 5 كم" (required) / "حوالي 5 كم" (preferred) */
+  radiusKm?: { value: number; strength: Strength } | null;
+  /** "الأقرب / قريب مني" */
+  nearest?: boolean;
 }
 
 /** Build a MatchableIntent from a validated IntentSpec (tests, corpus, simulations). */
 export function specToMatchable(
   spec: IntentSpec,
-  meta: { id: string; userId: string; realm?: 'real' | 'synthetic'; status?: string; version?: number; createdAt?: string },
+  meta: { id: string; userId: string; realm?: 'real' | 'synthetic'; status?: string; version?: number; createdAt?: string; live?: LivePoint | null },
 ): MatchableIntent {
+  const proximity: Partial<MatchableIntent> = {};
+  if (spec.place.geo) proximity.geo = spec.place.geo;
+  if (spec.place.radiusKm) proximity.radiusKm = spec.place.radiusKm;
+  if (spec.place.nearest) proximity.nearest = true;
+  if (meta.live) proximity.live = meta.live;
   return {
+    ...proximity,
     id: meta.id, userId: meta.userId, realm: meta.realm ?? 'synthetic', side: spec.side, categoryCode: spec.categoryCode, deal: spec.deal,
     status: meta.status ?? 'active', version: meta.version ?? 1,
     pointPlaceId: spec.place.pointPlaceId, scopePlaceIds: spec.place.scopePlaceIds, scopeStrength: spec.place.scopeStrength,
@@ -53,7 +72,7 @@ export function specToMatchable(
 /** Hard-violation codes, most fundamental first. `exclusion` is the first present in this order. */
 export const EXCLUSION_PRIORITY = [
   'side_mismatch', 'realm_mismatch', 'same_owner', 'inactive', 'deal_mismatch', 'category_mismatch', 'place_excluded', 'place_out_of_scope',
-  'date_no_overlap', 'price_above_max', 'price_below_min', 'price_not_exact', 'attr_violation',
+  'distance_beyond_radius', 'date_no_overlap', 'price_above_max', 'price_below_min', 'price_not_exact', 'attr_violation',
 ] as const;
 
 /** Score bands (integers): confirmed ∈ [5000, 10000], possible ∈ [0, 4999], excluded = 0. */
@@ -144,11 +163,20 @@ export function evaluatePair(reg: Registry, x: MatchableIntent, y: MatchableInte
   for (const c of seek.constraints) attrCheck(c, prov, peer ? 'peer' : 'seek');
   for (const c of prov.constraints) attrCheck(c, seek, peer ? 'peer' : 'provide');
 
-  // ── distance as a soft signal (symmetric)
-  const km = peer
-    ? distanceKm(reg, locationOf(seek)?.[0] ?? null, locationOf(prov)?.[0] ?? null)
-    : distanceKm(reg, seek.pointPlaceId ?? nonRoot(seek.scopePlaceIds)[0] ?? null, prov.pointPlaceId);
-  if (km !== null && km > 0) { reasons.push({ code: 'distance', polarity: 'info', text: `على بعد حوالي ${km} كم` }); bonus -= Math.min(1000, km * 8); }
+  // ── distance: precise / live points, radius and "nearest" (src/geo/semantics.ts, docs/GEO.md) — symmetric because
+  // it runs on the canonical (seek, prov) order. Without any proximity data: the legacy soft centroid signal.
+  if (proximityApplies(seek, prov)) {
+    const px = proximityCheck(reg, seek, prov, peer, opts.now ?? new Date());
+    for (const r of px.reasons) push(r);
+    hard.push(...px.hard);
+    for (const k of px.missing) if (!missing.includes(k)) missing.push(k);
+    bonus += px.bonus;
+  } else {
+    const km = peer
+      ? distanceKm(reg, locationOf(seek)?.[0] ?? null, locationOf(prov)?.[0] ?? null)
+      : distanceKm(reg, seek.pointPlaceId ?? nonRoot(seek.scopePlaceIds)[0] ?? null, prov.pointPlaceId);
+    if (km !== null && km > 0) { reasons.push({ code: 'distance', polarity: 'info', text: `على بعد حوالي ${km} كم` }); bonus -= Math.min(1000, km * 8); }
+  }
 
   // ── recency: the offer's freshness (exchange) / the older of the two (peer, symmetric)
   const created = peer ? Math.min(Date.parse(seek.createdAt), Date.parse(prov.createdAt)) : Date.parse(prov.createdAt);

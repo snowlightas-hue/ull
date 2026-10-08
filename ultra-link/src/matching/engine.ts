@@ -8,6 +8,9 @@
 //   PROBE  — counterpart SCOPES that contain my POINT (equality probes on intent_scopes with my point's
 //            ancestors, ≈ depth ≤ 5) or lie inside it (my point is a region → 'possible').
 //   BROAD  — no point and no hard scope: recent counterparts in the category (capped, marked truncated).
+//   GEO    — the intent has a distance condition (radius / nearest) and a point: KNN on stored and live points plus
+//            place-only counterparts near enough (src/geo/retrieve.ts, docs/GEO.md); replaces the place directions,
+//            which are not needed for completeness inside a distance bound.
 //
 // Concurrency & cost: one evaluation per intent at a time (advisory xact lock); eval_seq is taken before
 // anything is read, and every write is guarded by eval_seq AND a_version/b_version, so an older evaluation
@@ -21,10 +24,14 @@ import type { MatchReason } from '../domain/types.ts';
 import { INTENT_COLS, loadIntent, rowToMatchable, toCard, type IntentCard, type IntentRow } from '../repo/intents.ts';
 import { decodeCursor, encodeCursor, type Page } from '../repo/paging.ts';
 import { evaluatePair, type MatchableIntent } from './evaluate.ts';
-import { attributesFor } from '../domain/registry.ts';
+import { attributesFor, isCategoryWithin } from '../domain/registry.ts';
+import { geoPlan, retrieveNearby } from '../geo/retrieve.ts';
+import { effectivePoint, liveState, RIDE_NOTIFY_K } from '../geo/semantics.ts';
+import { haversineKm, roundDistance } from '../geo/distance.ts';
 
 const MISSING_AR: Record<string, string> = {
   price: 'السعر', 'price.currency': 'عملة السعر', 'price.unit': 'وحدة السعر (شهري/سنوي…)', place: 'المكان', when: 'الموعد', category: 'الصنف بالتحديد',
+  distance: 'المسافة', live: 'اتصال الموقع المباشر',
 };
 
 export const CANDIDATE_LIMIT = Number(process.env.UL_CANDIDATE_LIMIT ?? 5000);
@@ -112,7 +119,8 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
     return { ...base, status: 'inactive', invalidated, durationMs: Date.now() - t0 };
   }
 
-  const { ids, truncated, directions, outsideScope } = await retrieveCandidates(tx, reg, row, me);
+  const now = args.now ?? new Date();
+  const { ids, truncated, directions, outsideScope } = await retrieveCandidates(tx, reg, row, me, now);
   for (const other of prevState.keys()) ids.add(other);
   ids.delete(args.intentId);
   const candidates = ids.size
@@ -127,6 +135,9 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
   const peer = me.side === 'join';
   const writes: PairWrite[] = [];
   const invalidations: PairInvalidation[] = [];
+  // ride requests: remember distance + connection of each acceptable driver (only the K nearest connected are notified)
+  const rideFrom = isRideRequest(reg, me) ? effectivePoint(reg, me, now) : null;
+  const ride = rideFrom ? { from: rideFrom, drivers: [] as { id: string; km: number | null; live: boolean }[] } : null;
   for (const c of candidates) {
     const other = rowToMatchable(reg, c);
     const v = evaluatePair(reg, me, other, { now: args.now });
@@ -143,7 +154,15 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
     const state = v.verdict === 'match' ? 'confirmed' : 'possible';
     totals[state]++;
     writes.push({ kind: peer ? 'peer' : 'exchange', a, b, state, score: v.score, reasons: v.reasons, missing: v.missing });
+    if (ride) {
+      const to = effectivePoint(reg, other, now);
+      ride.drivers.push({ id: other.id, km: to ? haversineKm(ride.from, to) : null, live: liveState(other, now)?.fresh === true });
+    }
   }
+  const byDistance = (x: { km: number | null }, y: { km: number | null }) => (x.km ?? Infinity) - (y.km ?? Infinity);
+  const rideNotify = ride ? new Set(ride.drivers.filter((d) => d.live && d.km !== null).sort(byDistance).slice(0, RIDE_NOTIFY_K).map((d) => d.id)) : null;
+  const rideSeekerNotes = ride ? new Set([...ride.drivers].sort(byDistance).slice(0, RIDE_NOTIFY_K).map((d) => d.id)) : null;
+  const rideKm = new Map(ride?.drivers.map((d) => [d.id, d.km] as const) ?? []);
 
   const touched = new Set<string>();
   let invalidated = 0;
@@ -167,6 +186,22 @@ export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArg
     // notify each side once per pair (dedupe key) — except the person looking at results right now
     for (const [mine, theirs] of [[pw.a, pw.b], [pw.b, pw.a]] as const) {
       if (args.trigger === 'interactive' && mine.userId === me.userId) continue;
+      if (rideNotify && rideSeekerNotes) {
+        // a new ride request reaches only the K nearest CONNECTED drivers (once: same dedupe key as any pair note);
+        // the rider (when not looking at the results) hears about the K nearest drivers only
+        if (mine.id !== me.id) {
+          if (!rideNotify.has(mine.id)) continue;
+          const km = rideKm.get(mine.id);
+          notes.push({
+            recipientId: mine.userId, kind: 'ride_nearby', titleAr: 'طلب توصيلة قريب منك',
+            bodyAr: `«${titleOf.get(theirs.id) ?? ''}»${km != null ? ' — على بعد ' + roundDistance(km).ar : ''}`,
+            payload: { matchId: w.publicId, verticalId: args.verticalId, ride: true },
+            dedupeKey: `match:${args.verticalId}:${pw.a.id}:${pw.b.id}`,
+          });
+          continue;
+        }
+        if (!rideSeekerNotes.has(theirs.id)) continue;
+      }
       notes.push({
         recipientId: mine.userId,
         kind: pw.state === 'confirmed' ? 'match_new' : 'match_possible',
@@ -301,13 +336,24 @@ function exclusionLabel(code: string, n: number, sample: string): string {
     price_below_min: 'أقل من الحد الأدنى للسعر', price_not_exact: 'السعر لا يساوي المطلوب بالضبط', attr_violation: 'لا يحقق شرطًا ملزمًا',
     date_no_overlap: 'موعد مختلف', deal_mismatch: 'نوع عملية مختلف', category_mismatch: 'صنف مختلف', side_mismatch: 'نفس الدور',
     same_owner: 'من نفس الحساب', inactive: 'غير نشط', realm_mismatch: 'بيانات تجريبية',
+    distance_beyond_radius: 'أبعد من المسافة المحددة',
   };
   void n; // the UI prefixes the count (contract: textAr is the reason label only)
   return labels[code] ?? sample;
 }
 
+/** A ride request ("بدي تكسي / توصيلة"): seeking transport.ride (or narrower). */
+function isRideRequest(reg: Registry, me: MatchableIntent): boolean {
+  const ride = reg.categoryByCode.get('transport.ride');
+  const cat = reg.categoryByCode.get(me.categoryCode);
+  return me.side === 'seek' && !!ride && !!cat && isCategoryWithin(reg, cat.id, ride.id);
+}
+
 /** Candidate ids using index-friendly directions. Never a full scan of the vertical. Exported for tests. */
-export async function retrieveCandidates(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent): Promise<{ ids: Set<string>; truncated: boolean; directions: string[]; outsideScope: number }> {
+export async function retrieveCandidates(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent, now: Date = new Date()): Promise<{ ids: Set<string>; truncated: boolean; directions: string[]; outsideScope: number }> {
+  // distance-bounded intents (radius / nearest with a known point): the GEO directions (src/geo/retrieve.ts)
+  const plan = geoPlan(reg, me, now);
+  if (plan) return retrieveNearby(tx, reg, row, me, plan);
   let outsideScope = 0;
   const ids = new Set<string>();
   const directions: string[] = [];

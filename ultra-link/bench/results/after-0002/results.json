@@ -1,0 +1,419 @@
+{
+  "machine": {
+    "nproc": 4,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "memTotal": "16 GB",
+    "free": "total        used        free      shared  buff/cache   available\nMem:            15Gi       1.8Gi       8.8Gi       562Mi       5.9Gi        13Gi\nSwap:             0B          0B          0B",
+    "node": "v22.22.0",
+    "postgres": {
+      "effective_cache_size": "4GB",
+      "jit": "on",
+      "max_parallel_workers_per_gather": "2",
+      "random_page_cost": "1.1",
+      "server_version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+      "shared_buffers": "512MB",
+      "work_mem": "16MB"
+    }
+  },
+  "dataset": {
+    "intents": 1000000,
+    "active_intents": 455333,
+    "intent_scopes": 472570,
+    "matches": 291497,
+    "notifications": 777539,
+    "users": 166667,
+    "migrations": "0001,0002"
+  },
+  "directionsSeen": {
+    "range": {
+      "range": 220
+    },
+    "probe": {
+      "probe": 220
+    },
+    "broad": {
+      "broad": 220
+    }
+  },
+  "insert": {
+    "sequential": {
+      "intents": 2000,
+      "seconds": 7.55,
+      "perSec": 265,
+      "latency": {
+        "n": 2000,
+        "p50": 3.52,
+        "p95": 5.63,
+        "p99": 8.68,
+        "max": 12.1,
+        "mean": 3.76
+      }
+    },
+    "concurrent4": {
+      "intents": 2000,
+      "seconds": 2.24,
+      "perSec": 892,
+      "latency": {
+        "n": 2000,
+        "p50": 4.25,
+        "p95": 6.92,
+        "p99": 9.58,
+        "max": 18.54,
+        "mean": 4.47
+      }
+    }
+  },
+  "sizes": [
+    {
+      "table": "intents",
+      "table_bytes": 321585152,
+      "index_bytes": 228007936,
+      "total_bytes": 549593088
+    },
+    {
+      "table": "notifications",
+      "table_bytes": 211525632,
+      "index_bytes": 157933568,
+      "total_bytes": 369459200
+    },
+    {
+      "table": "matches",
+      "table_bytes": 128671744,
+      "index_bytes": 110403584,
+      "total_bytes": 239075328
+    },
+    {
+      "table": "intent_refs",
+      "table_bytes": 68591616,
+      "index_bytes": 85942272,
+      "total_bytes": 154533888
+    },
+    {
+      "table": "intent_scopes",
+      "table_bytes": 32612352,
+      "index_bytes": 62111744,
+      "total_bytes": 94724096
+    },
+    {
+      "table": "match_refs",
+      "table_bytes": 17833984,
+      "index_bytes": 20660224,
+      "total_bytes": 38494208
+    },
+    {
+      "table": "users",
+      "table_bytes": 14704640,
+      "index_bytes": 14360576,
+      "total_bytes": 29065216
+    },
+    {
+      "table": "contact_requests",
+      "table_bytes": 425984,
+      "index_bytes": 712704,
+      "total_bytes": 1138688
+    },
+    {
+      "table": "places",
+      "table_bytes": 57344,
+      "index_bytes": 81920,
+      "total_bytes": 139264
+    },
+    {
+      "table": "categories",
+      "table_bytes": 57344,
+      "index_bytes": 65536,
+      "total_bytes": 122880
+    },
+    {
+      "table": "verticals",
+      "table_bytes": 49152,
+      "index_bytes": 32768,
+      "total_bytes": 81920
+    },
+    {
+      "table": "attribute_defs",
+      "table_bytes": 49152,
+      "index_bytes": 32768,
+      "total_bytes": 81920
+    }
+  ],
+  "indexSizes": [
+    {
+      "index": "intent_refs_pkey",
+      "table": "intent_refs",
+      "bytes": 39411712
+    },
+    {
+      "index": "intent_refs_intent_key",
+      "table": "intent_refs",
+      "bytes": 31981568
+    },
+    {
+      "index": "intent_refs_user_idx",
+      "table": "intent_refs",
+      "bytes": 14548992
+    },
+    {
+      "index": "intent_scopes_pkey",
+      "table": "intent_scopes",
+      "bytes": 34430976
+    },
+    {
+      "index": "intent_scopes_probe_idx",
+      "table": "intent_scopes",
+      "bytes": 27680768
+    },
+    {
+      "index": "intents_owner_idx",
+      "table": "intents",
+      "bytes": 77422592
+    },
+    {
+      "index": "intents_vertical_id_public_id_key",
+      "table": "intents",
+      "bytes": 54018048
+    },
+    {
+      "index": "intents_point_idx",
+      "table": "intents",
+      "bytes": 38092800
+    },
+    {
+      "index": "intents_pkey",
+      "table": "intents",
+      "bytes": 31965184
+    },
+    {
+      "index": "intents_attrs_idx",
+      "table": "intents",
+      "bytes": 13869056
+    },
+    {
+      "index": "intents_expiry_idx",
+      "table": "intents",
+      "bytes": 11550720
+    },
+    {
+      "index": "intents_when_idx",
+      "table": "intents",
+      "bytes": 851968
+    },
+    {
+      "index": "intents_conversation_idx",
+      "table": "intents",
+      "bytes": 65536
+    },
+    {
+      "index": "matches_a_user_idx",
+      "table": "matches",
+      "bytes": 19324928
+    },
+    {
+      "index": "matches_b_intent_idx",
+      "table": "matches",
+      "bytes": 18743296
+    },
+    {
+      "index": "matches_b_user_idx",
+      "table": "matches",
+      "bytes": 18554880
+    },
+    {
+      "index": "matches_vertical_id_public_id_key",
+      "table": "matches",
+      "bytes": 16269312
+    },
+    {
+      "index": "matches_a_intent_idx",
+      "table": "matches",
+      "bytes": 15376384
+    },
+    {
+      "index": "matches_vertical_id_a_intent_id_b_intent_id_key",
+      "table": "matches",
+      "bytes": 12550144
+    },
+    {
+      "index": "matches_pkey",
+      "table": "matches",
+      "bytes": 9584640
+    },
+    {
+      "index": "notifications_recipient_id_dedupe_key_key",
+      "table": "notifications",
+      "bytes": 50552832
+    },
+    {
+      "index": "notifications_recipient_idx",
+      "table": "notifications",
+      "bytes": 41508864
+    },
+    {
+      "index": "notifications_public_id_key",
+      "table": "notifications",
+      "bytes": 34013184
+    },
+    {
+      "index": "notifications_pkey",
+      "table": "notifications",
+      "bytes": 17661952
+    },
+    {
+      "index": "notifications_unread_idx",
+      "table": "notifications",
+      "bytes": 14196736
+    }
+  ],
+  "matchByDirection": {
+    "probe": {
+      "n": 136,
+      "p50": 993.06,
+      "p95": 2926.09,
+      "p99": 3253.75,
+      "max": 3409.68,
+      "mean": 1333.59
+    },
+    "range": {
+      "n": 47,
+      "p50": 969.06,
+      "p95": 3240.39,
+      "p99": 4021.72,
+      "max": 4021.72,
+      "mean": 1468.79
+    },
+    "broad": {
+      "n": 13,
+      "p50": 2499.98,
+      "p95": 5659.29,
+      "p99": 5659.29,
+      "max": 5659.29,
+      "mean": 2437.69
+    },
+    "range+probe": {
+      "n": 4,
+      "p50": 116.04,
+      "p95": 172.47,
+      "p99": 172.47,
+      "max": 172.47,
+      "mean": 122.57
+    }
+  },
+  "latencyMs": {
+    "range": {
+      "n": 200,
+      "p50": 10.47,
+      "p95": 43.93,
+      "p99": 52.97,
+      "max": 73.81,
+      "mean": 15.21,
+      "candidatesP50": 1980,
+      "candidatesMax": 10664
+    },
+    "probe": {
+      "n": 200,
+      "p50": 2.98,
+      "p95": 8.02,
+      "p99": 15.16,
+      "max": 43.57,
+      "mean": 4.07,
+      "candidatesP50": 2257,
+      "candidatesMax": 5000
+    },
+    "broad": {
+      "n": 200,
+      "p50": 9.01,
+      "p95": 27.06,
+      "p99": 35.72,
+      "max": 48.8,
+      "mean": 11.65,
+      "candidatesP50": 5000,
+      "candidatesMax": 9518
+    },
+    "owner_list": {
+      "n": 200,
+      "p50": 9.39,
+      "p95": 15.57,
+      "p99": 21.29,
+      "max": 42.43,
+      "mean": 10.55
+    },
+    "notifications": {
+      "n": 200,
+      "p50": 1.03,
+      "p95": 1.7,
+      "p99": 2.21,
+      "max": 2.4,
+      "mean": 1.11
+    },
+    "match_list": {
+      "n": 200,
+      "p50": 6.55,
+      "p95": 9.99,
+      "p99": 12.86,
+      "max": 15.85,
+      "mean": 6.87
+    },
+    "contact_respond": {
+      "n": 200,
+      "p50": 0.44,
+      "p95": 0.78,
+      "p99": 1.12,
+      "max": 1.97,
+      "mean": 0.49
+    },
+    "user_delete": {
+      "n": 25,
+      "p50": 3.81,
+      "p95": 8.31,
+      "p99": 10.96,
+      "max": 10.96,
+      "mean": 4.42,
+      "intentsPerUserP50": 9,
+      "intentsPerUserMax": 22
+    },
+    "match_intent": {
+      "n": 200,
+      "p50": 1008.24,
+      "p95": 3012.9,
+      "p99": 3473.08,
+      "max": 5659.29,
+      "mean": 1412.91,
+      "candidatesP50": 2366,
+      "candidatesMax": 8901,
+      "truncatedPct": 35
+    }
+  },
+  "planCheck": {
+    "range": {
+      "checked": 813,
+      "seqScansOnIntentsScopesMatches": 0,
+      "relations": []
+    },
+    "probe": {
+      "checked": 200,
+      "seqScansOnIntentsScopesMatches": 0,
+      "relations": []
+    },
+    "broad": {
+      "checked": 251,
+      "seqScansOnIntentsScopesMatches": 0,
+      "relations": []
+    },
+    "match_statements": {
+      "checked": 12,
+      "seqScansOnIntentsScopesMatches": 0,
+      "relations": []
+    }
+  },
+  "noSeqScanOnMatchingQueries": true,
+  "params": {
+    "db": "ultralink_bench",
+    "label": "after-0002",
+    "samples": 200,
+    "matchSamples": 200,
+    "inserts": 2000,
+    "seed": 7,
+    "candidateLimit": 5000,
+    "at": "2026-10-08T19:12:33.785Z"
+  }
+}

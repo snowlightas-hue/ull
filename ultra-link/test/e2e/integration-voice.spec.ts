@@ -3,12 +3,17 @@
 // spoken question → auto-listen → answer to the same conversation → save → search → results) and the
 // half-duplex invariant. It is NOT a test with a human voice or a real recognizer.
 //
-// Usage: node test/e2e/integration-voice.spec.ts [baseUrl=http://127.0.0.1:8080]  (server must be running)
+// Usage: node test/e2e/integration-voice.spec.ts <baseUrl>   (normally started by test/e2e/run.ts on an isolated stack)
+// The base URL is required on purpose: this spec writes requests, so it must never default to the live demo.
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { installMockVoice, type MockCfg } from './mock-voice.ts';
 
-const BASE = process.argv[2] ?? 'http://127.0.0.1:8080';
+const BASE = process.argv[2];
+if (!BASE) {
+  console.error('usage: node test/e2e/integration-voice.spec.ts <baseUrl>  (use an isolated stack, e.g. via test/e2e/run.ts)');
+  process.exit(2);
+}
 const OUT = new URL('./artifacts/integration-voice/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 

@@ -144,11 +144,10 @@ for (const f of FAULTS) {
   });
 }
 
-// KNOWN BUG (Role 4, src/ai/jev-client.ts): the retry backoff / retry-after sleep ignores the caller's
-// AbortSignal, so a 429 with a long retry-after (or 5xx/socket-drop backoff) overruns UL_JEV_BUDGET_MS.
-// Fix proposed in the Role 7 report (abortable sleep). Remove `todo` once fixed.
+// Regression: the retry backoff / retry-after sleep must end when the caller's AbortSignal fires, so a 429 with a
+// long retry-after (or 5xx/socket-drop backoff) never overruns UL_JEV_BUDGET_MS.
 for (const f of FAULTS.filter((x) => x.budgetBug)) {
-  test(`simulate + ${f.name}: first failing turn stays within UL_JEV_BUDGET_MS`, { todo: 'jev-client backoff sleep is not abortable (Role 4)' }, async () => {
+  test(`simulate + ${f.name}: first failing turn stays within UL_JEV_BUDGET_MS`, async () => {
     await configure('simulate');
     mock.setFaults(f.faults);
     const r = await turn();

@@ -169,12 +169,17 @@ async function loadTab(tab, cursor = null, dir = 'next') {
   const el = state.shell.views[tab];
   const ls = (state.lists[tab] ??= { filter: tab === 'matches' ? 'active' : 'active', intent: null });
   if (!el || !cfg) return;
+  // a refresh replaces the cards; keep keyboard users where they were (also across overlapping refreshes)
+  const focus = captureFocus(el) ?? ls.pendingFocus ?? null;
+  ls.pendingFocus = focus;
+  const seq = (ls.seq = (ls.seq ?? 0) + 1);
   if (!cursor) renderLoading(el);
   const params = { ...cfg.params, limit: 20, cursor, dir: cursor ? dir : undefined };
   if (tab === 'requests' || tab === 'offers') params.status = ls.filter === 'all' ? undefined : ls.filter === 'active' ? 'active,paused' : ls.filter;
   if (tab === 'matches') { params.state = ls.filter; if (ls.intent) params.intent = ls.intent; }
   try {
     const page = await api.get(cfg.url + api.qs(params));
+    if (seq !== ls.seq) return; // a newer load of this tab is in flight; never draw an older response over it
     const onPage = (d, c) => loadTab(tab, c, d);
     if (tab === 'requests' || tab === 'offers') {
       renderIntentPage(el, page, {
@@ -202,9 +207,31 @@ async function loadTab(tab, cursor = null, dir = 'next') {
         onOpen: (n) => { if (n.payload?.matchId) { state.lists.matches = { filter: 'active', intent: null }; state.shell.setActiveTab('matches'); } },
       });
     }
+    restoreFocus(el, focus);
+    ls.pendingFocus = null;
   } catch (e) {
+    if (seq !== ls.seq) return;
     renderListError(el, e.messageAr ?? 'تعذّر التحميل', () => loadTab(tab, cursor, dir));
   }
+}
+
+function captureFocus(el) {
+  const a = document.activeElement;
+  if (!a || a === document.body || !el.contains(a)) return null;
+  return { id: a.closest('[data-id]')?.dataset.id ?? null, cls: a.className, text: a.textContent?.trim() ?? '' };
+}
+/** After a re-render: the same control in the same card, else the card's first control, else the card, else the heading. */
+function restoreFocus(el, f) {
+  if (!f) return;
+  const cur = document.activeElement;
+  if (cur && cur !== document.body) return; // only rescue focus that was dropped, never steal it
+  const card = f.id ? el.querySelector(`[data-id="${CSS.escape(f.id)}"]`) : null;
+  const scope = card ?? el;
+  const controls = [...scope.querySelectorAll('button:not([disabled]), a[href], [tabindex="0"]')];
+  const target = controls.find((b) => b.className === f.cls && (b.textContent?.trim() ?? '') === f.text) ?? controls[0] ?? card ?? el.querySelector('h1, h2');
+  if (!target) return;
+  if (!target.matches('button, a[href], input, select, textarea, [tabindex]')) target.tabIndex = -1;
+  target.focus({ preventScroll: true });
 }
 
 async function ensureTaxonomy() {

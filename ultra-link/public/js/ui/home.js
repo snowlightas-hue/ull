@@ -389,7 +389,8 @@ export function mountHome(el, handlers = {}) {
     const optionButtons = opts.map((o) => {
       const b = h('button', { type: 'button', class: 'chip-btn', dataset: { value: o.value } }, ar(o.label));
       b.addEventListener('click', () => {
-        for (const other of optionButtons) { other.disabled = true; other.dataset.chosen = other === b ? 'true' : 'false'; }
+        // disabling the focused chip would drop focus to <body>; focusRescue moves it to the question text
+        focusRescue(() => { for (const other of optionButtons) { other.disabled = true; other.dataset.chosen = other === b ? 'true' : 'false'; } });
         call('onOption', o.value);
       });
       return b;

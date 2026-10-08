@@ -147,19 +147,29 @@ test('deleting a user still cascades through intents, refs, scopes, matches, run
 });
 
 test('0002 moves vertical-7 (help) rows out of the DEFAULT partitions with every dependant intact', async () => {
+  // rows are written with plain SQL in the 0001 shape (the repo layer may already expect later migrations)
   const pool = await blankDb(`ultralink_t_${TAG}_help`.slice(0, 60), '0001');
   try {
     await syncReference(pool);
-    const reg = await loadRegistry(pool);
+    const one = async (sql: string, params: unknown[] = []) => (await pool.query(sql, params)).rows[0];
     const [a, b] = [await mkUser(pool, 'needs help'), await mkUser(pool, 'volunteer')];
-    const azaz = reg.placeByCode.get('sy.aleppo.azaz')!.id;
-    const helpSpec = (side: 'seek' | 'provide') => spec(reg, { side, categoryCode: 'help.general', deal: 'help', place: { pointPlaceId: azaz, scopePlaceIds: side === 'seek' ? [azaz] : [], scopeStrength: 'required' } });
-    const seek = await withTx(pool, (tx) => createIntent(tx, reg, { userId: a, realm: 'synthetic', titleAr: 'أحتاج مساعدة', sourceText: null, conversationId: null, spec: helpSpec('seek') }));
-    await withTx(pool, (tx) => createIntent(tx, reg, { userId: b, realm: 'synthetic', titleAr: 'متطوع', sourceText: null, conversationId: null, spec: helpSpec('provide') }));
-    assert.equal(seek.verticalId, 7);
-    await matchIntent(pool, reg, { verticalId: 7, intentId: seek.id, trigger: 'job' });
-    const m = (await pool.query('SELECT id FROM matches WHERE vertical_id = 7 LIMIT 1')).rows[0];
-    assert.ok(m, 'a vertical-7 match exists before 0002');
+    const ids = await one(`SELECT (SELECT id FROM categories WHERE code = 'help.general') AS cat, (SELECT id FROM deal_types WHERE code = 'help') AS deal,
+      (SELECT id FROM places WHERE code = 'sy.aleppo.azaz') AS azaz, (SELECT lft FROM places WHERE code = 'sy.aleppo.azaz') AS lft,
+      (SELECT id FROM places WHERE parent_id IS NULL) AS root`);
+    const intent = async (user: string, side: string, scope: number[]) => {
+      const r = await one(`INSERT INTO intents (vertical_id, user_id, realm, side, category_id, deal_type_id, title_ar, point_place_id, point_lft, scope_place_ids)
+        VALUES (7, $1, 'synthetic', $2, $3, $4, 'مساعدة', $5, $6, $7) RETURNING id, public_id`, [user, side, ids.cat, ids.deal, ids.azaz, ids.lft, scope]);
+      await pool.query('INSERT INTO intent_refs (public_id, vertical_id, intent_id, user_id) VALUES ($1, 7, $2, $3)', [r.public_id, r.id, user]);
+      await pool.query(`INSERT INTO intent_scopes (vertical_id, intent_id, realm, side, deal_type_id, category_id, place_id) VALUES (7, $1, 'synthetic', $2, $3, $4, $5)`,
+        [r.id, side, ids.deal, ids.cat, scope[0] ?? ids.root]);
+      return String(r.id);
+    };
+    const seek = await intent(a, 'seek', [ids.azaz]);
+    const prov = await intent(b, 'provide', []);
+    const m = await one(`INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, a_version, b_version, eval_seq)
+      VALUES (7, 'exchange', $1, $2, $3, $4, 'confirmed', 8000, 1, 1, nextval('match_eval_seq')) RETURNING id, public_id`, [seek, prov, a, b]);
+    await pool.query('INSERT INTO match_refs (public_id, vertical_id, match_id) VALUES ($1, 7, $2)', [m.public_id, m.id]);
+    await pool.query(`INSERT INTO match_runs (vertical_id, intent_id, intent_version, eval_seq, candidates, confirmed, possible, excluded, trigger) VALUES (7, $1, 1, 1, 1, 1, 0, 0, 'job')`, [seek]);
     await pool.query(`INSERT INTO contact_requests (vertical_id, match_id, requester_id, recipient_id) VALUES (7, $1, $2, $3)`, [m.id, a, b]);
     const snap = async () => {
       const out: Record<string, unknown[]> = {};
@@ -170,13 +180,15 @@ test('0002 moves vertical-7 (help) rows out of the DEFAULT partitions with every
     };
     const before7 = await snap();
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM intents_other WHERE vertical_id = 7')).rows[0].n, 2);
-    assert.deepEqual(await migrate(pool, () => {}), ['0002_query_indexes_integrity_maintenance.sql']);
-    assert.deepEqual(await snap(), before7, 'every vertical-7 row and dependant survived unchanged');
+    assert.deepEqual(await migrate(pool, () => {}, { upTo: '0002' }), ['0002_query_indexes_integrity_maintenance.sql']);
+    assert.deepEqual(await snap(), before7, 'every vertical-7 row and dependant survived unchanged (same ids, public ids, timestamps)');
     const where = (await pool.query(`SELECT (SELECT count(*) FROM intents_help)::int AS ih, (SELECT count(*) FROM intents_other)::int AS io,
       (SELECT count(*) FROM matches_help)::int AS mh, (SELECT count(*) FROM matches_other)::int AS mo`)).rows[0];
-    assert.deepEqual(where, { ih: 2, io: 0, mh: before7.matches!.length, mo: 0 });
-    // the app keeps working on the moved rows
-    const again = await matchIntent(pool, reg, { verticalId: 7, intentId: seek.id, trigger: 'job' });
+    assert.deepEqual(where, { ih: 2, io: 0, mh: 1, mo: 0 });
+    // later migrations still apply on top, and the current engine works on the moved rows
+    await migrate(pool, () => {});
+    const reg = await loadRegistry(pool);
+    const again = await matchIntent(pool, reg, { verticalId: 7, intentId: seek, trigger: 'job' });
     assert.equal(again.status, 'done');
   } finally {
     await pool.end();

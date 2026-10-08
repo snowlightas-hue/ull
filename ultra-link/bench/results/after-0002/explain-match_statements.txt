@@ -1,0 +1,395 @@
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 3 (executed in a rolled-back savepoint)
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.vertical_id = 2 AND i.id = '793877' FOR SHARE;
+
+LockRows  (cost=0.42..2.66 rows=1 width=422) (actual time=0.038..0.039 rows=1 loops=1)
+  Buffers: shared hit=6 dirtied=1
+  ->  Index Scan using intents_vehicles_pkey on intents_vehicles i  (cost=0.42..2.65 rows=1 width=422) (actual time=0.017..0.018 rows=1 loops=1)
+        Index Cond: ((vertical_id = '2'::smallint) AND (id = '793877'::bigint))
+        Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=140
+Planning Time: 0.580 ms
+Execution Time: 0.085 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 4 (executed in a rolled-back savepoint)
+SELECT a_intent_id, b_intent_id, state FROM matches WHERE vertical_id = 2 AND (a_intent_id = '793877' OR b_intent_id = '793877');
+
+Bitmap Heap Scan on matches_vehicles matches  (cost=3.09..10.88 rows=7 width=25) (actual time=0.037..0.038 rows=2 loops=1)
+  Recheck Cond: ((a_intent_id = '793877'::bigint) OR (b_intent_id = '793877'::bigint))
+  Filter: (vertical_id = '2'::smallint)
+  Heap Blocks: exact=1
+  Buffers: shared hit=1 read=6
+  ->  BitmapOr  (cost=3.09..3.09 rows=7 width=0) (actual time=0.032..0.032 rows=0 loops=1)
+        Buffers: shared read=6
+        ->  Bitmap Index Scan on matches_vehicles_a_intent_id_state_score_id_idx  (cost=0.00..1.56 rows=5 width=0) (actual time=0.017..0.017 rows=2 loops=1)
+              Index Cond: (a_intent_id = '793877'::bigint)
+              Buffers: shared read=3
+        ->  Bitmap Index Scan on matches_vehicles_b_intent_id_state_score_id_idx  (cost=0.00..1.53 rows=2 width=0) (actual time=0.014..0.014 rows=0 loops=1)
+              Index Cond: (b_intent_id = '793877'::bigint)
+              Buffers: shared read=3
+Planning:
+  Buffers: shared hit=336 read=7
+Planning Time: 0.763 ms
+Execution Time: 0.063 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 5 (executed in a rolled-back savepoint)
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND user_id <> '116336' AND point_lft BETWEEN 58000 AND 59000
+  ORDER BY created_at DESC LIMIT 5000;
+
+Limit  (cost=5.92..6.03 rows=46 width=16) (actual time=0.063..0.069 rows=59 loops=1)
+  Buffers: shared hit=7
+  ->  Sort  (cost=5.92..6.03 rows=46 width=16) (actual time=0.062..0.065 rows=59 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 27kB
+        Buffers: shared hit=7
+        ->  Index Only Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..4.64 rows=46 width=16) (actual time=0.041..0.050 rows=59 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft >= 58000) AND (point_lft <= 59000))
+              Filter: ((user_id <> '116336'::bigint) AND (vertical_id = '2'::smallint))
+              Heap Fetches: 0
+              Buffers: shared hit=7
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.334 ms
+Execution Time: 0.087 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 6 (executed in a rolled-back savepoint)
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND user_id <> '116336' AND point_lft BETWEEN 91000 AND 92000
+  ORDER BY created_at DESC LIMIT 5000;
+
+Limit  (cost=64.60..66.28 rows=671 width=16) (actual time=0.514..0.609 rows=1020 loops=1)
+  Buffers: shared hit=15
+  ->  Sort  (cost=64.60..66.28 rows=671 width=16) (actual time=0.513..0.553 rows=1020 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 64kB
+        Buffers: shared hit=15
+        ->  Index Only Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..33.10 rows=671 width=16) (actual time=0.040..0.382 rows=1020 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft >= 91000) AND (point_lft <= 92000))
+              Filter: ((user_id <> '116336'::bigint) AND (vertical_id = '2'::smallint))
+              Heap Fetches: 0
+              Buffers: shared hit=15
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.276 ms
+Execution Time: 0.666 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 7 (executed in a rolled-back savepoint)
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND user_id <> '116336' AND point_lft = ANY('{35000,2000,1000,90000}'::int[]) ORDER BY created_at DESC LIMIT 5000;
+
+Limit  (cost=12.31..12.31 rows=1 width=16) (actual time=0.037..0.037 rows=0 loops=1)
+  Buffers: shared hit=24
+  ->  Sort  (cost=12.31..12.31 rows=1 width=16) (actual time=0.037..0.037 rows=0 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=24
+        ->  Index Only Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..12.30 rows=1 width=16) (actual time=0.034..0.034 rows=0 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft = ANY ('{35000,2000,1000,90000}'::integer[])))
+              Filter: ((user_id <> '116336'::bigint) AND (vertical_id = '2'::smallint))
+              Heap Fetches: 0
+              Buffers: shared hit=24
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.307 ms
+Execution Time: 0.050 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 8 (executed in a rolled-back savepoint)
+SELECT count(*)::int AS n FROM (SELECT 1 FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2
+  AND category_id = ANY('{201,200}') AND status = 'active' AND user_id <> '116336' AND point_lft IS NOT NULL
+  AND NOT (point_lft = ANY('{35000,2000,1000,90000}'::int[])) AND NOT (point_lft BETWEEN 58000 AND 59000) AND NOT (point_lft BETWEEN 91000 AND 92000) LIMIT 1000) x;
+
+Aggregate  (cost=474.79..474.81 rows=1 width=4) (actual time=0.416..0.417 rows=1 loops=1)
+  Buffers: shared hit=15
+  ->  Limit  (cost=0.42..465.31 rows=759 width=4) (actual time=0.034..0.373 rows=1000 loops=1)
+        Buffers: shared hit=15
+        ->  Index Only Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..465.31 rows=759 width=4) (actual time=0.034..0.320 rows=1000 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft IS NOT NULL))
+              Filter: ((user_id <> '116336'::bigint) AND (vertical_id = '2'::smallint) AND (point_lft <> ALL ('{35000,2000,1000,90000}'::integer[])) AND ((point_lft < 58000) OR (point_lft > 59000)) AND ((point_lft < 91000) OR (point_lft > 92000)))
+              Heap Fetches: 0
+              Buffers: shared hit=15
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.448 ms
+Execution Time: 0.437 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 9 (executed in a rolled-back savepoint)
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND point_lft IS NULL AND user_id <> '116336' ORDER BY created_at DESC LIMIT 200;
+
+Limit  (cost=284.99..285.49 rows=200 width=16) (actual time=0.543..0.577 rows=200 loops=1)
+  Buffers: shared hit=13
+  ->  Sort  (cost=284.99..293.13 rows=3259 width=16) (actual time=0.541..0.556 rows=200 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: top-N heapsort  Memory: 40kB
+        Buffers: shared hit=13
+        ->  Index Only Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..144.13 rows=3259 width=16) (actual time=0.063..0.331 rows=645 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft IS NULL))
+              Filter: ((user_id <> '116336'::bigint) AND (vertical_id = '2'::smallint))
+              Heap Fetches: 0
+              Buffers: shared hit=13
+Planning:
+  Buffers: shared hit=2
+Planning Time: 0.613 ms
+Execution Time: 0.622 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 10 (executed in a rolled-back savepoint)
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.vertical_id = 2 AND i.id = ANY('{968724,967079,965154,963753,952285,948038,…}' /* 1281 elements, abbreviated here only */::bigint[]);
+
+Index Scan using intents_vehicles_pkey on intents_vehicles i  (cost=0.42..2029.98 rows=1281 width=412) (actual time=0.149..5.581 rows=1281 loops=1)
+  Index Cond: ((vertical_id = '2'::smallint) AND (id = ANY ('{968724,967079,965154,963753,952285,948038,946658,939567,937824,933730,932877,914726,908478,901922,894117,892465,875403,870717,854371,827507,825992,822564,817384,798839,783892,783755,765069,763170,739366,722684,720126,709130,683574,682066,676424,673539,670252,664247,660675,656525,649158,639474,575272,574030,560960,552177,539190,495286,479393,475980,468507,460981,457609,446210,419300,415378,405994,372637,371825,998241,999532,998043,997687,996360,995615,996758,995952,996535,994323,995543,993783,995089,994033,993351,991267,990853,991198,991213,990526,989454,988719,988332,989719,987733,987584,988265,987553,986771,985339,985917,983639,983788,983235,984006,981809,982117,981378,981384,980933,979960,978573,977371,977201,977321,976466,975376,974905,973940,974119,972739,972265,972305,972034,972027,969665,970121,969807,968010,967804,966662,967609,966291,965689,966490,965384,965825,964447,964548,963967,962622,962025,962176,962273,960969,961036,960412,959929,959352,957622,958453,957707,957469,957672,956251,956210,955203,953199,954088,952443,952370,951505,951292,950016,950374,949923,949318,949257,949589,949469,946434,946235,945650,945258,945135,943676,943927,941708,940873,940905,939014,936328,936132,936001,935207,935553,934871,934932,934576,933132,931577,930089,929115,929106,927059,925700,925869,925109,925288,924735,924785,923605,923898,923959,923808,923123,921224,921233,921144,919919,920020,920088,919393,918857,919062,917596,916182,915600,916093,915335,915799,915602,914869,914397,913855,913708,913903,913408,913575,913325,912552,911481,910926,911018,910589,909400,909919,909390,908169,907353,907029,907050,906729,906397,906731,906231,905672,903603,903202,901266,899922,899948,899752,899235,898352,897785,897387,897303,897075,895492,894749,894763,893295,893402,892641,892135,891651,889098,887478,886948,886146,886042,885318,884873,884260,881952,882218,881623,881492,881209,880621,880376,879272,879134,878687,875033,873739,873152,872883,872538,871957,870877,871351,870165,869510,868913,868926,868183,867435,865415,864042,864049,862993,861681,860969,860618,860199,860142,859633,858357,858104,857553,856780,856335,856172,855682,854079,853338,853153,850858,850632,850100,848582,848940,846995,846855,846471,846022,845508,845519,845698,845323,844892,844678,844611,845027,844312,844272,844053,843540,842068,841756,841087,840608,840019,839594,839343,839131,838399,838078,837902,836294,835738,835485,834672,832884,831831,831988,830608,830164,830246,830336,829517,829324,828958,827959,827936,827538,826994,826989,826505,825491,825005,823786,823544,822523,821417,821479,820564,819886,818977,818365,816532,815633,816013,815688,813065,812721,812733,812267,811837,810998,810462,810210,810139,809064,809366,807686,807550,806598,806270,806190,805993,805526,805485,805502,804624,803917,803250,803119,802736,801901,801326,801118,799024,796899,795619,795480,795380,795272,794433,793931,793764,793462,791654,791435,791062,789828,789289,789217,788903,788649,788155,788426,787861,787876,787585,786887,785597,784300,784102,782821,781151,779494,779345,778134,776891,776334,774058,773014,772860,772179,772326,771639,771509,771541,771183,770075,770071,769304,768921,768555,768049,765870,764791,764453,764050,763727,762860,761390,760588,760768,759314,759097,758457,758717,757797,756831,756631,756022,754878,754796,753989,753439,752058,751516,751442,751656,750368,750043,749957,749443,749152,748278,747758,747508,747047,744177,743658,742999,741181,740100,739408,739161,738678,738676,738600,738146,736896,736952,732448,732321,731689,730957,731002,729651,729434,729549,729196,728867,727767,727510,727225,725717,724404,724383,723891,723636,723472,723343,722032,721525,720543,720334,719877,719941,719441,718786,718865,718598,718528,717615,716853,715959,715496,715278,714762,713116,711977,710454,710154,708981,709083,708132,708167,707848,707449,706811,706172,705968,705026,704250,703222,702227,701906,701133,700708,700545,699130,698020,697561,695511,695285,694208,693866,692660,692453,691284,689438,689417,688328,688078,686303,685316,685461,685131,684985,683686,683886,683037,682034,681687,681288,681198,678937,678943,678630,678145,677917,677642,675335,674604,674345,672929,671707,671546,670849,670119,669929,669639,668183,668007,667386,665574,665749,665354,665225,664372,664268,663560,663530,663309,660979,660299,659728,659573,659379,658624,656878,656735,656255,655862,655569,655427,655071,653519,653071,652831,652201,651737,650488,649415,648041,647909,646779,646889,646085,645985,645210,644810,644498,642876,642096,641958,641806,641771,640926,640168,639937,639583,638892,638718,638087,637238,637126,636075,635240,635094,634773,634361,633833,633755,633586,633328,633244,632874,632226,632001,632175,632059,631888,631327,631082,631023,630642,629164,627947,627661,626656,626412,625878,625690,625750,625336,624652,623834,623770,623456,623245,622877,621626,620851,619760,619212,619174,618564,617286,616395,615043,614866,614759,614415,614176,614099,612401,612382,612066,611914,611804,610551,610105,609606,609010,608678,608277,607619,603436,603382,603057,602849,602538,601589,600669,599646,599559,599264,599102,599000,598819,598658,597993,597876,597608,596772,596061,595959,595013,594571,594524,594497,593669,590413,590465,588773,587915,584061,581863,581607,581173,580822,580457,578969,574320,574181,573319,572987,571323,568727,567390,567367,566882,566714,565635,564844,564493,563629,562766,561881,561738,559298,559403,559220,558363,557980,557826,556730,556387,555486,554234,554146,553411,552500,551674,551345,551173,550503,550501,549870,549126,548526,548467,548129,548317,547957,548001,548144,547750,545407,544815,543451,542922,542269,541500,541340,541109,540465,540172,540088,539718,538950,536798,536181,535902,535273,535477,533957,533456,531440,530780,529966,530054,527766,527751,527762,527018,527110,526463,526386,525689,525654,525275,523990,523632,522384,522211,521628,521427,520644,518864,517969,517082,517073,516551,516557,514967,514474,514490,514187,514165,513793,513566,513568,513359,512899,512888,512628,510661,510461,508828,507520,506928,506816,506448,506521,506203,505362,505138,504558,503994,503767,503780,502630,502549,502090,501670,499832,498485,498326,497345,497008,496389,496266,495968,494867,494680,494454,493514,493150,493230,492657,492798,492629,492092,491614,490914,490879,490875,490793,490606,490419,490151,489557,488808,488136,487476,487498,487081,486842,486914,483494,483310,482178,480160,479883,479721,479442,479428,478874,478443,477084,476404,475960,475363,475264,474525,474401,474103,473335,470996,470585,470170,469634,469104,467837,467526,467086,466971,466741,466456,465271,464500,463167,462712,461993,460890,459796,457896,457537,457471,457068,455051,454822,454722,454475,454472,454224,452265,451129,449319,448481,447897,447182,446517,446403,445570,445294,444802,444681,444412,444601,444162,443305,443200,443119,441258,440792,440344,440067,438876,438390,437658,436475,435835,435706,430938,430575,428702,428525,428558,428198,427628,427369,426870,426976,425892,425971,425754,425376,425259,424924,424791,422680,422507,422180,418464,418357,418080,417321,416525,414422,412496,412039,411153,409734,409350,409361,407890,407632,407636,406133,404724,403669,402768,402132,401966,401859,401364,397337,396974,396749,396263,396107,396183,396043,395636,395291,395046,394928,394147,393243,392877,391819,390287,389256,388325,387626,387225,387192,385552,385613,385115,385093,384922,383725,382533,382240,381568,381146,380637,380310,379321,379119,379004,378930,378587,376673,376516,375787,374064,373922,373581,373346,373047,373170,372426,372346,372163,371688,370685,370375,997494,998342,995961,999040,994645,994434,992965,990762,991389,990075,989911,991177,990644,989746,988769,987919,988086,985451,985018,985797,983675,981502,981225,980207,980159,980539,979094,979670,978340,976894,975710,975693,975716,975306,974369,973362,971370,968593,967492,965345,965495,963518,962828,959699,959399,953948,952377,949533,947715,947441,947308,944512,943872,943308,943811,940188,939289,938788,938305,938142,938426,937740,935692,934809,934483,933003,932370,932781,932134,931691,931194,931207,926082,924023,923513,922944,922717,921854,921866,916113,915219,915303,915022,914407,914447,913465,913009,911644,910925,910143,909427,908733,907535,906544,905222,905554,904253,904593,902763,900855,900467,899595,898850,899081,896491,896225,895724,895074,895341,892274,892011,891736,886338,885736,885463,885141,884951,884435,883527,881714,880439,877179,875808,875956,875759,875195,873690,873139,869067,868786,867188,866604,865012,862650,860869,858083,855974,852663,850277,849431,848223,846487,846359,844248,841472,841376,841073,840404,840456,840331,839684,839840,838859,837463,837400,836426,836155,834158,833525,832090,831109,830693,830109,828243,826757,826518,826658,826233,825965,823790,822338,822616,822107,821901,820990,818545,817684,817061,816741,816546,816011,815167,814194,813884,810999,810538,810552,808485,808771,808434,808359,807818,807749,807361,801506,800997,799682,798437,797229,797070,543854,643368}'::bigint[])))
+  Buffers: shared hit=5016
+Planning:
+  Buffers: shared hit=4
+Planning Time: 0.747 ms
+Execution Time: 5.686 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 11 (executed in a rolled-back savepoint)
+UPDATE matches m SET state = 'invalidated', invalid_reason_ar = t.reason, a_version = t.av, b_version = t.bv, eval_seq = '291498',
+  updated_at = CASE WHEN m.state = 'invalidated' AND m.invalid_reason_ar IS NOT DISTINCT FROM t.reason THEN m.updated_at ELSE now() END
+  FROM unnest('{793877,793877}'::bigint[], '{543854,643368}'::bigint[], '{1,1}'::int[], '{1,2}'::int[], '{في دير الزور — خارج سراقب أو غازي عنتاب,في حلب — خارج سراقب أو غازي عنتاب}'::text[]) AS t(a, b, av, bv, reason)
+  WHERE m.vertical_id = 2 AND m.a_intent_id = t.a AND m.b_intent_id = t.b
+  AND m.eval_seq < '291498' AND m.a_version <= t.av AND m.b_version <= t.bv
+  RETURNING m.a_intent_id, m.b_intent_id, m.a_user_id, m.b_user_id;
+
+Update on matches m  (cost=0.43..5.36 rows=1 width=178) (actual time=0.854..0.928 rows=2 loops=1)
+  Update on matches_vehicles m_1
+  Buffers: shared hit=95 read=26 dirtied=16 written=1
+  ->  Nested Loop  (cost=0.43..5.36 rows=1 width=178) (actual time=0.285..0.298 rows=2 loops=1)
+        Buffers: shared hit=5 read=3
+        ->  Function Scan on t  (cost=0.01..0.03 rows=2 width=136) (actual time=0.249..0.252 rows=2 loops=1)
+        ->  Index Scan using matches_vehicles_vertical_id_a_intent_id_b_intent_id_key on matches_vehicles m_1  (cost=0.42..2.65 rows=1 width=76) (actual time=0.018..0.018 rows=1 loops=2)
+              Index Cond: ((vertical_id = '2'::smallint) AND (a_intent_id = t.a) AND (b_intent_id = t.b))
+              Filter: ((eval_seq < '291498'::bigint) AND (a_version <= t.av) AND (b_version <= t.bv))
+              Buffers: shared hit=5 read=3
+Planning:
+  Buffers: shared hit=60 read=1 dirtied=1
+Planning Time: 0.442 ms
+Execution Time: 1.283 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 12 (executed in a rolled-back savepoint)
+INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, reasons, missing, a_version, b_version, eval_seq)
+  SELECT 2, t.kind, t.a, t.b, t.au, t.bu, t.state, t.score, t.reasons::jsonb, t.missing::jsonb, t.av, t.bv, '291498'
+  FROM unnest('{exchange,exchange,exchange,exchange,exchange,exchange,…}' /* 1207 elements, abbreviated here only */::text[], '{793877,793877,793877,793877,793877,793877,…}' /* 1207 elements, abbreviated here only */::bigint[], '{370375,370685,371688,371825,372163,372346,…}' /* 1207 elements, abbreviated here only */::bigint[], '{116336,116336,116336,116336,116336,116336,…}' /* 1207 elements, abbreviated here only */::bigint[], '{2205,84962,7459,64723,35474,108215,…}' /* 1207 elements, abbreviated here only */::bigint[], '{possible,possible,possible,possible,possible,confirmed,…}' /* 1207 elements, abbreviated here only */::text[], '{2504,2504,2504,3504,2504,7299,…}' /* 1207 elements, abbreviated here only */::int[], '{[{"code":"place_in_scope","polarity":"plus","text":"في غازي عنتاب كما طلبت","strength":"required"},{"code":"currency_mismatch","polarity":"unknown","text":"السعر بعملة مختلفة (15$ باليوم) — لا نقارن عملات مختلفة","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2023 (كما تفضّل)","strength":"preferred"},{"code":"distance","polarity":"info","text":"على بعد حوالي 143 كم"}],[{"code":"place_in_scope","polarity":"plus","text":"في غازي عنتاب كما طلبت","strength":"required"},{"code":"currency_mismatch","polarity":"unknown","text":"السعر بعملة مختلفة (320$ بالشهر) — لا نقارن عملات مختلفة","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2023 (كما تفضّل)","strength":"preferred"},{"code":"distance","polarity":"info","text":"على بعد حوالي 143 كم"}],[{"code":"place_in_scope","polarity":"plus","text":"في غازي عنتاب كما طلبت","strength":"required"},{"code":"price_unknown","polarity":"unknown","text":"السعر غير معروف — يحتاج تأكيد","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2024 (كما تفضّل)","strength":"preferred"},{"code":"distance","polarity":"info","text":"على بعد حوالي 143 كم"}],[{"code":"place_in_scope","polarity":"plus","text":"في سراقب كما طلبت","strength":"required"},{"code":"currency_mismatch","polarity":"unknown","text":"السعر بعملة مختلفة (310$ بالشهر) — لا نقارن عملات مختلفة","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2018 (كما تفضّل)","strength":"preferred"}],[{"code":"place_in_scope","polarity":"plus","text":"في غازي عنتاب كما طلبت","strength":"required"},{"code":"currency_mismatch","polarity":"unknown","text":"السعر بعملة مختلفة (15$ باليوم) — لا نقارن عملات مختلفة","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2021 (كما تفضّل)","strength":"preferred"},{"code":"distance","polarity":"info","text":"على بعد حوالي 143 كم"}],[{"code":"place_in_scope","polarity":"plus","text":"في غازي عنتاب كما طلبت","strength":"required"},{"code":"price_within_max","polarity":"plus","text":"السعر 625 ل.ت باليوم ضمن حدك (1,530 ل.ت)","strength":"required"},{"code":"pref_satisfied","polarity":"plus","text":"سنة الصنع: 2016 (كما تفضّل)","strength":"preferred"},{"code":"distance","polarity":"info","text":"على بعد حوالي 143 كم"}],…}' /* 1207 elements, abbreviated here only */::text[], '{["price.currency"],["price.currency"],["price"],["price.currency"],["price.currency"],[],…}' /* 1207 elements, abbreviated here only */::text[], '{1,1,1,1,1,1,…}' /* 1207 elements, abbreviated here only */::int[], '{1,1,1,1,2,1,…}' /* 1207 elements, abbreviated here only */::int[])
+  WITH ORDINALITY AS t(kind, a, b, au, bu, state, score, reasons, missing, av, bv, ord)
+  ORDER BY t.ord
+  ON CONFLICT (vertical_id, a_intent_id, b_intent_id) DO UPDATE SET
+  state = EXCLUDED.state, score = EXCLUDED.score, reasons = EXCLUDED.reasons, missing = EXCLUDED.missing,
+  a_version = EXCLUDED.a_version, b_version = EXCLUDED.b_version, eval_seq = EXCLUDED.eval_seq, invalid_reason_ar = NULL,
+  updated_at = CASE WHEN matches.state IS DISTINCT FROM EXCLUDED.state OR matches.score IS DISTINCT FROM EXCLUDED.score
+  OR matches.reasons IS DISTINCT FROM EXCLUDED.reasons THEN now() ELSE matches.updated_at END
+  WHERE matches.eval_seq < EXCLUDED.eval_seq AND matches.a_version <= EXCLUDED.a_version AND matches.b_version <= EXCLUDED.b_version
+  RETURNING id, public_id, a_intent_id, b_intent_id, state;
+
+Insert on matches  (cost=0.03..48.31 rows=1207 width=254) (actual time=1.836..51.311 rows=1207 loops=1)
+  Conflict Resolution: UPDATE
+  Conflict Arbiter Indexes: matches_vertical_id_a_intent_id_b_intent_id_key
+  Conflict Filter: ((matches.eval_seq < excluded.eval_seq) AND (matches.a_version <= excluded.a_version) AND (matches.b_version <= excluded.b_version))
+  Tuples Inserted: 1207
+  Conflicting Tuples: 0
+  Buffers: shared hit=30419 read=1388 dirtied=1574 written=170
+  ->  Subquery Scan on "*SELECT*"  (cost=0.03..48.31 rows=1207 width=254) (actual time=1.602..11.445 rows=1207 loops=1)
+        Buffers: shared hit=1217 read=1 dirtied=1
+        ->  Function Scan on t  (cost=0.03..24.17 rows=1207 width=190) (actual time=1.481..6.711 rows=1207 loops=1)
+Planning:
+  Buffers: shared hit=8 read=1
+Planning Time: 0.219 ms
+Trigger for constraint matches_a_user_id_fkey on matches_vehicles: time=12.392 calls=1207
+Trigger for constraint matches_b_user_id_fkey on matches_vehicles: time=21.574 calls=1207
+Trigger for constraint matches_vertical_id_a_intent_id_fkey on matches_vehicles: time=224.344 calls=1207
+Trigger for constraint matches_vertical_id_b_intent_id_fkey on matches_vehicles: time=217.159 calls=1207
+Execution Time: 527.647 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 13 (executed in a rolled-back savepoint)
+INSERT INTO match_refs (public_id, vertical_id, match_id) SELECT t.p, 2, t.id FROM unnest('{e3cd8656-0768-4249-a8af-3fd2a4299354,a083cc94-77c4-4b5f-b58b-e309134431a3,5c0fc884-fb9f-4b92-bd10-7d0c32a00a31,489207cd-8d4f-4b22-a845-99c930c2f9f1,1d182046-4303-45f9-9d9c-cbf8d2e54af3,96389f45-042a-48e4-aff7-af5a6966a4e1,…}' /* 1207 elements, abbreviated here only */::uuid[], '{292705,292706,292707,292708,292709,292710,…}' /* 1207 elements, abbreviated here only */::bigint[]) AS t(p, id)
+  ON CONFLICT DO NOTHING;
+
+Insert on match_refs  (cost=0.01..12.08 rows=0 width=0) (actual time=15.301..15.302 rows=0 loops=1)
+  Conflict Resolution: NOTHING
+  Tuples Inserted: 1207
+  Conflicting Tuples: 0
+  Buffers: shared hit=16190 read=813 dirtied=830 written=21
+  ->  Function Scan on t  (cost=0.01..12.08 rows=1207 width=26) (actual time=0.157..0.379 rows=1207 loops=1)
+Planning Time: 0.032 ms
+Trigger for constraint match_refs_vertical_id_match_id_fkey: time=114.205 calls=1207
+Execution Time: 129.714 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 14 (executed in a rolled-back savepoint)
+INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key)
+  SELECT t.rcp, t.knd, t.ttl, t.bdy, t.pl::jsonb, t.dk FROM unnest('{116336,2205,116336,84962,116336,7459,…}' /* 2414 elements, abbreviated here only */::bigint[], '{match_possible,match_possible,match_possible,match_possible,match_possible,match_possible,…}' /* 2414 elements, abbreviated here only */::text[], '{مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,…}' /* 2414 elements, abbreviated here only */::text[], '{«معروض: سيارة — غازي عنتاب» يناسب «مطلوب: سيارة — سراقب»,«مطلوب: سيارة — سراقب» يناسب «معروض: سيارة — غازي عنتاب»,«معروض: سيارة — غازي عنتاب» يناسب «مطلوب: سيارة — سراقب»,«مطلوب: سيارة — سراقب» يناسب «معروض: سيارة — غازي عنتاب»,«معروض: سيارة — غازي عنتاب» يناسب «مطلوب: سيارة — سراقب»,«مطلوب: سيارة — سراقب» يناسب «معروض: سيارة — غازي عنتاب»,…}' /* 2414 elements, abbreviated here only */::text[], '{{"matchId":"e3cd8656-0768-4249-a8af-3fd2a4299354","verticalId":2},{"matchId":"e3cd8656-0768-4249-a8af-3fd2a4299354","verticalId":2},{"matchId":"a083cc94-77c4-4b5f-b58b-e309134431a3","verticalId":2},{"matchId":"a083cc94-77c4-4b5f-b58b-e309134431a3","verticalId":2},{"matchId":"5c0fc884-fb9f-4b92-bd10-7d0c32a00a31","verticalId":2},{"matchId":"5c0fc884-fb9f-4b92-bd10-7d0c32a00a31","verticalId":2},…}' /* 2414 elements, abbreviated here only */::text[], '{match:2:793877:370375,match:2:793877:370375,match:2:793877:370685,match:2:793877:370685,match:2:793877:371688,match:2:793877:371688,…}' /* 2414 elements, abbreviated here only */::text[]) AS t(rcp, knd, ttl, bdy, pl, dk)
+  ON CONFLICT (recipient_id, dedupe_key) DO NOTHING RETURNING recipient_id;
+
+Insert on notifications  (cost=0.02..54.33 rows=2414 width=208) (actual time=1.314..110.417 rows=2414 loops=1)
+  Conflict Resolution: NOTHING
+  Conflict Arbiter Indexes: notifications_recipient_id_dedupe_key_key
+  Tuples Inserted: 2414
+  Conflicting Tuples: 0
+  Buffers: shared hit=41615 read=4732 dirtied=4864 written=180
+  ->  Function Scan on t  (cost=0.02..54.33 rows=2414 width=208) (actual time=1.090..15.023 rows=2414 loops=1)
+        Buffers: shared hit=2421 read=1 dirtied=1
+Planning:
+  Buffers: shared hit=78
+Planning Time: 0.377 ms
+Trigger for constraint notifications_recipient_id_fkey: time=20.729 calls=2414
+Execution Time: 131.892 ms
+
+-- RANGE-direction intent 2:793877 — matchIntentTx statement 16 (executed in a rolled-back savepoint)
+INSERT INTO match_runs (vertical_id, intent_id, intent_version, eval_seq, candidates, confirmed, possible, excluded, exclusions, truncated, duration_ms, trigger)
+  VALUES (2,'793877',1,'291498',1281,103,1104,1074,'[{"code":"place_out_of_scope","count":1002,"textAr":"خارج المكان الذي اشترطته"},{"code":"price_above_max","count":72,"textAr":"أعلى من حد السعر"}]','true',1669,'job');
+
+Insert on match_runs  (cost=0.00..0.01 rows=0 width=0) (actual time=0.397..0.397 rows=0 loops=1)
+  Buffers: shared hit=64 read=4 dirtied=8 written=4
+  ->  Result  (cost=0.00..0.01 rows=1 width=123) (actual time=0.064..0.065 rows=1 loops=1)
+        Buffers: shared hit=8 read=1 dirtied=1
+Planning Time: 0.022 ms
+Trigger for constraint match_runs_vertical_id_intent_id_fkey: time=0.391 calls=1
+Execution Time: 0.823 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 3 (executed in a rolled-back savepoint)
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.vertical_id = 1 AND i.id = '875807' FOR SHARE;
+
+LockRows  (cost=0.42..2.66 rows=1 width=420) (actual time=0.024..0.025 rows=1 loops=1)
+  Buffers: shared hit=6 dirtied=1
+  ->  Index Scan using intents_real_estate_pkey on intents_real_estate i  (cost=0.42..2.65 rows=1 width=420) (actual time=0.016..0.016 rows=1 loops=1)
+        Index Cond: ((vertical_id = '1'::smallint) AND (id = '875807'::bigint))
+        Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=92
+Planning Time: 0.358 ms
+Execution Time: 0.046 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 4 (executed in a rolled-back savepoint)
+SELECT a_intent_id, b_intent_id, state FROM matches WHERE vertical_id = 1 AND (a_intent_id = '875807' OR b_intent_id = '875807');
+
+Bitmap Heap Scan on matches_real_estate matches  (cost=3.09..10.89 rows=7 width=25) (actual time=0.039..0.040 rows=0 loops=1)
+  Recheck Cond: ((a_intent_id = '875807'::bigint) OR (b_intent_id = '875807'::bigint))
+  Filter: (vertical_id = '1'::smallint)
+  Buffers: shared read=6
+  ->  BitmapOr  (cost=3.09..3.09 rows=7 width=0) (actual time=0.038..0.038 rows=0 loops=1)
+        Buffers: shared read=6
+        ->  Bitmap Index Scan on matches_real_estate_a_intent_id_state_score_id_idx  (cost=0.00..1.56 rows=5 width=0) (actual time=0.022..0.022 rows=0 loops=1)
+              Index Cond: (a_intent_id = '875807'::bigint)
+              Buffers: shared read=3
+        ->  Bitmap Index Scan on matches_real_estate_b_intent_id_state_score_id_idx  (cost=0.00..1.53 rows=2 width=0) (actual time=0.015..0.015 rows=0 loops=1)
+              Index Cond: (b_intent_id = '875807'::bigint)
+              Buffers: shared read=3
+Planning:
+  Buffers: shared hit=3
+Planning Time: 0.148 ms
+Execution Time: 0.052 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 5 (executed in a rolled-back savepoint)
+SELECT DISTINCT s.intent_id AS id FROM intent_scopes s
+  WHERE s.vertical_id = 1 AND s.realm = 'real' AND s.side = 'seek' AND s.deal_type_id = 1 AND s.category_id = ANY('{105,100}') AND s.place_id = ANY('{1208,12,10,1}')
+  LIMIT 5000;
+
+Limit  (cost=28.26..33.19 rows=493 width=8) (actual time=0.418..0.515 rows=744 loops=1)
+  Buffers: shared hit=27
+  ->  HashAggregate  (cost=28.26..33.19 rows=493 width=8) (actual time=0.417..0.468 rows=744 loops=1)
+        Group Key: intent_id
+        Batches: 1  Memory Usage: 73kB
+        Buffers: shared hit=27
+        ->  Index Only Scan using intent_scopes_probe_idx on intent_scopes s  (cost=0.42..27.03 rows=493 width=8) (actual time=0.051..0.304 rows=745 loops=1)
+              Index Cond: ((vertical_id = '1'::smallint) AND (realm = 'real'::text) AND (side = 'seek'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{105,100}'::integer[])) AND (place_id = ANY ('{1208,12,10,1}'::integer[])))
+              Heap Fetches: 0
+              Buffers: shared hit=27
+Planning Time: 0.099 ms
+Execution Time: 0.567 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 6 (executed in a rolled-back savepoint)
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.vertical_id = 1 AND i.id = ANY('{849550,943271,917609,834551,903339,899650,…}' /* 744 elements, abbreviated here only */::bigint[]);
+
+Index Scan using intents_real_estate_pkey on intents_real_estate i  (cost=0.42..1313.27 rows=744 width=410) (actual time=0.113..3.371 rows=744 loops=1)
+  Index Cond: ((vertical_id = '1'::smallint) AND (id = ANY ('{849550,943271,917609,834551,903339,899650,961798,925015,662106,716047,994418,698547,942866,772923,712694,874728,769122,672035,888072,646715,792342,970382,773676,694996,712507,685109,712038,634622,845143,857351,617581,829637,950039,680557,717328,646062,702639,689342,755683,859063,938982,779258,675648,844039,617579,720475,839005,788387,979982,786117,990632,940263,991332,648733,623778,763399,678631,695914,727626,609278,970052,647509,801688,822623,868812,897381,857012,752146,965099,980295,867761,800413,694935,689760,744090,859770,683522,752812,709013,870290,740302,849359,816692,890098,941388,707395,827242,674880,661471,751011,995759,938204,680914,629759,811251,879456,823886,969910,749006,854162,982980,810026,840257,888665,622915,962245,844986,717584,785445,957969,714925,756779,855275,820202,692874,640111,939215,626293,722075,759040,993711,960294,633994,882047,610667,906360,737261,626057,624183,782121,688037,610260,822620,668430,862385,909466,986055,890738,851580,721771,679472,608553,627115,731666,719370,968734,994902,689255,765512,806976,615869,843225,687055,624059,715695,611774,824812,882870,659148,897883,897253,755543,670800,778223,793859,875856,632131,786589,777405,624891,807975,815859,726267,908286,902857,730889,824591,959500,950326,878760,866210,993684,848474,669431,615333,837536,920641,785178,625981,806127,732266,740396,679202,819037,977909,962220,631417,845583,887560,630311,681548,765882,872802,893997,973778,644889,890780,837321,915621,968528,730144,651464,870854,971178,963630,861820,912812,726281,957750,607243,858494,605721,609699,952898,958205,771062,900540,669755,642182,705221,781794,825639,963866,662380,609655,805331,815824,605950,603826,941742,716424,816394,654037,772254,984655,642392,946889,868843,667247,647890,916044,823855,723409,864979,737907,884855,684555,765296,895030,625796,669419,915007,726455,893793,979360,695529,821652,818883,894123,755679,609830,751756,915771,814814,860971,649112,761605,982593,682480,646908,663234,929658,604368,950550,824964,831600,972238,789878,909783,665967,648339,754695,802839,640459,995871,930485,624203,916775,797086,994243,811834,968433,634286,864786,610163,760290,992632,713983,928398,848775,963137,987671,644712,959335,736788,855357,903141,697079,785118,996771,991846,689749,787346,612878,726846,619144,888445,796175,712794,624113,665585,847622,748708,974956,686785,686540,773053,687000,637951,896887,720893,789212,763218,663536,830042,902993,689905,894291,954317,987204,972972,679694,803516,612550,672424,732061,831370,630632,771351,641405,712553,927171,748007,784773,917029,790048,998884,822450,627745,797963,753768,701422,858071,880834,806712,967905,983156,765118,666617,846606,700156,950633,750770,697928,917358,697389,885632,909430,829686,659493,820454,841506,689040,953041,664035,744983,913155,609377,625605,950309,829768,747888,622876,805553,892084,687405,925182,943135,897033,615731,893250,957591,771984,724461,831914,738739,832244,850289,616417,779204,929622,633360,857902,645457,992946,879357,705709,839145,728190,643941,706415,977697,625460,811635,905353,884913,603887,971665,861018,739952,709018,673449,948455,742717,840219,917352,865308,929055,939364,903171,823607,836944,840277,624814,735232,852143,632225,713426,976690,781294,910978,796246,917594,713294,710933,731957,978120,880001,748832,845246,737472,894476,617094,941491,771959,772220,865551,687691,721597,930644,633055,757900,616764,882681,827539,792998,857706,888189,768118,827941,847095,872258,907965,618013,853268,823633,761257,769758,662072,682087,624728,774320,672183,930724,899198,770683,842046,752190,795749,981847,937805,783039,989093,868619,818402,645703,874258,682592,709513,970544,713332,873476,747977,899142,819892,962026,822663,903417,614457,925676,858342,945550,874220,635238,871908,868342,866509,985190,757186,850032,891363,858170,833160,668571,796109,693651,852012,966231,870215,855876,680294,904121,989989,606361,698010,664119,651677,774571,883800,612666,951195,714818,717428,955620,828711,930887,939661,848349,921349,990656,661436,680412,703244,767235,686062,861770,762882,809920,848425,824759,646853,982410,921896,861236,757562,868458,806879,670764,682208,747723,714085,640267,972536,863327,727604,972610,732413,624276,977961,964234,889164,815810,616197,623896,855118,996675,684737,779013,813549,716575,929403,831488,851729,775001,965502,975317,800256,628845,629190,637226,965289,636355,634676,786349,759292,713186,603541,681428,723307,776562,664753,838893,612930,728471,607921,783274,944113,937617,671875,870632,917454,671021,748276,731086,763412,930002,882153,806797,984745,909770,733683,757366,648267,847297,607040,797399,767551,881154,991496,667413,607104,705127,773958,858759,982317,881174,983710,772277,725609,787172,729339,786664,772996,792113,675825,630806,637402,670825,899340,612180,841934,832646,618481,909075,749139,719578,768428,846379,968119,937455,720012,871144,823207,911323,680453,921203,843320,615735,894870,830544,869825,649981,721122,992280,892327,631607,735979,965431,631358,851939,742857,758462,997758,829797,746300,626786,831650,673436,649432,880714,749696,660679,992769,971522,757090,735165,978897,936088,742731,990238,977551,626245,997980,828694,708341,754193,702353,623348,794192,605279,944657,967472,864031,836180}'::bigint[])))
+  Buffers: shared hit=2935
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.567 ms
+Execution Time: 3.425 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 7 (executed in a rolled-back savepoint)
+INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, reasons, missing, a_version, b_version, eval_seq)
+  SELECT 1, t.kind, t.a, t.b, t.au, t.bu, t.state, t.score, t.reasons::jsonb, t.missing::jsonb, t.av, t.bv, '291499'
+  FROM unnest('{exchange,exchange,exchange,exchange,exchange,exchange,…}' /* 743 elements, abbreviated here only */::text[], '{603541,603826,603887,604368,605279,605721,…}' /* 743 elements, abbreviated here only */::bigint[], '{875807,875807,875807,875807,875807,875807,…}' /* 743 elements, abbreviated here only */::bigint[], '{136180,138427,87527,140489,85043,64340,…}' /* 743 elements, abbreviated here only */::bigint[], '{48,48,48,48,48,48,…}' /* 743 elements, abbreviated here only */::bigint[], '{possible,confirmed,possible,possible,possible,possible,…}' /* 743 elements, abbreviated here only */::text[], '{1002,7206,1906,1610,2706,1522,…}' /* 743 elements, abbreviated here only */::int[], '{[{"code":"place_pref_unsatisfied","polarity":"minus","text":"في سلقين (كنت تفضّل كلس)","strength":"preferred"},{"code":"price_unknown","polarity":"unknown","text":"السعر غير معروف — يحتاج تأكيد","strength":"required"},{"code":"attr_unknown","polarity":"unknown","text":"غير معروف: عدد الغرف ≥ 1 — يحتاج تأكيد","strength":"required"},{"code":"distance","polarity":"info","text":"على بعد حوالي 88 كم"}],[],[{"code":"place_pref_unsatisfied","polarity":"minus","text":"في سلقين (كنت تفضّل سرمدا)","strength":"preferred"},{"code":"attr_unknown","polarity":"unknown","text":"غير معروف: عدد الغرف ≥ 1 — يحتاج تأكيد","strength":"required"},{"code":"distance","polarity":"info","text":"على بعد حوالي 25 كم"}],[{"code":"place_pref_unsatisfied","polarity":"minus","text":"في سلقين (كنت تفضّل حلب)","strength":"preferred"},{"code":"price_unknown","polarity":"unknown","text":"السعر غير مذكور","strength":"preferred"},{"code":"attr_unknown","polarity":"unknown","text":"غير معروف: عدد الغرف ≥ 3 — يحتاج تأكيد","strength":"required"},{"code":"distance","polarity":"info","text":"على بعد حوالي 62 كم"}],[{"code":"place_in_scope","polarity":"plus","text":"في سلقين كما طلبت","strength":"required"},{"code":"price_unknown","polarity":"unknown","text":"السعر غير معروف — يحتاج تأكيد","strength":"required"}],[{"code":"place_pref_unsatisfied","polarity":"minus","text":"في سلقين (كنت تفضّل إعزاز)","strength":"preferred"},{"code":"price_unknown","polarity":"unknown","text":"السعر غير معروف — يحتاج تأكيد","strength":"required"},{"code":"distance","polarity":"info","text":"على بعد حوالي 73 كم"}],…}' /* 743 elements, abbreviated here only */::text[], '{["price","attr.rooms"],[],["attr.rooms"],["attr.rooms"],["price"],["price"],…}' /* 743 elements, abbreviated here only */::text[], '{1,1,1,1,1,1,…}' /* 743 elements, abbreviated here only */::int[], '{1,1,1,1,1,1,…}' /* 743 elements, abbreviated here only */::int[])
+  WITH ORDINALITY AS t(kind, a, b, au, bu, state, score, reasons, missing, av, bv, ord)
+  ORDER BY t.ord
+  ON CONFLICT (vertical_id, a_intent_id, b_intent_id) DO UPDATE SET
+  state = EXCLUDED.state, score = EXCLUDED.score, reasons = EXCLUDED.reasons, missing = EXCLUDED.missing,
+  a_version = EXCLUDED.a_version, b_version = EXCLUDED.b_version, eval_seq = EXCLUDED.eval_seq, invalid_reason_ar = NULL,
+  updated_at = CASE WHEN matches.state IS DISTINCT FROM EXCLUDED.state OR matches.score IS DISTINCT FROM EXCLUDED.score
+  OR matches.reasons IS DISTINCT FROM EXCLUDED.reasons THEN now() ELSE matches.updated_at END
+  WHERE matches.eval_seq < EXCLUDED.eval_seq AND matches.a_version <= EXCLUDED.a_version AND matches.b_version <= EXCLUDED.b_version
+  RETURNING id, public_id, a_intent_id, b_intent_id, state;
+
+Insert on matches  (cost=0.03..29.75 rows=743 width=254) (actual time=0.913..27.888 rows=743 loops=1)
+  Conflict Resolution: UPDATE
+  Conflict Arbiter Indexes: matches_vertical_id_a_intent_id_b_intent_id_key
+  Conflict Filter: ((matches.eval_seq < excluded.eval_seq) AND (matches.a_version <= excluded.a_version) AND (matches.b_version <= excluded.b_version))
+  Tuples Inserted: 743
+  Conflicting Tuples: 0
+  Buffers: shared hit=17224 read=1598 dirtied=1653 written=60
+  ->  Subquery Scan on "*SELECT*"  (cost=0.03..29.75 rows=743 width=254) (actual time=0.567..4.617 rows=743 loops=1)
+        Buffers: shared hit=743
+        ->  Function Scan on t  (cost=0.03..14.89 rows=743 width=190) (actual time=0.527..2.896 rows=743 loops=1)
+Planning Time: 0.121 ms
+Trigger for constraint matches_a_user_id_fkey on matches_real_estate: time=14.031 calls=743
+Trigger for constraint matches_b_user_id_fkey on matches_real_estate: time=5.606 calls=743
+Trigger for constraint matches_vertical_id_a_intent_id_fkey on matches_real_estate: time=138.691 calls=743
+Trigger for constraint matches_vertical_id_b_intent_id_fkey on matches_real_estate: time=138.221 calls=743
+Execution Time: 325.040 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 8 (executed in a rolled-back savepoint)
+INSERT INTO match_refs (public_id, vertical_id, match_id) SELECT t.p, 1, t.id FROM unnest('{2f5e7f18-34d3-4371-a407-17e13d30fee2,cb85b219-28ed-4d3c-b34f-5425d18ef121,fb72b469-b1c2-4d37-a544-a8437f0a0df1,10952e2d-11aa-4c62-9675-1b27b7ad4545,4a2da9fc-c889-47c6-8dce-89b6b37f698f,d13e222a-2f54-407e-a132-39a1006e55bd,…}' /* 743 elements, abbreviated here only */::uuid[], '{294655,294656,294657,294658,294659,294660,…}' /* 743 elements, abbreviated here only */::bigint[]) AS t(p, id)
+  ON CONFLICT DO NOTHING;
+
+Insert on match_refs  (cost=0.01..7.43 rows=0 width=0) (actual time=8.050..8.050 rows=0 loops=1)
+  Conflict Resolution: NOTHING
+  Tuples Inserted: 743
+  Conflicting Tuples: 0
+  Buffers: shared hit=10190 read=243 dirtied=256 written=13
+  ->  Function Scan on t  (cost=0.01..7.43 rows=743 width=26) (actual time=0.094..0.208 rows=743 loops=1)
+Planning Time: 0.037 ms
+Trigger for constraint match_refs_vertical_id_match_id_fkey: time=46.369 calls=743
+Execution Time: 54.508 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 9 (executed in a rolled-back savepoint)
+INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key)
+  SELECT t.rcp, t.knd, t.ttl, t.bdy, t.pl::jsonb, t.dk FROM unnest('{136180,48,138427,48,87527,48,…}' /* 1486 elements, abbreviated here only */::bigint[], '{match_possible,match_possible,match_new,match_new,match_possible,match_possible,…}' /* 1486 elements, abbreviated here only */::text[], '{مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,مطابقة جديدة مناسبة,مطابقة جديدة مناسبة,مطابقة محتملة تحتاج تأكيد,مطابقة محتملة تحتاج تأكيد,…}' /* 1486 elements, abbreviated here only */::text[], '{«معروض: أرض — سلقين» يناسب «مطلوب: عقارات — كلس»,«مطلوب: عقارات — كلس» يناسب «معروض: أرض — سلقين»,«معروض: أرض — سلقين» يناسب «مطلوب: أرض — مكان غير محدد»,«مطلوب: أرض — مكان غير محدد» يناسب «معروض: أرض — سلقين»,«معروض: أرض — سلقين» يناسب «مطلوب: عقارات — سرمدا»,«مطلوب: عقارات — سرمدا» يناسب «معروض: أرض — سلقين»,…}' /* 1486 elements, abbreviated here only */::text[], '{{"matchId":"2f5e7f18-34d3-4371-a407-17e13d30fee2","verticalId":1},{"matchId":"2f5e7f18-34d3-4371-a407-17e13d30fee2","verticalId":1},{"matchId":"cb85b219-28ed-4d3c-b34f-5425d18ef121","verticalId":1},{"matchId":"cb85b219-28ed-4d3c-b34f-5425d18ef121","verticalId":1},{"matchId":"fb72b469-b1c2-4d37-a544-a8437f0a0df1","verticalId":1},{"matchId":"fb72b469-b1c2-4d37-a544-a8437f0a0df1","verticalId":1},…}' /* 1486 elements, abbreviated here only */::text[], '{match:1:603541:875807,match:1:603541:875807,match:1:603826:875807,match:1:603826:875807,match:1:603887:875807,match:1:603887:875807,…}' /* 1486 elements, abbreviated here only */::text[]) AS t(rcp, knd, ttl, bdy, pl, dk)
+  ON CONFLICT (recipient_id, dedupe_key) DO NOTHING RETURNING recipient_id;
+
+Insert on notifications  (cost=0.02..33.45 rows=1486 width=208) (actual time=0.811..57.162 rows=1486 loops=1)
+  Conflict Resolution: NOTHING
+  Conflict Arbiter Indexes: notifications_recipient_id_dedupe_key_key
+  Tuples Inserted: 1486
+  Conflicting Tuples: 0
+  Buffers: shared hit=26677 read=1837 dirtied=1950 written=110
+  ->  Function Scan on t  (cost=0.02..33.45 rows=1486 width=208) (actual time=0.692..7.362 rows=1486 loops=1)
+        Buffers: shared hit=1486
+Planning Time: 0.132 ms
+Trigger for constraint notifications_recipient_id_fkey: time=10.746 calls=1486
+Execution Time: 68.308 ms
+
+-- PROBE-direction intent 1:875807 — matchIntentTx statement 11 (executed in a rolled-back savepoint)
+INSERT INTO match_runs (vertical_id, intent_id, intent_version, eval_seq, candidates, confirmed, possible, excluded, exclusions, truncated, duration_ms, trigger)
+  VALUES (1,'875807',1,'291499',744,276,467,1,'[{"code":"place_excluded","count":1,"textAr":"في مكان استثنيته"}]','false',1005,'job');
+
+Insert on match_runs  (cost=0.00..0.01 rows=0 width=0) (actual time=0.104..0.104 rows=0 loops=1)
+  Buffers: shared hit=5
+  ->  Result  (cost=0.00..0.01 rows=1 width=123) (actual time=0.014..0.014 rows=1 loops=1)
+        Buffers: shared hit=1
+Planning Time: 0.035 ms
+Trigger for constraint match_runs_vertical_id_intent_id_fkey: time=0.551 calls=1
+Execution Time: 0.689 ms
+

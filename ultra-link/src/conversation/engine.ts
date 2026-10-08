@@ -57,7 +57,8 @@ export interface TurnInput {
 export interface TurnOutput {
   draft: ConversationDraft;
   parse: RuleParse;
-  next: { kind: 'ask'; question: Question } | { kind: 'ready'; spec: IntentSpec } | { kind: 'unclear'; messageAr: string };
+  /** `awaiting`: after giving up on an essential field, the field the next free-form answer is read against (not counted as asked) */
+  next: { kind: 'ask'; question: Question } | { kind: 'ready'; spec: IntentSpec } | { kind: 'unclear'; messageAr: string; awaiting?: Question };
   appliedJev: string[]; // fields decided by Jev (for transparency)
 }
 
@@ -217,7 +218,42 @@ export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: Turn
   if (!draft.side && !draft.category) {
     return { draft, parse, next: { kind: 'unclear', messageAr: 'ما فهمت الطلب بعد. احكيلي شو بدك أو شو عندك، مثلاً: «بدي شقة للإيجار بإعزاز».' }, appliedJev };
   }
+  // the questions gave up (3 attempts) but an essential field is still unknown: never guess it, never widen — say what is missing
+  const gap = essentialGap(reg, draft);
+  if (gap) return { draft, parse, next: giveUp(reg, draft, gap), appliedJev };
   return { draft, parse, next: { kind: 'ready', spec: buildSpec(reg, draft) }, appliedJev };
+}
+
+type Gap = 'side' | 'category' | 'deal' | 'place';
+/** Fields without which a saved request would be invented or silently widened (PRODUCT §5.3, §6.1, §6.2). */
+export function essentialGap(reg: Registry, d: ConversationDraft): Gap | null {
+  if (!d.category) return 'category';
+  const cat = reg.categoryByCode.get(d.category.value)!;
+  if (!d.side && cat.relation !== 'peer') return 'side';
+  if (!d.deal && cat.deals.length > 1) return 'deal';
+  const side = d.side?.value ?? 'join';
+  if (side !== 'provide' && !d.place?.value.ids.length && !d.resolved.includes('place') && !d.geo && !d.resolved.includes('geo')) return 'place';
+  return null;
+}
+
+function giveUp(reg: Registry, d: ConversationDraft, gap: Gap): { kind: 'unclear'; messageAr: string; awaiting?: Question } {
+  const side = d.side?.value ?? null;
+  const attempt = (d.asked[gap] ?? 0) + 1;
+  const awaiting = (text: string, options?: { value: string; label: string }[]): Question => ({ id: `${gap}:giveup`, field: gap, text, speech: text, options, attempt });
+  if (gap === 'category') {
+    return { kind: 'unclear', messageAr: 'ما قدرت أعرف شو الشي اللي بدك ياه بالضبط. احكيلي الطلب بجملة وحدة، مثلاً: «بدي كهربجي بإعزاز».' };
+  }
+  if (gap === 'side') {
+    const m = 'ما عرفت إذا عم تدوّر على شي ولا عم تعرضه. قول «بدي …» إذا عم تدوّر، أو «عندي …» إذا عم تعرض.';
+    return { kind: 'unclear', messageAr: m, awaiting: awaiting(m, CHIP.side.filter((c) => c.value !== 'join')) };
+  }
+  if (gap === 'deal') {
+    const opts = dealOptions(reg, d.category!.value, side);
+    const m = `ما بحفظ الطلب قبل ما أعرف نوع الصفقة. قول ${opts.map((o) => `«${o.label}»`).join(' أو ')}.`;
+    return { kind: 'unclear', messageAr: m, awaiting: awaiting(m, opts) };
+  }
+  const m = 'ما بحفظ الطلب بدون مكان، حتى ما وسّعه من عندي. قول اسم المدينة أو المنطقة، أو «أي مكان» إذا ما بتفرق معك.';
+  return { kind: 'unclear', messageAr: m, awaiting: awaiting(m, CHIP.place_any) };
 }
 
 // ───────────── next question policy (one at a time) ─────────────

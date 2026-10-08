@@ -71,11 +71,14 @@ export function chipList(chips, { compact = false } = {}) {
 /** Run a handler; if it returns a promise, show a busy state on `btn` until it settles. */
 function runAction(btn, fn, busyLabelAr) {
   if (typeof fn !== 'function') return;
+  if (btn.dataset.busy === 'true') return;
   const result = fn();
   if (result && typeof result.then === 'function') {
     const prev = Array.from(btn.childNodes);
+    // aria-disabled (not `disabled`) keeps keyboard focus on the button while busy, so dialogs can return focus to it
     btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
+    btn.setAttribute('aria-disabled', 'true');
+    btn.dataset.busy = 'true';
     if (busyLabelAr) btn.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), busyLabelAr);
     result.then(
       () => { if (btn.isConnected) restore(); },
@@ -83,7 +86,8 @@ function runAction(btn, fn, busyLabelAr) {
     );
     function restore() {
       btn.removeAttribute('aria-busy');
-      btn.disabled = false;
+      btn.removeAttribute('aria-disabled');
+      delete btn.dataset.busy;
       btn.replaceChildren(...prev);
     }
   }

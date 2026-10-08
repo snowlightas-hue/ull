@@ -589,7 +589,7 @@ export function createJevClient(opts: JevClientOptions): JevClient {
           if (callOpts.signal?.aborted || !isRetryable(lastErr) || attempt >= maxRetries) throw lastErr;
           const delay = lastErr.retryAfterMs ?? backoffDelayMs(attempt + 1, backoffInitialMs, backoffMaxMs, backoffJitter, random);
           if (now() - started + delay >= budgetMs) throw lastErr; // SDK: stop_before_delay(budget)
-          await sleep(delay);
+          await sleepUnlessAborted(delay, callOpts.signal, lastErr);
           attempt++;
         }
       }
@@ -603,6 +603,17 @@ export function createJevClient(opts: JevClientOptions): JevClient {
       safeOutcome({ ok: false, op, latencyMs: Math.round(now() - started), baseUrl, official, error: err });
       throw err;
     }
+  }
+
+  /** The backoff wait ends early when the caller gives up (turn budget), surfacing the last real error. */
+  function sleepUnlessAborted(ms: number, signal: AbortSignal | undefined, err: JevError): Promise<void> {
+    if (!signal) return sleep(ms);
+    if (signal.aborted) return Promise.reject(err);
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => reject(err);
+      signal.addEventListener('abort', onAbort, { once: true });
+      sleep(ms).then(() => { signal.removeEventListener('abort', onAbort); resolve(); }, reject);
+    });
   }
 
   function safeOutcome(o: JevOutcome) {

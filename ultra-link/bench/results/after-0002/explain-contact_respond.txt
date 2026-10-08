@@ -1,0 +1,19 @@
+-- accept a pending contact request (executed inside a rolled-back transaction)
+UPDATE contact_requests c SET status = 'accepted', responded_at = now() FROM match_refs r
+  WHERE c.public_id = '1f83453c-8584-4073-a2ef-b86bc78bde21' AND c.recipient_id = '30' AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
+  RETURNING c.public_id, c.status, c.requester_id, r.public_id AS match_public_id;
+
+Update on contact_requests c  (cost=0.70..5.15 rows=1 width=68) (actual time=0.073..0.075 rows=1 loops=1)
+  Buffers: shared hit=29
+  ->  Nested Loop  (cost=0.70..5.15 rows=1 width=68) (actual time=0.023..0.024 rows=1 loops=1)
+        Buffers: shared hit=9
+        ->  Index Scan using contact_requests_public_id_key on contact_requests c  (cost=0.28..2.50 rows=1 width=16) (actual time=0.013..0.014 rows=1 loops=1)
+              Index Cond: (public_id = '1f83453c-8584-4073-a2ef-b86bc78bde21'::uuid)
+              Filter: ((recipient_id = '30'::bigint) AND (status = 'pending'::text))
+              Buffers: shared hit=5
+        ->  Index Scan using match_refs_match_key on match_refs r  (cost=0.42..2.64 rows=1 width=32) (actual time=0.009..0.009 rows=1 loops=1)
+              Index Cond: ((vertical_id = c.vertical_id) AND (match_id = c.match_id))
+              Buffers: shared hit=4
+Planning Time: 0.110 ms
+Execution Time: 0.094 ms
+

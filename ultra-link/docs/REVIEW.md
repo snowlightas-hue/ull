@@ -10,10 +10,10 @@ this review — every defect below comes with a reproduction and a *proposed* pa
 | Claim | Status | Evidence |
 |---|---|---|
 | **Voice** works with a human voice | **NOT TESTED.** All voice checks are **SIMULATED**: a mock `SpeechRecognition` / `speechSynthesis` / `permissions` injected into Chromium (`test/e2e/mock-voice.ts`). They prove wiring, timing, half-duplex ordering and "answer goes to the same conversation" — not recognition of a person speaking Arabic. | `test/e2e/voice-harness.spec.ts`, `test/e2e/integration-voice.spec.ts` (both print "SIMULATED"). Human checklist still open: `public/js/conversation/README.md` §7. |
-| **Jev key configured** | **Yes.** `.env` holds a well-formed `TYPESAFE_API_KEY` (prefix `apikey_`, 108 chars); `/api/ai/status` → `keyConfigured: true`. | `curl /api/ai/status` on the demo (read-only). |
+| **Jev key configured** | **Yes.** `.env` holds a well-formed `TYPESAFE_API_KEY` (the expected `apikey`+underscore prefix, 108 chars); `/api/ai/status` → `keyConfigured: true`. | `curl /api/ai/status` on the demo (read-only). |
 | **Jev verified** (a real call succeeded) | **NO — blocked by the egress policy.** The proxy refuses `CONNECT api.typesafe.ai:443` with 403; the app reports `verified:false, mode:"rules"`, label «مفتاح Jev موجود لكن الاتصال فشل — يعمل المحلّل المحلي». | `curl https://api.typesafe.ai/v1/models` (no credentials sent) → `CONNECT tunnel failed, response 403`; demo `/api/ai/status` → `lastError: "network: … HTTPS proxy refused CONNECT with HTTP 403 (egress policy …)"`. |
 | Jev **behaviour** (fallback, budget, honesty of status) | Proven **against the local mock only** (`JEV_MODE=simulate`, loopback). A simulation never counts as verified. | `test/integration/flows-conversation.test.ts` (fallback ≡ rules-only), `test/integration/server-jev.test.ts` (Role 7). |
-| Secret hygiene | `apikey_` occurs **0 times in all 7 commits** of git history (`git log -p --all`), the exact key value occurs nowhere outside `.env` (repo, `var/log`, test artifacts, `public/`), `.env` is git-ignored and was never committed. No value was printed during the check. | §3 commands. |
+| Secret hygiene | The **exact key value occurs 0 times** in all 8 commits (`git log -p --all`) and nowhere outside `.env` (repo, `var/log`, test artifacts, `public/`); `.env` is git-ignored and was never committed. The prefix pattern (`apikey`+underscore) matches only 2 lines in history, both in an earlier WIP snapshot (`56023e2`) of *this file* naming the prefix — no key material (this version no longer spells it). No value was printed during the check. | §1 commands. |
 | Demo data | Synthetic, labelled, `realm=synthetic`; never matched with real data. | `flows-matching` isolation test, fuzz realm check. |
 
 ## 1. How to reproduce
@@ -25,9 +25,91 @@ node --test --test-concurrency=1 test/integration/flows-*.test.ts  # flows on fr
 Every spec/test builds its **own** database (`freshDb`) and, for the browser, its own server + worker on a free port;
 the live demo on :8080 (pids in `var/run/*.pid`) is never touched. Chromium: `/opt/pw-browsers/chromium`, `playwright-core` 1.56.1.
 
+Secret scan (prints counts only, never values):
+```bash
+git log -p --all --no-color | grep -c 'apikey''_'                       # prefix pattern, all commits
+KEY=$(grep '^TYPESAFE_API_KEY=' .env | cut -d= -f2-)
+git log -p --all --no-color | grep -cF -- "$KEY"                       # exact key value in history → 0
+grep -rIlF --exclude=.env --exclude-dir=node_modules --exclude-dir=pgdata -- "$KEY" .   # → no files
+git check-ignore -q .env && echo ignored; git log --all --oneline -- .env | wc -l      # → ignored, 0
+```
+
 ## 2. Results
 
-RESULTS_PLACEHOLDER
+Final runs on 2026-10-08 (machine shared with other roles' benchmarks; the live demo kept running untouched).
+
+### 2.1 `node test/e2e/run.ts` — exit 1 (one spec fails on real defects)
+```
+ E2E SUMMARY (338 s) — Chromium /opt/pw-browsers/chromium, playwright-core
+ PASS  ui-preview          103 s  24/24 checks passed
+ PASS  voice-harness        40 s  SIMULATED VOICE TESTS: 9 scenarios, 76/76 checks passed
+ PASS  app-scenarios       124 s  39/39 scenario runs passed, 252/252 checks passed
+ FAIL  app-a11y             48 s  14/17 scenario runs passed, 40/43 checks passed
+ PASS  integration-voice    16 s  all checks passed (SIMULATED voice)
+ 4/5 specs passed — FAILED: app-a11y
+```
+App scenarios, per viewport (desktop-1280x800 / mobile-390x844 / mobile-360x640 — identical results):
+
+| scenario (README #) | checks per viewport | highlights |
+|---|---|---|
+| (a) instant match with reasons (#1) | 19/19 | exactly 2 confirmed (180 $ first floor on top, 150 $), 4 possible (TRY, yearly, no price, families-only), «استُبعد ٣ عروض: ٢ خارج المكان الذي اشترطته، ١ أعلى من حد السعر», reasons on every card, no identity before consent, fixed composer never covers the last button |
+| (b) saved → match later (#2) | 10/10 | «تم حفظ طلبك، سنخبرك عند ظهور مطابقات مناسبة»; «محاكاة: وصول عرض مطابق لاحقًا» in طلباتي → live toast after 76–239 ms and unread badge after 72–359 ms (limit 10 s), measured from the click; notification «مطابقة جديدة مناسبة» opens المطابقات |
+| (c) hard-condition exclusions (+ #3 verbatim) | 7/7 + 7/7 | Afrin-only ≤ 100 $ → nothing violating is shown, suggestions offered but not applied; «بالضبط 150» → 1 confirmed «السعر مطابق تمامًا: ١٥٠$ بالشهر», «٣ السعر لا يساوي المطلوب بالضبط، ٢ خارج المكان…», TRY/yearly only «محتملة» |
+| (d) one clarification (#4) | 7/7 | one question «وين بدك الخدمة؟», answered once, never re-asked, never two visible, washing-machine technician in إعزاز |
+| (e) edit invalidates (#5) | 9/9 | cap 200 → 160: toast «… ٢ لم تعد مطابقة», 180 $ card under «لم تعد مطابقة» with «السعر ١٨٠$ بالشهر أعلى من حدك (١٦٠$)», no contact button |
+| (f) > 100 results (#6) | 15/15 | 250 matches, 13 pages, page 7 = «١٢١–١٤٠ من ٢٥٠», 250 distinct ids, 0 duplicates, stable ranking, prev pages identical; page flip median 159–288 ms, max 470 ms (measured, not asserted) |
+| (g) pending question survives reload | 5/5 | same question and chips after reload; one request saved |
+| console / page errors (5 personas) | 5 × 1/1 | none (only browser-aborted SSE on reload/close is ignored, and counted) |
+
+Screenshots: `test/e2e/artifacts/app/<viewport>-<step>.png` (a1 results, b1–b3 saved/toast/notifications, c1–c2 exclusions, d1–d2 question/results, e1–e2 editor/invalidated, f1–f3 pages, layout-* per screen).
+
+a11y failures (all three are MAJOR-4 / MAJOR-5 below):
+```
+ - keyboard: login, tabs (arrows, RTL), composer :: focus is not lost to <body> after results render  [activeElement = BODY]
+ - keyboard: editor dialog (trap, Esc, focus return) :: Esc closes and focus returns to «تعديل»     [activeElement = BODY]
+ - keyboard: «طلب تواصل» keeps focus :: after sending, keyboard focus is not dropped to <body>      [activeElement = BODY]
+```
+Passing a11y: RTL/lang, skip link, roving-tabindex tablist with RTL arrows/Home/End, dialog trap + inert + aria-modal,
+pager `aria-disabled`, polite live region; no horizontal scroll on login/home/question/results/saved/4 lists/editor at
+390 and 360 px; touch targets ≥ 24 px; AA contrast (lowest 6.58:1); reduced motion: no looping and no > 200 ms
+animation (control run without the preference does detect them).
+
+### 2.2 `node --test --test-concurrency=1 test/integration/flows-*.test.ts` — 18 tests, 15 pass, 3 fail (real defects)
+```
+ok 1 - isolation: a stranger gets 404 for every resource of another user, and sees none of it in lists
+ok 2 - anonymous callers get 401 everywhere except the open routes; cross-site writes get 403
+ok 3 - privacy before consent: no name, phone or utterance of the counterpart until both agree; then both see each other
+ok 4 - retry with the same clientTurnId over HTTP: same body; parallel duplicates too; one stored turn
+ok 5 - draft persistence across devices: a second session of the same user resumes the pending question
+not ok 6 - robustness: user-reachable inputs never produce a 5xx                                   → MAJOR-1
+    'turn «لحظة» → 500 {"error":"internal","messageAr":"صار خطأ عندنا. حاول مرة ثانية."}'
+    'turn «طيب» → 500 {"error":"internal","messageAr":"صار خطأ عندنا. حاول مرة ثانية."}'
+not ok 7 - repeated-question guard over all 61 corpus dialogues (handleTurn, DB-backed drafts)     → MAJOR-7
+    info: corpus agreement on the next question 150/155 turns (96.8%), 60/61 dialogues saved
+    'd044#2: «deal» re-asked after the answer «عفرين»'
+    'd044#3: «deal» re-asked after the answer «٧٠٠ دولار»'
+    (engine invariants — resolved fields never re-asked, unique question ids, ≤ 3 attempts — hold for all 61)
+ok 8 - the pending question is asked once per turn, persisted with the draft, and survives a "reload"
+ok 9 - retry with the same clientTurnId: identical result, one stored turn, one intent — even after the conversation is saved
+ok 10 - concurrent duplicates of one clientTurnId all get the same answer; exactly one turn and one intent are stored
+ok 11 - racing different answers to the same question: one wins, the other is told to retry/restart, never two intents
+ok 12 - many concurrent turns on one open conversation: no lost update     (info: 8 concurrent → 4 accepted, 4 × 409 busy)
+not ok 13 - after 3 unanswered attempts the assistant gives up politely: no crash, no invented deal, no silent widening   → MAJOR-1/2/3
+    "«بدي حدا يصلحلي شي» + non-answers: CRASH Cannot read properties of undefined (reading 'value') …"
+    '«بدي شقة بإعزاز» saved as «بيع وشراء» (sale) although the user never chose buy or rent'
+    '«بدي غسالة مستعملة» saved with an empty scope (= anywhere) although the user never named a place'
+ok 14 - provider failure fallback: with Jev failing on every call, every dialogue ends exactly as with JEV_MODE=off
+    info: malformed JSON / 401 / wrong answer type / dropped socket: Jev attempted on 23 turns each, fallback disclosed on 23
+ok 15 - strict-constraint fuzz (3 seeds × 20 seekers × 20 offers): every stored match is re-checked from DB rows …
+    info: TOTAL 1200 pairs; oracle 31 match / 54 possible / 1115 excluded; 85 stored rows re-checked
+    info: hard violations exercised: place_out_of_scope×637, category×584, deal×464, realm×216, same_owner×136,
+          attr.tenant_type×93, attr.rooms×78, attr.furnished×42, place_excluded×38, price_between×34, price_lte×27, price_eq×21, price_gte×13
+ok 16 - money precision near 2^53 and at the BIGINT limit: compared and shown as exact integers (BigInt), never floats
+ok 17 - stale evaluations never overwrite newer ones: randomized race of offer edits, seeker re-runs and stale jobs
+ok 18 - isolation: synthetic and real intents never match, even when everything else fits
+# tests 18  # pass 15  # fail 3
+```
+Note: tests 7 and 13 assert product rules (PRODUCT §5.1-3, §5.3, §6.1, §6.2-7) and stay red until MAJOR-1…3 and MAJOR-7 are fixed. They were not weakened.
 
 ## 3. Findings
 

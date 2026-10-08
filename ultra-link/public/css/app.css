@@ -838,6 +838,10 @@ ul, ol { margin: 0; padding: 0; }
   .notif { flex-wrap: wrap; }
   .notif-actions { flex-direction: row; width: 100%; padding-inline-start: 50px; }
 }
+/* phones: small buttons still get a 44px touch target (WCAG 2.5.5 AAA; 2.5.8 AA already met) */
+@media (pointer: coarse) {
+  .btn-sm { min-height: 44px; }
+}
 @media (max-height: 680px) {
   :root { --mic: 112px; --mic-wrap: 188px; }
   .home-stage { gap: 10px; padding-top: 10px; }

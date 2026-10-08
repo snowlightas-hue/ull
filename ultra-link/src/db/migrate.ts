@@ -55,14 +55,18 @@ export async function migrate(pool: pg.Pool, log: (s: string) => void = console.
       client.release();
     }
   }
-  if (!done.length) log('schema up to date');
+  if (!done.length) log(`schema up to date${opts.upTo !== undefined ? ` (up to ${opts.upTo})` : ''}`);
   return done;
 }
 
+// node src/db/migrate.ts [--test] [--upto NNNN]   (--upto: apply pending migrations only up to and including NNNN)
 if (import.meta.url === `file://${process.argv[1]}`) {
   loadEnv();
   const url = process.argv.includes('--test') ? process.env.TEST_DATABASE_URL! : process.env.DATABASE_URL!;
-  migrate(getPool(url))
+  const i = process.argv.indexOf('--upto');
+  const upTo = i >= 0 ? process.argv[i + 1] : undefined;
+  if (upTo !== undefined && !/^\d{4}$/.test(upTo)) { console.error('--upto expects a 4-digit version, e.g. 0002'); process.exit(2); }
+  migrate(getPool(url), console.log, { upTo })
     .then(() => closePools())
     .catch(async (e) => { console.error(e.message); await closePools(); process.exit(1); });
 }
