@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Voice Harness</title>
+<meta name="description" content="مختبر الصوت لألترا لينك: يشغّل آلة المحادثة وطبقة الصوت مع واجهة برمجة وهمية أو حقيقية.">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #dde1e7;
+    --accent: #0b6bcb; --accent-ink: #ffffff; --live: #c62828; --ok: #1b7f3b; --warn: #a15c00; --err-bg: #fdecea; --err-ink: #8a1c13;
+    --notice-bg: #e8f4ec; --notice-ink: #145a2c; --chip: #eef3fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111317; --panel: #1a1d23; --ink: #e9ecf1; --muted: #a2a9b5; --line: #2d323b;
+      --accent: #5aa2ee; --accent-ink: #0b1220; --live: #ef6a6a; --ok: #5ccf86; --warn: #f0b35a; --err-bg: #3a1d1b; --err-ink: #ffb4a9;
+      --notice-bg: #17301f; --notice-ink: #a6e3b9; --chip: #232a36;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111317; --panel: #1a1d23; --ink: #e9ecf1; --muted: #a2a9b5; --line: #2d323b;
+    --accent: #5aa2ee; --accent-ink: #0b1220; --live: #ef6a6a; --ok: #5ccf86; --warn: #f0b35a; --err-bg: #3a1d1b; --err-ink: #ffb4a9;
+    --notice-bg: #17301f; --notice-ink: #a6e3b9; --chip: #232a36;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, "Segoe UI", Tahoma, "Noto Sans Arabic", "DejaVu Sans", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; display: grid; gap: 12px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .support { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+  .support span { background: var(--chip); border-radius: 999px; padding: 2px 10px; }
+  .stage { text-align: center; display: grid; gap: 12px; justify-items: center; }
+  #state { font: 600 13px/1 ui-monospace, monospace; letter-spacing: .02em; padding: 6px 10px; border-radius: 999px; background: var(--chip); }
+  #state[data-state="listening"] { background: var(--live); color: #fff; }
+  #transcript { min-height: 1.6em; font-size: 20px; }
+  #transcript.interim { color: var(--muted); }
+  #countdown { width: min(320px, 100%); height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  #countdown > i { display: block; height: 100%; width: 0; background: var(--accent); }
+  #question { font-size: 22px; font-weight: 600; max-width: 34ch; }
+  #options { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  button { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 14px; cursor: pointer; min-height: 44px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  #mic { width: 96px; height: 96px; border-radius: 50%; font-size: 15px; font-weight: 600; background: var(--accent); color: var(--accent-ink); border: none; }
+  #mic[data-live="1"] { background: var(--live); color: #fff; box-shadow: 0 0 0 6px color-mix(in srgb, var(--live) 25%, transparent); }
+  #tap-answer { font-size: 18px; padding: 12px 22px; }
+  #error { background: var(--err-bg); color: var(--err-ink); border-radius: 10px; padding: 10px 12px; max-width: 60ch; }
+  #notice { background: var(--notice-bg); color: var(--notice-ink); border-radius: 10px; padding: 10px 12px; max-width: 60ch; }
+  #draft { width: 100%; min-height: 70px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  form { display: flex; gap: 8px; }
+  #text-input { flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); min-height: 44px; }
+  #results ul { margin: 6px 0 0; padding-inline-start: 20px; text-align: start; }
+  #log { font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; direction: ltr; text-align: left; max-height: 240px; overflow: auto; margin: 0; color: var(--muted); }
+  [hidden] { display: none !important; }
+  .muted { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>مختبر الصوت — ألترا لينك</h1>
+    <p>يشغّل <code>machine.js</code> و<code>voice.js</code>. واجهة برمجة: <b id="api-mode">mock</b>. للتجربة بصوتك افتح الصفحة في Chrome مع ميكروفون.</p>
+  </header>
+
+  <section class="panel support" id="support" aria-label="دعم المتصفح"></section>
+
+  <section class="panel stage" aria-live="polite">
+    <div id="state" data-state="ready">ready</div>
+    <div id="transcript"></div>
+    <div id="countdown" hidden><i></i></div>
+    <textarea id="draft" hidden aria-label="عدّل النص"></textarea>
+    <div id="question" hidden></div>
+    <div id="options" hidden></div>
+    <button id="mic" type="button" aria-label="الميكروفون">اضغط وتكلّم</button>
+    <button id="tap-answer" type="button" class="primary" hidden>اضغط للإجابة بصوتك</button>
+    <div id="tap-hint" class="muted" hidden>الاستماع التلقائي غير متاح هنا (لم يُمنح إذن الميكروفون بشكل دائم، أو المتصفح لا يدعمه).</div>
+    <div class="row">
+      <button id="send-now" type="button" class="primary" hidden>أرسل الآن</button>
+      <button id="edit" type="button" hidden>تعديل</button>
+      <button id="cancel" type="button" hidden>إلغاء</button>
+      <button id="repeat" type="button" hidden>أعد السؤال</button>
+      <button id="retry" type="button" class="primary" hidden>أعد المحاولة</button>
+      <button id="dismiss" type="button" hidden>إغلاق</button>
+    </div>
+    <div id="error" role="alert" hidden></div>
+    <div id="notice" hidden></div>
+    <div id="results" hidden></div>
+  </section>
+
+  <section class="panel">
+    <form id="text-form">
+      <input id="text-input" type="text" autocomplete="off" placeholder="أو اكتب طلبك هنا…" aria-label="اكتب طلبك">
+      <button id="text-send" type="submit">إرسال</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="row" style="justify-content: space-between"><b>سجل الأحداث</b><span class="muted" id="ids"></span></div>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script type="module">
+import { createVoice } from './js/conversation/voice.js';
+import { createConversationMachine } from './js/conversation/machine.js';
+
+const params = new URLSearchParams(location.search);
+const num = (k, d) => (params.has(k) && params.get(k) !== '' && !Number.isNaN(Number(params.get(k))) ? Number(params.get(k)) : d);
+const cfg = {
+  api: params.get('api') === 'live' ? 'live' : 'mock',
+  flow: params.get('flow') || 'ask', // ask | saved | unclear
+  matches: num('matches', 2),
+  failTurns: num('failTurns', 0),
+  latency: num('latency', 150),
+  autoSendMs: num('autoSendMs', 1600),
+  guardMs: num('guardMs', 400),
+};
+const $ = (id) => document.getElementById(id);
+$('api-mode').textContent = cfg.api;
+
+// ---------------- APIs ----------------
+const apiCalls = [];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const QUESTION = {
+  id: 'deal#1', field: 'deal', attempt: 1,
+  text: 'بدك الشقة للبيع ولا للإيجار؟',
+  speech: 'بِدَّك الشّقة للبيع ولا للإيجار؟',
+  options: [{ value: 'rent', label: 'للإيجار' }, { value: 'sale', label: 'للبيع' }],
+};
+function intentCard(id) {
+  const t = new Date().toISOString();
+  return { id, side: 'seek', status: 'active', version: 1, titleAr: 'شقة للإيجار في إعزاز', categoryAr: 'شقة', dealAr: 'إيجار', placeAr: 'إعزاز', priceAr: null, whenAr: null, chips: [], matchCounts: { confirmed: 0, possible: 0 }, createdAt: t, updatedAt: t, expiresAt: null, synthetic: true };
+}
+const mockApi = (() => {
+  let convN = 0, intentN = 0, failures = 0;
+  const turnsIn = {};
+  return {
+    async ensureConversation() {
+      apiCalls.push({ fn: 'ensureConversation', t: performance.now() });
+      await wait(cfg.latency / 3);
+      return { id: `conv-${++convN}` };
+    },
+    async sendTurn(id, body) {
+      apiCalls.push({ fn: 'sendTurn', t: performance.now(), id, ...body });
+      await wait(cfg.latency);
+      if (failures < cfg.failTurns) {
+        failures++;
+        throw Object.assign(new Error('Service Unavailable'), { status: 503, code: 'unavailable', messageAr: 'الخادم مشغول مؤقتًا. أعد المحاولة.' });
+      }
+      const n = (turnsIn[id] = (turnsIn[id] || 0) + 1);
+      const summary = { titleAr: 'شقة في إعزاز', chips: [{ labelAr: 'المكان', valueAr: 'إعزاز', slot: 'place' }] };
+      const understanding = { engine: 'rules', latencyMs: 3 };
+      if (cfg.flow === 'unclear' && n === 1) return { conversation: { id, state: 'collecting', turns: n }, action: 'unclear', summary, understanding };
+      if (cfg.flow === 'ask' && n === 1) return { conversation: { id, state: 'asking', turns: n }, action: 'ask', question: QUESTION, summary, understanding };
+      return { conversation: { id, state: 'saved', turns: n }, action: 'saved', intent: intentCard(`intent-${++intentN}`), summary, understanding };
+    },
+    async runMatch(intentId) {
+      apiCalls.push({ fn: 'runMatch', t: performance.now(), intentId });
+      await wait(cfg.latency);
+      const confirmed = Math.min(cfg.matches, 1), possible = Math.max(0, cfg.matches - 1);
+      const items = Array.from({ length: cfg.matches }, (_, i) => ({ id: `m${i + 1}`, state: i === 0 ? 'confirmed' : 'possible', score: 9000 - i * 500, kind: 'exchange', mine: intentCard(intentId), other: { ...intentCard(`other-${i + 1}`), side: 'provide', titleAr: `شقة للإيجار في إعزاز (${i + 1})` }, reasons: [], missing: [], contact: { status: 'none' }, updatedAt: new Date().toISOString() }));
+      return { intentId, version: 1, status: 'done', totals: { confirmed, possible, excluded: 2, candidates: cfg.matches + 2 }, exclusions: [], page: { items, total: items.length, limit: 20, nextCursor: null, prevCursor: null, rangeStart: items.length ? 1 : 0, rangeEnd: items.length }, suggestionsAr: [], truncated: false };
+    },
+    async cancelConversation(id) {
+      apiCalls.push({ fn: 'cancelConversation', t: performance.now(), id });
+      return { conversation: { id, state: 'cancelled', turns: 0 } };
+    },
+  };
+})();
+
+async function http(method, path, body) {
+  const res = await fetch(path, { method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await res.json(); } catch { data = null; }
+  if (!res.ok) throw Object.assign(new Error((data && data.error) || res.statusText), { status: res.status, code: data && data.error, messageAr: data && data.messageAr });
+  return data;
+}
+const liveApi = {
+  async ensureConversation() { apiCalls.push({ fn: 'ensureConversation' }); return (await http('POST', '/api/conversations')).conversation; },
+  sendTurn(id, body) { apiCalls.push({ fn: 'sendTurn', id, modality: body.modality, clientTurnId: body.clientTurnId }); return http('POST', `/api/conversations/${encodeURIComponent(id)}/turns`, body); },
+  runMatch(intentId) { apiCalls.push({ fn: 'runMatch', intentId }); return http('POST', `/api/intents/${encodeURIComponent(intentId)}/match`); },
+  cancelConversation(id) { return http('POST', `/api/conversations/${encodeURIComponent(id)}/cancel`); },
+};
+const api = cfg.api === 'live' ? liveApi : mockApi;
+
+// ---------------- wiring ----------------
+const voice = createVoice({ guardMs: cfg.guardMs });
+const machine = createConversationMachine({ api, voice, autoSendMs: cfg.autoSendMs });
+const states = [];
+window.__harness = { machine, voice, api, apiCalls, states, cfg, ready: voice.ready };
+
+machine.subscribe((state, ctx, ev) => {
+  states.push({ t: performance.now(), state, event: ev.type, interim: ctx.interim, transcript: ctx.transcript, conversationId: ctx.conversationId, errorCode: ctx.error && ctx.error.code });
+  render(state, ctx);
+});
+voice.subscribe(() => renderSupport());
+
+function renderSupport() {
+  const s = voice.status();
+  const yes = (b) => (b ? 'نعم' : 'لا');
+  $('support').innerHTML = '';
+  for (const [k, v] of [
+    ['التعرّف على الكلام', yes(s.recognition)], ['النطق', yes(s.synthesis)], ['إذن الميكروفون', s.permission],
+    ['صوت عربي', s.hasArabicVoice ? s.voiceName : (s.voicesLoaded ? 'غير متوفر' : '…')], ['متصل', yes(s.online)],
+    ['استماع تلقائي', yes(s.canAutoListen)], ['لغة التعرّف', s.recLang || '—'],
+  ]) {
+    const span = document.createElement('span');
+    span.textContent = `${k}: ${v}`;
+    $('support').append(span);
+  }
+}
+
+let countdownRaf = 0;
+function animateCountdown(ctx) {
+  cancelAnimationFrame(countdownRaf);
+  const bar = $('countdown');
+  const r = ctx.review;
+  if (!r || r.editing || r.deadline == null) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const tick = () => {
+    const left = Math.max(0, r.deadline - performance.now());
+    bar.firstElementChild.style.width = `${(100 * (1 - left / r.autoSendMs)).toFixed(1)}%`;
+    if (left > 0 && machine.state === 'reviewing') countdownRaf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+const MIC_LABEL = { listening: 'إيقاف', speaking: 'قاطع وتكلّم', awaiting_answer: 'تكلّم', reviewing: 'أعد التسجيل', error: 'حاول بصوتك' };
+function render(state, ctx) {
+  $('state').textContent = state;
+  $('state').dataset.state = state;
+  const tr = $('transcript');
+  tr.textContent = state === 'listening' ? (ctx.interim || (ctx.micLive ? '…أستمع' : '…')) : (state === 'reviewing' && ctx.review && ctx.review.editing ? '' : ctx.transcript);
+  tr.classList.toggle('interim', state === 'listening');
+  animateCountdown(state === 'reviewing' ? ctx : {});
+
+  const draft = $('draft');
+  const editing = state === 'reviewing' && ctx.review && ctx.review.editing;
+  if (editing && draft.hidden) { draft.value = ctx.transcript; draft.hidden = false; draft.focus(); }
+  if (!editing) draft.hidden = true;
+
+  const q = ctx.question;
+  const showQ = !!q && ['asking', 'speaking', 'awaiting_answer', 'listening', 'reviewing', 'processing', 'error'].includes(state) && (state !== 'listening' && state !== 'reviewing' && state !== 'processing' || ctx.origin === 'awaiting_answer');
+  $('question').hidden = !showQ;
+  $('question').textContent = showQ ? q.text : '';
+  const opts = $('options');
+  opts.innerHTML = '';
+  opts.hidden = !(showQ && q.options && q.options.length && ['speaking', 'awaiting_answer', 'listening'].includes(state));
+  if (!opts.hidden) for (const o of q.options) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = o.label; b.dataset.value = o.value;
+    b.addEventListener('click', () => machine.chooseOption(o));
+    opts.append(b);
+  }
+
+  const mic = $('mic');
+  mic.dataset.live = state === 'listening' ? '1' : '0';
+  mic.textContent = MIC_LABEL[state] || 'اضغط وتكلّم';
+  mic.disabled = !(machine.can('LISTEN') || state === 'listening');
+  mic.hidden = state === 'awaiting_answer'; // the dedicated tap-to-answer button takes its place
+  $('tap-answer').hidden = state !== 'awaiting_answer';
+  $('tap-hint').hidden = !(state === 'awaiting_answer' && !ctx.canAutoListen);
+
+  $('send-now').hidden = state !== 'reviewing';
+  $('edit').hidden = !(state === 'reviewing' && !(ctx.review && ctx.review.editing));
+  $('cancel').hidden = !machine.can('CANCEL');
+  $('cancel').textContent = ['asking', 'speaking', 'awaiting_answer'].includes(state) ? 'إلغاء الطلب' : 'إلغاء';
+  $('repeat').hidden = state !== 'awaiting_answer';
+  $('retry').hidden = !(state === 'error' && ctx.error && ctx.error.recoverable);
+  $('dismiss').hidden = state !== 'error';
+
+  $('error').hidden = state !== 'error';
+  $('error').textContent = state === 'error' && ctx.error ? ctx.error.messageAr : '';
+  $('error').dataset.code = state === 'error' && ctx.error ? ctx.error.code : '';
+  const showNotice = !!ctx.notice && ['results', 'saved_no_results'].includes(state);
+  $('notice').hidden = !showNotice;
+  $('notice').textContent = showNotice ? ctx.notice.messageAr : '';
+
+  const res = $('results');
+  res.hidden = state !== 'results';
+  res.innerHTML = '';
+  if (state === 'results' && ctx.matchRun) {
+    const ul = document.createElement('ul');
+    for (const m of ctx.matchRun.page.items) {
+      const li = document.createElement('li');
+      li.textContent = `${m.state === 'confirmed' ? 'مطابقة مؤكدة' : 'مطابقة محتملة'}: ${m.other.titleAr}`;
+      ul.append(li);
+    }
+    res.append(ul);
+  }
+  const textOk = machine.can('SUBMIT_TEXT');
+  $('text-input').disabled = !textOk;
+  $('text-send').disabled = !textOk;
+  $('ids').textContent = `conversation: ${ctx.conversationId || '—'} · seq ${ctx.seq}`;
+  $('log').textContent = machine.getLog().slice(-40).map((e) => `${String(e.t).padStart(6)}  ${e.ok ? '✓' : '✗'} ${e.event.padEnd(14)} ${e.from} → ${e.to ?? '—'}${e.reason ? '  (' + e.reason + ')' : ''}`).join('\n');
+}
+
+$('mic').addEventListener('click', () => machine.pressMic());
+$('tap-answer').addEventListener('click', () => machine.startListening());
+$('send-now').addEventListener('click', () => machine.sendNow(!$('draft').hidden ? $('draft').value : undefined));
+$('edit').addEventListener('click', () => machine.edit());
+$('draft').addEventListener('input', (e) => machine.updateDraft(e.target.value));
+$('cancel').addEventListener('click', () => machine.cancel());
+$('repeat').addEventListener('click', () => machine.repeatQuestion());
+$('retry').addEventListener('click', () => machine.retry());
+$('dismiss').addEventListener('click', () => machine.dismissError());
+$('text-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (machine.submitText($('text-input').value)) $('text-input').value = '';
+});
+
+renderSupport();
+render(machine.state, machine.context);
+voice.ready.then(() => { renderSupport(); render(machine.state, machine.context); document.documentElement.dataset.ready = '1'; });
+</script>
+</body>
+</html>

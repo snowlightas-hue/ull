@@ -1,0 +1,1439 @@
+[
+  {
+    "id": "d001",
+    "turns": [
+      {"user":"بدي شقة بإعزاز","expectAsk":"deal"},
+      {"user":"إيجار","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d002",
+    "turns": [
+      {"user":"بدي شقة بإعزاز","expectAsk":"deal"},
+      {"user":"شراء","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d003",
+    "turns": [
+      {"user":"عندي شقة للإيجار","expectAsk":"place"},
+      {"user":"بعفرين","expectAsk":"price"},
+      {"user":"١٥٠ دولار بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "place_only_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d004",
+    "turns": [
+      {"user":"بدي سيارة","expectAsk":"deal"},
+      {"user":"شراء، بإعزاز، وما بدي أكتر من ٥ آلاف دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"lte","lo":null,"hi":"500000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d005",
+    "turns": [
+      {"user":"بدي كهربجي","expectAsk":"place"},
+      {"user":"الباب","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "services.electrical",
+      "deal": "service",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "place_only_answer",
+      "services"
+    ]
+  },
+  {
+    "id": "d006",
+    "turns": [
+      {"user":"عندي سيارة للبيع بإعزاز","expectAsk":"price"},
+      {"user":"٦٠٠٠","expectAsk":"price.currency"},
+      {"user":"دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"600000","hi":"600000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_answer",
+      "vehicles",
+      "provider"
+    ]
+  },
+  {
+    "id": "d007",
+    "turns": [
+      {"user":"عندي شقة للإيجار بإعزاز","expectAsk":"price"},
+      {"user":"٢٠٠ دولار","expectAsk":"price.unit"},
+      {"user":"بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "unit_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d008",
+    "turns": [
+      {"user":"عندي شقة للإيجار بإعزاز","expectAsk":"price"},
+      {"user":"٢٠٠ دولار بالشهر، والشقة بعفرين","expectAsk":"conflict"},
+      {"user":"بعفرين","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_place",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d009",
+    "turns": [
+      {"user":"بدي بيت للإيجار بإعزاز ب ١٠٠ دولار","expectAsk":"price.unit"},
+      {"user":"بالشهر، ولا قصدي بعفرين مو بإعزاز","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": {"op":"lte","lo":null,"hi":"10000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "correction",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d010",
+    "turns": [
+      {"user":"بدي شقة للإيجار بإعزاز، لا لا قصدي عفرين","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "correction",
+      "single_turn",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d011",
+    "turns": [
+      {"user":"عندي سيارة للبيع بالباب","expectAsk":"price"},
+      {"user":"ما بعرف لسا، بدي اسأل","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "unsure",
+      "vehicles",
+      "provider"
+    ],
+    "acceptedUnknown": [
+      "price"
+    ]
+  },
+  {
+    "id": "d012",
+    "turns": [
+      {"user":"بدي حدا يطلع معي رحلة","expectAsk":"place"},
+      {"user":"من إعزاز","expectAsk":"when"},
+      {"user":"الجمعة","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.trip",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": {"weekday":"fri"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "activities",
+      "place_only_answer"
+    ]
+  },
+  {
+    "id": "d013",
+    "turns": [
+      {"user":"بدي حدا يطلع معي رحلة","expectAsk":"place"},
+      {"user":"إعزاز","expectAsk":"when"},
+      {"user":"ما بعرف، أي يوم بيناسب","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.trip",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "activities",
+      "unsure"
+    ],
+    "acceptedUnknown": [
+      "when"
+    ]
+  },
+  {
+    "id": "d014",
+    "turns": [
+      {"user":"شقة للإيجار بإعزاز","expectAsk":"side"},
+      {"user":"أنا عندي ياها وبدي أجّرها","expectAsk":"price"},
+      {"user":"١٥٠ دولار بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "side_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d015",
+    "turns": [
+      {"user":"سيارة للبيع بعفرين","expectAsk":"side"},
+      {"user":"بدي اشتري","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "side_answer",
+      "chip_answer",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d016",
+    "turns": [
+      {"user":"بدي شي بإعزاز","expectAsk":"category"},
+      {"user":"سباك","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "services.plumbing",
+      "deal": "service",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "category_answer",
+      "services"
+    ]
+  },
+  {
+    "id": "d017",
+    "turns": [
+      {"user":"بدي شقة للإيجار بالدانا بـ ٣٠٠٠ ليرة بالشهر","expectAsk":"price.currency"},
+      {"user":"تركي","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.idlib.dana","strength":null,"negated":false}],
+      "price": {"op":"lte","lo":null,"hi":"300000","currency":"TRY","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_ambiguous_lira",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d018",
+    "turns": [
+      {"user":"بدي شقة للإيجار بإعزاز، ميزانيتي ١٠٠","expectAsk":"price.currency"},
+      {"user":"دولار، وبدي اشتريها","expectAsk":"conflict"},
+      {"user":"لا، إيجار","expectAsk":"price.unit"},
+      {"user":"بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"lte","lo":null,"hi":"10000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_deal",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d019",
+    "turns": [
+      {"user":"بدي أستاذ انكليزي","expectAsk":"place"},
+      {"user":"أونلاين","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "education.tutoring",
+      "deal": "lesson",
+      "places": [{"code":"online","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [{"key":"subject","op":"eq","value":"english","strength":null}],
+      "mustAsk": []
+    },
+    "tags": [
+      "education",
+      "online"
+    ]
+  },
+  {
+    "id": "d020",
+    "turns": [
+      {"user":"بعطي دروس رياضيات","expectAsk":"place"},
+      {"user":"بإعزاز، وأونلاين كمان","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "education.tutoring",
+      "deal": "lesson",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false},{"code":"online","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {"subject":"math"},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "education",
+      "provider",
+      "additive_place"
+    ]
+  },
+  {
+    "id": "d021",
+    "turns": [
+      {"user":"بدي سيارة للشراء","expectAsk":"place"},
+      {"user":"مو مهم، أي مكان","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"world","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "any_place",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d022",
+    "turns": [
+      {"user":"عندي موتور","expectAsk":"deal"},
+      {"user":"للبيع","expectAsk":"place"},
+      {"user":"بإعزاز، وسعره ٩٠٠ دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.motorcycle",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"90000","hi":"90000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "extra_info_merge",
+      "vehicles",
+      "provider"
+    ]
+  },
+  {
+    "id": "d023",
+    "turns": [
+      {"user":"عندي سيارة للبيع ب ٥٠٠٠ دولار","expectAsk":"place"},
+      {"user":"بإعزاز، وسعرها ٥٥٠٠ دولار","expectAsk":"conflict"},
+      {"user":"٥٥٠٠","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"550000","hi":"550000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_price",
+      "vehicles",
+      "provider"
+    ]
+  },
+  {
+    "id": "d024",
+    "turns": [
+      {"user":"عندي شقة للبيع بعفرين","expectAsk":"price"},
+      {"user":"لا لا قصدي للإيجار، ٢٠٠ دولار بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "correction",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d025",
+    "turns": [
+      {"user":"مين بدو يلعب فوتبول؟","expectAsk":"place"},
+      {"user":"بعفرين يوم الخميس","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.sports",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": {"weekday":"thu"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "activities",
+      "extra_info_merge"
+    ]
+  },
+  {
+    "id": "d026",
+    "turns": [
+      {"user":"بدي محل بالباب","expectAsk":"deal"},
+      {"user":"إيجار","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.shop",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d027",
+    "turns": [
+      {"user":"بدي أرض","expectAsk":"deal"},
+      {"user":"شراء","expectAsk":"place"},
+      {"user":"ريف حلب الشمالي","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.land",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "place_only_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d028",
+    "turns": [
+      {"user":"عندي غرفة للإيجار بإعزاز","expectAsk":"price"},
+      {"user":"٥٠","expectAsk":"price.currency"},
+      {"user":"دولار","expectAsk":"price.unit"},
+      {"user":"بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.room",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"5000","hi":"5000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_answer",
+      "unit_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d029",
+    "turns": [
+      {"user":"عندي غرفة للإيجار بإعزاز","expectAsk":"price"},
+      {"user":"٥٠ دولار بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.room",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"5000","hi":"5000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d030",
+    "turns": [
+      {"user":"بحتاج مساعدة","expectAsk":"place"},
+      {"user":"بأطمة، بدي حدا يساعدني انقل خيمة بكرا","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "help.general",
+      "deal": "help",
+      "places": [{"code":"sy.idlib.atmeh","strength":null,"negated":false}],
+      "price": null,
+      "when": {"relative":"tomorrow"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "help",
+      "extra_info_merge"
+    ]
+  },
+  {
+    "id": "d031",
+    "turns": [
+      {"user":"بدي بيع موبايلي","expectAsk":"place"},
+      {"user":"بالدانا","expectAsk":"price"},
+      {"user":"١٥٠ دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "goods.electronics",
+      "deal": "sale",
+      "places": [{"code":"sy.idlib.dana","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "goods",
+      "provider",
+      "place_only_answer"
+    ]
+  },
+  {
+    "id": "d032",
+    "turns": [
+      {"user":"بدي بيع غسالتي بإعزاز","expectAsk":"price"},
+      {"user":"ما بعرف قديش بتسوى","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "goods.appliances",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "goods",
+      "provider",
+      "unsure"
+    ],
+    "acceptedUnknown": [
+      "price"
+    ]
+  },
+  {
+    "id": "d033",
+    "turns": [
+      {"user":"بدي سيارة","expectAsk":"deal"},
+      {"user":"إيجار، بس أنا عندي السيارة وبدي أجّرها","expectAsk":"conflict"},
+      {"user":"أنا بأجّر","expectAsk":"place"},
+      {"user":"بالباب","expectAsk":"price"},
+      {"user":"٢٥ دولار باليوم","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"2500","hi":"2500","currency":"USD","unit":"day"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_side",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d034",
+    "turns": [
+      {"user":"بدي شقة بعفرين","expectAsk":"deal"},
+      {"user":"إيجار، بس بدي محل مو شقة","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.shop",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "correction",
+      "correction_category",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d035",
+    "turns": [
+      {"user":"بدي شقة بإعزاز","expectAsk":"deal"},
+      {"user":"إيجار، وكمان بمارع بيمشي","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false},{"code":"sy.aleppo.marea","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "additive_place",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d036",
+    "turns": [
+      {"user":"بدي ناس ندرس سوا بإعزاز","expectAsk":"when"},
+      {"user":"بكرا","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.study_group",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": {"relative":"tomorrow"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "activities",
+      "when_answer"
+    ]
+  },
+  {
+    "id": "d037",
+    "turns": [
+      {"user":"بدي رحلة الجمعة","expectAsk":"place"},
+      {"user":"من عفرين، يوم السبت","expectAsk":"conflict"},
+      {"user":"السبت","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.trip",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": {"weekday":"sat"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_when",
+      "activities"
+    ]
+  },
+  {
+    "id": "d038",
+    "turns": [
+      {"user":"عندي شقة بإعزاز","expectAsk":"deal"},
+      {"user":"إيجار","expectAsk":"price"},
+      {"user":"١٠٠ دولار بالشهر","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d039",
+    "turns": [
+      {"user":"عندي شقة بإعزاز","expectAsk":"deal"},
+      {"user":"بيع","expectAsk":"price"},
+      {"user":"٢٥ ألف دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"2500000","hi":"2500000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d040",
+    "turns": [
+      {"user":"عندي بيت عربي للإيجار بالأتارب ب ١٢٠٠ دولار","expectAsk":"price.unit"},
+      {"user":"بالسنة","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.villa",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.atarib","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"120000","hi":"120000","currency":"USD","unit":"year"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "unit_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d041",
+    "turns": [
+      {"user":"بعطي دروس فيزيا بإدلب ب ١٠","expectAsk":"price.currency"},
+      {"user":"دولار بالساعة","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "education.tutoring",
+      "deal": "lesson",
+      "places": [{"code":"sy.idlib.idlib","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"1000","hi":"1000","currency":"USD","unit":"hour"},
+      "when": null,
+      "attrs": {"subject":"physics"},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_answer",
+      "extra_info_merge",
+      "education",
+      "provider"
+    ]
+  },
+  {
+    "id": "d042",
+    "turns": [
+      {"user":"بدي شقة","expectAsk":"deal"},
+      {"user":"إيجار","expectAsk":"place"},
+      {"user":"بإعزاز أو عفرين، ويا ريت تكون مفروشة","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false},{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [{"key":"furnished","op":"eq","value":true,"strength":"preferred"}],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d043",
+    "turns": [
+      {"user":"بدي شقة","expectAsk":"deal"},
+      {"user":"إيجار بإعزاز","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "chip_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d044",
+    "turns": [
+      {"user":"موتور","expectAsk":"side"},
+      {"user":"بدي بيعو","expectAsk":"place"},
+      {"user":"عفرين","expectAsk":"price"},
+      {"user":"٧٠٠ دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.motorcycle",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"70000","hi":"70000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "side_answer",
+      "vehicles",
+      "provider",
+      "short"
+    ]
+  },
+  {
+    "id": "d045",
+    "turns": [
+      {"user":"عندي شقة للإيجار بالدانا ب ٢٠٠٠","expectAsk":"price.currency"},
+      {"user":"ليرة تركية","expectAsk":"price.unit"},
+      {"user":"شهري","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.idlib.dana","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"200000","hi":"200000","currency":"TRY","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_answer",
+      "unit_answer",
+      "real_estate",
+      "provider"
+    ]
+  },
+  {
+    "id": "d046",
+    "turns": [
+      {"user":"بدي سيارة للإيجار","expectAsk":"place"},
+      {"user":"بغازي عنتاب، ب ٣٠ دولار","expectAsk":"price.unit"},
+      {"user":"باليوم","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "vehicles.car",
+      "deal": "rent",
+      "places": [{"code":"tr.gaziantep","strength":null,"negated":false}],
+      "price": {"op":"lte","lo":null,"hi":"3000","currency":"USD","unit":"day"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "unit_answer",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d047",
+    "turns": [
+      {"user":"أنا كهربجي","expectAsk":"place"},
+      {"user":"بإعزاز ومارع وصوران","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "services.electrical",
+      "deal": "service",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false},{"code":"sy.aleppo.marea","strength":null,"negated":false},{"code":"sy.aleppo.sawran","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "place_only_answer",
+      "services",
+      "provider",
+      "multi_place"
+    ]
+  },
+  {
+    "id": "d048",
+    "turns": [
+      {"user":"بدي حدا يصلحلي البراد","expectAsk":"place"},
+      {"user":"أنا بعفرين، وبدي ياه يجي عالبيت","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "services.appliance_repair",
+      "deal": "service",
+      "places": [{"code":"sy.aleppo.afrin","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [{"key":"appliance","op":"eq","value":"fridge","strength":null},{"key":"home_visit","op":"eq","value":true,"strength":null}],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "services"
+    ]
+  },
+  {
+    "id": "d049",
+    "turns": [
+      {"user":"بدي أرض بمنبج","expectAsk":"deal"},
+      {"user":"ضمان","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.land",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.manbij","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "dialect_term",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d050",
+    "turns": [
+      {"user":"مين عنده بيت؟","expectAsk":"deal"},
+      {"user":"إيجار","expectAsk":"place"},
+      {"user":"الباب","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "chip_answer",
+      "place_only_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d051",
+    "turns": [
+      {"user":"عندي سيارة للإيجار","expectAsk":"place"},
+      {"user":"بإعزاز","expectAsk":"price"},
+      {"user":"ما بعرف قديش، شو بتنصحني؟","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "unsure",
+      "vehicles",
+      "provider"
+    ],
+    "acceptedUnknown": [
+      "price"
+    ]
+  },
+  {
+    "id": "d052",
+    "turns": [
+      {"user":"بدي شي نشاط","expectAsk":"category"},
+      {"user":"فوتبول","expectAsk":"place"},
+      {"user":"بالباب","expectAsk":"when"},
+      {"user":"الجمعة","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.sports",
+      "deal": "activity",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": null,
+      "when": {"weekday":"fri"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "category_answer",
+      "activities"
+    ]
+  },
+  {
+    "id": "d053",
+    "turns": [
+      {"user":"بدي بيت للإيجار بإعزاز بحدود ١٥٠٠ دولار","expectAsk":"price.unit"},
+      {"user":"بالسنة","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"approx","lo":"150000","hi":"150000","currency":"USD","unit":"year"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "unit_answer",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d054",
+    "turns": [
+      {"user":"عندي سيارة للبيع بإعزاز","expectAsk":"price"},
+      {"user":"٤٠٠٠ دولار، لا عفواً ٤٥٠٠","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"450000","hi":"450000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "correction",
+      "correction_price",
+      "vehicles",
+      "provider"
+    ]
+  },
+  {
+    "id": "d055",
+    "turns": [
+      {"user":"بدي حدا يلعب معي شطرنج","expectAsk":"place"},
+      {"user":"وين ما كان، أونلاين كمان بيمشي","expectAsk":"when"},
+      {"user":"الليلة","expectAsk":null}
+    ],
+    "final": {
+      "side": "join",
+      "category": "activities.social",
+      "deal": "activity",
+      "places": [{"code":"world","strength":null,"negated":false},{"code":"online","strength":null,"negated":false}],
+      "price": null,
+      "when": {"relative":"today"},
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "any_place",
+      "activities",
+      "online"
+    ]
+  },
+  {
+    "id": "d056",
+    "turns": [
+      {"user":"بدي","expectAsk":"category"},
+      {"user":"سيارة","expectAsk":"deal"},
+      {"user":"شراء","expectAsk":"place"},
+      {"user":"إعزاز","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "category_answer",
+      "vague",
+      "vehicles"
+    ]
+  },
+  {
+    "id": "d057",
+    "turns": [
+      {"user":"عندي سيارة للبيع","expectAsk":"place"},
+      {"user":"بالباب، كيا ٢٠١٤ أوتوماتيك","expectAsk":"price"},
+      {"user":"٦٥٠٠ دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "vehicles.car",
+      "deal": "sale",
+      "places": [{"code":"sy.aleppo.al_bab","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"650000","hi":"650000","currency":"USD","unit":"total"},
+      "when": null,
+      "attrs": {"make":"kia","year":2014,"transmission":"automatic"},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "extra_info_merge",
+      "vehicles",
+      "provider"
+    ]
+  },
+  {
+    "id": "d058",
+    "turns": [
+      {"user":"بعطي دروس تركي بالريحانية، الحصة ب ٢٠٠ ليرة","expectAsk":"price.currency"},
+      {"user":"تركية","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "education.tutoring",
+      "deal": "lesson",
+      "places": [{"code":"tr.hatay.reyhanli","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"20000","hi":"20000","currency":"TRY","unit":"session"},
+      "when": null,
+      "attrs": {"subject":"turkish"},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "currency_ambiguous_lira",
+      "education",
+      "provider"
+    ]
+  },
+  {
+    "id": "d059",
+    "turns": [
+      {"user":"مرحبا","expectAsk":null},
+      {"user":"بدي شقة للإيجار بإعزاز","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "greeting_first",
+      "real_estate"
+    ]
+  },
+  {
+    "id": "d060",
+    "turns": [
+      {"user":"بدي أستاذ رياضيات لابني","expectAsk":"place"},
+      {"user":"يفضّل أونلاين","expectAsk":null}
+    ],
+    "final": {
+      "side": "seek",
+      "category": "education.tutoring",
+      "deal": "lesson",
+      "places": [{"code":"online","strength":"preferred","negated":false}],
+      "price": null,
+      "when": null,
+      "attrs": {},
+      "constraints": [{"key":"subject","op":"eq","value":"math","strength":null}],
+      "mustAsk": []
+    },
+    "tags": [
+      "preferred_place_answer",
+      "education"
+    ]
+  },
+  {
+    "id": "d061",
+    "turns": [
+      {"user":"عندي شقة للإيجار بإعزاز بـ ٢٠٠ دولار","expectAsk":"price.unit"},
+      {"user":"بالشهر، يعني ٦٠٠٠ تركي","expectAsk":"conflict"},
+      {"user":"دولار","expectAsk":null}
+    ],
+    "final": {
+      "side": "provide",
+      "category": "real_estate.apartment",
+      "deal": "rent",
+      "places": [{"code":"sy.aleppo.azaz","strength":null,"negated":false}],
+      "price": {"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month"},
+      "when": null,
+      "attrs": {},
+      "constraints": [],
+      "mustAsk": []
+    },
+    "tags": [
+      "conflict",
+      "conflict_currency",
+      "real_estate",
+      "provider"
+    ]
+  }
+]

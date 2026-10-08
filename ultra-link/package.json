@@ -1,0 +1,47 @@
+{
+  "name": "ultra-link",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ألترا لينك — يربط من يحتاج بمن يقدّم، ومن يريد النشاط نفسه",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "db:start": "bash scripts/db.sh start",
+    "db:stop": "bash scripts/db.sh stop",
+    "db:status": "bash scripts/db.sh status",
+    "db:migrate": "node src/db/migrate.ts",
+    "db:seed": "node src/seed/seed.ts",
+    "db:backup": "bash scripts/backup.sh",
+    "db:restore-test": "bash scripts/restore-test.sh",
+    "start": "bash scripts/app.sh start",
+    "stop": "bash scripts/app.sh stop",
+    "restart": "bash scripts/app.sh restart",
+    "status": "bash scripts/app.sh status",
+    "dev:server": "node src/server/main.ts",
+    "dev:worker": "node src/worker/main.ts",
+    "test": "node --test --test-concurrency=1 'test/unit/**/*.test.ts' 'test/integration/**/*.test.ts'",
+    "test:unit": "node --test 'test/unit/**/*.test.ts'",
+    "test:integration": "node --test --test-concurrency=1 'test/integration/**/*.test.ts'",
+    "test:e2e": "node test/e2e/run.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "bench:generate": "node bench/generate.ts",
+    "bench:run": "node bench/run.ts",
+    "advisor": "node src/advisor/run.ts",
+    "ai:probe": "NODE_USE_ENV_PROXY=1 node src/ai/probe.ts",
+    "jev:mock": "node test/mocks/jev-mock-server.ts --port 8787"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.5",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "playwright-core": "^1.56.1",
+    "typescript": "^5.9.3"
+  }
+}

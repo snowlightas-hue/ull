@@ -1,0 +1,1354 @@
+[
+  {
+    "id": "m001",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "الباحث يريد إعزاز حصراً والشقة في إعزاز",
+    "tags": ["place"]
+  },
+  {
+    "id": "m002",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "نطاق الباحث إعزاز (إلزامي) والشقة في عفرين",
+    "tags": ["place"]
+  },
+  {
+    "id": "m003",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Scope is the Aleppo governorate (region); Azaz is a city inside it",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m004",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1202,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "سرمدا تتبع محافظة إدلب وليست ضمن محافظة حلب",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m005",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[10],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":3302,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "Scope is Syria; Reyhanli is in Turkey",
+    "tags": ["place","country"]
+  },
+  {
+    "id": "m006",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":34,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"2000000","hi":"2000000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "\"وين ما كان\" = world scope contains every place",
+    "tags": ["place","any_place"]
+  },
+  {
+    "id": "m007",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"preferred"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_unsatisfied"],"exclusionCode":null},
+    "why": "إعزاز مفضّلة فقط، فالعرض في عفرين لا يُستبعد لكن ترتيبه أقل",
+    "tags": ["place","preferred_place"]
+  },
+  {
+    "id": "m008",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"preferred"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_satisfied"],"exclusionCode":null},
+    "why": "Preferred place satisfied",
+    "tags": ["place","preferred_place"]
+  },
+  {
+    "id": "m009",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102,1107],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1107,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Scope lists two cities; the offer is in the second one",
+    "tags": ["place","multi_place"]
+  },
+  {
+    "id": "m010",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[33],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":3302,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"900000","hi":"900000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "الريحانية تتبع ولاية هاتاي",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m011",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[33],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":31,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"900000","hi":"900000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "Gaziantep is not in Hatay",
+    "tags": ["place"]
+  },
+  {
+    "id": "m012",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[21],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":2102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"150000000","hi":"150000000","currency":"SYP","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "القامشلي ضمن محافظة الحسكة",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m013",
+    "a": {"side":"seek","categoryCode":"services.plumbing","deal":"service","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.plumbing","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Service: the job location (seeker point, Afrin) is inside the plumber's service area (Aleppo governorate)",
+    "tags": ["place","services","service_area"]
+  },
+  {
+    "id": "m014",
+    "a": {"side":"seek","categoryCode":"services.electrical","deal":"service","place":{"pointPlaceId":1202,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.electrical","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102,1103],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "الكهربائي يعمل في إعزاز وعفرين فقط، والعمل المطلوب في سرمدا",
+    "tags": ["place","services","service_area"]
+  },
+  {
+    "id": "m015",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"english","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"subject":"english"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","attr_satisfied"],"exclusionCode":null},
+    "why": "Online lesson wanted; teacher teaches online",
+    "tags": ["place","online","education"]
+  },
+  {
+    "id": "m016",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1201,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "الطالب يريد أونلاين حصراً والمدرّس حضوري في إدلب فقط",
+    "tags": ["place","online","education"]
+  },
+  {
+    "id": "m017",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"9000","hi":"9000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":[],"exclusionCode":null},
+    "why": "Seeker scope not stated (empty) → no place check; neither excluded nor penalised",
+    "tags": ["place","scope_not_stated"]
+  },
+  {
+    "id": "m018",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[12],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1210,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "أطمة ضمن محافظة إدلب",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m019",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":32,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "Kilis is across the border from Azaz but is not inside the Azaz scope (distance never widens a hard scope)",
+    "tags": ["place","vehicles","near_but_outside"]
+  },
+  {
+    "id": "m020",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[30],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":34,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"40000000","hi":"40000000","currency":"TRY","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Istanbul is in Turkey",
+    "tags": ["place","country"]
+  },
+  {
+    "id": "m021",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[13],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1301,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"30000","hi":"30000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "مدينة دمشق ضمن منطقة دمشق",
+    "tags": ["place","region_contains_city"]
+  },
+  {
+    "id": "m022",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[14],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1301,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"30000","hi":"30000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "Rif Dimashq and Damascus are sibling regions; the city is not inside Rif Dimashq",
+    "tags": ["place","sibling_region"]
+  },
+  {
+    "id": "m023",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1101],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "\"حلب\" هنا مدينة حلب (city 1101) وليست المحافظة؛ إعزاز خارج المدينة",
+    "tags": ["place","city_vs_region_name"]
+  },
+  {
+    "id": "m024",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"preferred"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_unsatisfied"],"exclusionCode":null},
+    "why": "Online only preferred; an in-person teacher in Azaz stays a match with lower rank",
+    "tags": ["place","preferred_place","education"]
+  },
+  {
+    "id": "m025",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102,1103],"scopeStrength":"preferred"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_unsatisfied"],"exclusionCode":null},
+    "why": "جنديرس ليست من الأماكن المفضّلة لكن التفضيل غير إلزامي",
+    "tags": ["place","preferred_place"]
+  },
+  {
+    "id": "m026",
+    "a": {"side":"seek","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1107,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"preferred"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_unsatisfied"],"exclusionCode":null},
+    "why": "Technician prefers to work in Azaz but did not make it a hard limit; job is in Marea",
+    "tags": ["place","services","service_area","preferred_place"]
+  },
+  {
+    "id": "m027",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required","excludePlaceIds":[1103]},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"12000","hi":"12000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "\"بريف حلب بس مو بعفرين\": عفرين مستثناة صراحة رغم أنها ضمن المحافظة",
+    "tags": ["place","negated_place"]
+  },
+  {
+    "id": "m028",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required","excludePlaceIds":[1103]},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"12000","hi":"12000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Azaz is inside the scope and not inside the excluded place",
+    "tags": ["place","negated_place"]
+  },
+  {
+    "id": "m029",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max"],"exclusionCode":null},
+    "why": "السعر يساوي الحد الأقصى تماماً → مطابق",
+    "tags": ["price","boundary","boundary_equal_max"]
+  },
+  {
+    "id": "m030",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"20001","hi":"20001","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":"price_above_max"},
+    "why": "One minor unit (0.01 USD) above a hard maximum is excluded",
+    "tags": ["price","boundary","boundary_plus_one"]
+  },
+  {
+    "id": "m031",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"19999","hi":"19999","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_within_max"],"exclusionCode":null},
+    "why": "One minor unit below the maximum",
+    "tags": ["price","boundary"]
+  },
+  {
+    "id": "m032",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"gte","lo":"300000","hi":null,"currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"300000","hi":"300000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_in_range"],"exclusionCode":null},
+    "why": "gte satisfied at the boundary; reported as price_in_range (half-open range [lo, ∞))",
+    "tags": ["price","boundary","gte"]
+  },
+  {
+    "id": "m033",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"gte","lo":"300000","hi":null,"currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"299999","hi":"299999","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_below_min"],"exclusionCode":"price_below_min"},
+    "why": "\"ما بدي أرخص من ٣٠٠٠\" والسعر أقل بسنت واحد",
+    "tags": ["price","boundary","gte"]
+  },
+  {
+    "id": "m034",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"1500000","hi":"1500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_in_range"],"exclusionCode":null},
+    "why": "Between: lower bound is inclusive",
+    "tags": ["price","boundary","between"]
+  },
+  {
+    "id": "m035",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"2000000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_in_range"],"exclusionCode":null},
+    "why": "Between: upper bound is inclusive",
+    "tags": ["price","boundary","between"]
+  },
+  {
+    "id": "m036",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"2000001","hi":"2000001","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":"price_above_max"},
+    "why": "Between: one minor unit above the upper bound",
+    "tags": ["price","boundary","between"]
+  },
+  {
+    "id": "m037",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"1499999","hi":"1499999","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_below_min"],"exclusionCode":"price_below_min"},
+    "why": "Between: one minor unit below the lower bound",
+    "tags": ["price","boundary","between"]
+  },
+  {
+    "id": "m038",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_exact"],"exclusionCode":null},
+    "why": "\"بالضبط ١٠٠\" والسعر ١٠٠",
+    "tags": ["price","eq"]
+  },
+  {
+    "id": "m039",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"9000","hi":"9000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_not_exact"],"exclusionCode":"price_not_exact"},
+    "why": "Seeker said exactly 100; 90 is not exact even though cheaper",
+    "tags": ["price","eq"]
+  },
+  {
+    "id": "m040",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"11000","hi":"11000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_not_exact"],"exclusionCode":"price_not_exact"},
+    "why": "Exactly 100 requested; 110 offered",
+    "tags": ["price","eq"]
+  },
+  {
+    "id": "m041",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"approx","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"preferred"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"510000","hi":"510000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_near"],"exclusionCode":null},
+    "why": "\"بحدود ٥٠٠٠\" والسعر ٥١٠٠ (٢٪ فوق) → قريب",
+    "tags": ["price","approx"]
+  },
+  {
+    "id": "m042",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"approx","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"preferred"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"490000","hi":"490000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_near"],"exclusionCode":null},
+    "why": "Approx 5000, offer 4900 (2% below)",
+    "tags": ["price","approx"]
+  },
+  {
+    "id": "m043",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"600000","hi":"600000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["currency_mismatch"],"exclusionCode":null},
+    "why": "دولار مقابل ليرة تركية: لا نحوّل العملات أبداً، فالمطابقة محتملة فقط",
+    "tags": ["price","currency"]
+  },
+  {
+    "id": "m044",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"200000000","currency":"SYP","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["currency_mismatch"],"exclusionCode":null},
+    "why": "SYP budget vs USD asking price — never converted",
+    "tags": ["price","currency"]
+  },
+  {
+    "id": "m045",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[34],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"15000000","currency":"EUR","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"sale","place":{"pointPlaceId":34,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"16000000","hi":"16000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["currency_mismatch"],"exclusionCode":null},
+    "why": "EUR vs USD",
+    "tags": ["price","currency"]
+  },
+  {
+    "id": "m046",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"150000","currency":"USD","unit":"year","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["unit_mismatch"],"exclusionCode":null},
+    "why": "سنوي مقابل شهري: الوحدات المختلفة لا تُقارن",
+    "tags": ["price","unit"]
+  },
+  {
+    "id": "m047",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[3302],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"3000","currency":"USD","unit":"day","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"rent","place":{"pointPlaceId":3302,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"60000","hi":"60000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["unit_mismatch"],"exclusionCode":null},
+    "why": "Daily budget vs monthly price",
+    "tags": ["price","unit","vehicles"]
+  },
+  {
+    "id": "m048",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"1000","currency":"USD","unit":"hour","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"800","hi":"800","currency":"USD","unit":"session","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["unit_mismatch"],"exclusionCode":null},
+    "why": "Per hour vs per session (session length unknown)",
+    "tags": ["price","unit","education"]
+  },
+  {
+    "id": "m049",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["price_unknown"],"exclusionCode":null},
+    "why": "الباحث لديه حد أقصى إلزامي والمؤجّر لم يذكر السعر",
+    "tags": ["price","unknown"]
+  },
+  {
+    "id": "m050",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Seeker budget is optional; no budget means no price check",
+    "tags": ["price","budget_optional"]
+  },
+  {
+    "id": "m051",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"preferred"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"22000","hi":"22000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":null},
+    "why": "\"ياريت ما يتعدى ٢٠٠\": حد أقصى مفضّل؛ التجاوز سبب سلبي لا استبعاد",
+    "tags": ["price","preferred_price"]
+  },
+  {
+    "id": "m052",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"preferred"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"18000","hi":"18000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_within_max"],"exclusionCode":null},
+    "why": "Preferred maximum satisfied",
+    "tags": ["price","preferred_price"]
+  },
+  {
+    "id": "m053",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"800","currency":"USD","unit":"hour","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"gte","lo":"1000","hi":null,"currency":"USD","unit":"hour","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":"price_above_max"},
+    "why": "\"ما بدرّس بأقل من ١٠\" vs a hard max of 8: the provider's minimum is above the seeker's maximum",
+    "tags": ["price","range_vs_range","education"]
+  },
+  {
+    "id": "m054",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"800","currency":"USD","unit":"hour","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"between","lo":"500","hi":"700","currency":"USD","unit":"hour","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_within_max"],"exclusionCode":null},
+    "why": "المدرّس يطلب بين ٥ و٧ بالساعة، كله ضمن حد ٨",
+    "tags": ["price","range_vs_range","education"]
+  },
+  {
+    "id": "m055",
+    "a": {"side":"seek","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[10],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"9007199254740992","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":1106,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"9007199254740993","hi":"9007199254740993","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":"price_above_max"},
+    "why": "Precision trap: 2^53+1 > 2^53 must be compared as BIGINT/BigInt, never as a JS float (floats would call them equal)",
+    "tags": ["price","precision_bigint","boundary"]
+  },
+  {
+    "id": "m056",
+    "a": {"side":"seek","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[10],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"9007199254740993","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":1106,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"9007199254740993","hi":"9007199254740993","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_within_max"],"exclusionCode":null},
+    "why": "Equal huge amounts are within max",
+    "tags": ["price","precision_bigint","boundary"]
+  },
+  {
+    "id": "m057",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[15],"scopeStrength":"required"},"price":{"op":"between","lo":"5000000000","hi":"8000000000","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":15,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"6500000000","hi":"6500000000","currency":"SYP","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_in_range"],"exclusionCode":null},
+    "why": "ملايين الليرات السورية ضمن المجال",
+    "tags": ["price","large_amount","between"]
+  },
+  {
+    "id": "m058",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"gte","lo":"300000","hi":null,"currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["price_unknown"],"exclusionCode":null},
+    "why": "Hard minimum, unknown asking price",
+    "tags": ["price","unknown","gte"]
+  },
+  {
+    "id": "m059",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"50000000","hi":"50000000","currency":"TRY","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["currency_mismatch"],"exclusionCode":null},
+    "why": "Between in USD, offer in TRY",
+    "tags": ["price","currency","between"]
+  },
+  {
+    "id": "m060",
+    "a": {"side":"seek","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"30000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"30000","hi":"30000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max"],"exclusionCode":null},
+    "why": "Goods: equal to max",
+    "tags": ["price","goods","boundary_equal_max"]
+  },
+  {
+    "id": "m061",
+    "a": {"side":"seek","categoryCode":"vehicles.motorcycle","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"eq","lo":"80000","hi":"80000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.motorcycle","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"80000","hi":"80000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_exact"],"exclusionCode":null},
+    "why": "\"بتمانمية بالضبط\"",
+    "tags": ["price","eq","vehicles"]
+  },
+  {
+    "id": "m062",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1107],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"300","currency":"USD","unit":"session","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1107,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"0","hi":"0","currency":"USD","unit":"session","strength":"required"},"when":null,"attrs":{"subject":"quran"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["price_within_max"],"exclusionCode":null},
+    "why": "دروس مجانية (٠) ضمن أي حد أقصى",
+    "tags": ["price","free","education"]
+  },
+  {
+    "id": "m063",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"year","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["unit_mismatch"],"exclusionCode":null},
+    "why": "Trap: the yearly number is equal but the unit differs; never compare across units",
+    "tags": ["price","unit","trap"]
+  },
+  {
+    "id": "m064",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":3,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":3},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "\"٣ غرف على الأقل\" والشقة ٣ غرف",
+    "tags": ["attr","boundary"]
+  },
+  {
+    "id": "m065",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":3,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":2},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Required rooms ≥ 3, apartment has 2",
+    "tags": ["attr"]
+  },
+  {
+    "id": "m066",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":3,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["attr_unknown"],"exclusionCode":null},
+    "why": "المؤجّر لم يذكر عدد الغرف",
+    "tags": ["attr","unknown"]
+  },
+  {
+    "id": "m067",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"furnished","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"furnished":false},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["pref_unsatisfied"],"exclusionCode":null},
+    "why": "\"يفضّل مفروشة\" والشقة غير مفروشة → مطابقة بترتيب أقل",
+    "tags": ["attr","preferred_attr"]
+  },
+  {
+    "id": "m068",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"furnished","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"furnished":true},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["pref_satisfied"],"exclusionCode":null},
+    "why": "Preferred furnished satisfied",
+    "tags": ["attr","preferred_attr"]
+  },
+  {
+    "id": "m069",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"furnished","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":[],"exclusionCode":null},
+    "why": "Preferred attribute unknown never blocks confirmation",
+    "tags": ["attr","preferred_attr","preferred_unknown_not_blocking"]
+  },
+  {
+    "id": "m070",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"solar","op":"eq","value":true,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"solar":true},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "\"لازم طاقة شمسية\" متوفرة",
+    "tags": ["attr"]
+  },
+  {
+    "id": "m071",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1203],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"make","op":"in","values":["toyota","hyundai"],"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1203,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"make":"kia"},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Make must be Toyota or Hyundai; offer is Kia",
+    "tags": ["attr","vehicles","in"]
+  },
+  {
+    "id": "m072",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1203],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"make","op":"in","values":["toyota","hyundai"],"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1203,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"make":"hyundai"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "هيونداي ضمن الخيارات",
+    "tags": ["attr","vehicles","in"]
+  },
+  {
+    "id": "m073",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"year","op":"gte","value":2015,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"700000","hi":"700000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"year":2015},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "\"موديل ٢٠١٥ وطالع\" boundary",
+    "tags": ["attr","vehicles","boundary"]
+  },
+  {
+    "id": "m074",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"year","op":"gte","value":2015,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"700000","hi":"700000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"year":2014},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Model 2014 < 2015",
+    "tags": ["attr","vehicles","boundary"]
+  },
+  {
+    "id": "m075",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1201],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"mileage_km","op":"lte","value":100000,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1201,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"600000","hi":"600000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"mileage_km":100000},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Mileage equal to the max",
+    "tags": ["attr","vehicles","boundary"]
+  },
+  {
+    "id": "m076",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1201],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"mileage_km","op":"lte","value":100000,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1201,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"600000","hi":"600000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"mileage_km":100001},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "One km over the max",
+    "tags": ["attr","vehicles","boundary"]
+  },
+  {
+    "id": "m077",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"transmission","op":"eq","value":"automatic","strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"transmission":"manual"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["pref_unsatisfied"],"exclusionCode":null},
+    "why": "\"يفضّل أوتوماتيك\" والسيارة عادي",
+    "tags": ["attr","vehicles","preferred_attr"]
+  },
+  {
+    "id": "m078",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"fuel","op":"eq","value":"diesel","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"make":"kia"},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["attr_unknown"],"exclusionCode":null},
+    "why": "Required diesel; fuel not stated by the seller",
+    "tags": ["attr","vehicles","unknown"]
+  },
+  {
+    "id": "m079",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"floor","op":"between","lo":1,"hi":3,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"floor":0},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Ground floor outside floors 1..3",
+    "tags": ["attr","between"]
+  },
+  {
+    "id": "m080",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"floor","op":"between","lo":1,"hi":3,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"floor":3},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Upper bound inclusive",
+    "tags": ["attr","between","boundary"]
+  },
+  {
+    "id": "m081",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"floor","op":"neq","value":0,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"floor":0},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "\"مو أرضي\" والشقة أرضية",
+    "tags": ["attr","neq","negation"]
+  },
+  {
+    "id": "m082",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"floor","op":"neq","value":0,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"floor":2},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Not ground floor",
+    "tags": ["attr","neq"]
+  },
+  {
+    "id": "m083",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"math","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"subject":"physics"},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "رياضيات مطلوبة والمدرّس فيزياء",
+    "tags": ["attr","education"]
+  },
+  {
+    "id": "m084",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"math","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"subject":"math"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Subject matches",
+    "tags": ["attr","education"]
+  },
+  {
+    "id": "m085",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"math","strength":"required"},{"key":"level","op":"eq","value":"secondary","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"subject":"math"},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["attr_unknown"],"exclusionCode":null},
+    "why": "Level required but the teacher did not state it",
+    "tags": ["attr","education","unknown"]
+  },
+  {
+    "id": "m086",
+    "a": {"side":"seek","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"appliance","op":"eq","value":"fridge","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"appliance":"washing_machine"},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Fridge repair needed; technician fixes washing machines",
+    "tags": ["attr","services"]
+  },
+  {
+    "id": "m087",
+    "a": {"side":"seek","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"home_visit","op":"eq","value":true,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"home_visit":false},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "\"لازم يجي عالبيت\" والفني لا يزور البيوت",
+    "tags": ["attr","services"]
+  },
+  {
+    "id": "m088",
+    "a": {"side":"seek","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"home_visit","op":"eq","value":true,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"home_visit":true},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","attr_satisfied"],"exclusionCode":null},
+    "why": "Home visit available",
+    "tags": ["attr","services"]
+  },
+  {
+    "id": "m089",
+    "a": {"side":"seek","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1201],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"condition","op":"eq","value":"new","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":1201,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"condition":"used"},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "New required, item used",
+    "tags": ["attr","goods"]
+  },
+  {
+    "id": "m090",
+    "a": {"side":"seek","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"area_m2","op":"gte","value":100,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"7500","hi":"7500","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"area_m2":100},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Area equal to the minimum",
+    "tags": ["attr","boundary"]
+  },
+  {
+    "id": "m091",
+    "a": {"side":"seek","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"area_m2","op":"gte","value":100,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"7500","hi":"7500","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"area_m2":99},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Area one m² short",
+    "tags": ["attr","boundary"]
+  },
+  {
+    "id": "m092",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"tenant_type":"family"},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"required"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "\"للعائلات فقط\" والباحث عائلة",
+    "tags": ["attr","provider_constraint"]
+  },
+  {
+    "id": "m093",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"tenant_type":"single"},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"required"}]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Families only; seeker is a single young man",
+    "tags": ["attr","provider_constraint"]
+  },
+  {
+    "id": "m094",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"required"}]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["attr_unknown"],"exclusionCode":null},
+    "why": "المؤجّر يشترط عائلة والباحث لم يذكر وضعه",
+    "tags": ["attr","provider_constraint","unknown"]
+  },
+  {
+    "id": "m095",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"rental_months":12},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rental_months","op":"gte","value":6,"strength":"required"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied"],"exclusionCode":null},
+    "why": "Lease of 12 months ≥ 6 required",
+    "tags": ["attr","provider_constraint"]
+  },
+  {
+    "id": "m096",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"rental_months":3},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rental_months","op":"gte","value":6,"strength":"required"}]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Seeker wants 3 months; landlord requires at least 6",
+    "tags": ["attr","provider_constraint"]
+  },
+  {
+    "id": "m097",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rental_months","op":"gte","value":6,"strength":"required"}]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["attr_unknown"],"exclusionCode":null},
+    "why": "Lease length not stated by the seeker",
+    "tags": ["attr","provider_constraint","unknown"]
+  },
+  {
+    "id": "m098",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"tenant_type":"single"},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"preferred"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["pref_unsatisfied"],"exclusionCode":null},
+    "why": "المؤجّر يفضّل عائلة فقط (غير إلزامي)",
+    "tags": ["attr","provider_constraint","preferred_attr"]
+  },
+  {
+    "id": "m099",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"tenant_type":"family"},"constraints":[{"key":"rooms","op":"gte","value":2,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":3},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"required"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied","place_in_scope"],"exclusionCode":null},
+    "why": "Both directions satisfied: seeker constraint on rooms and landlord constraint on tenant type",
+    "tags": ["attr","provider_constraint","two_way"]
+  },
+  {
+    "id": "m100",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[{"key":"group_size","op":"lte","value":6,"strength":"required"}]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{"group_size":4},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied","date_overlap"],"exclusionCode":null},
+    "why": "Group of 4 fits a max of 6",
+    "tags": ["attr","peer"]
+  },
+  {
+    "id": "m101",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[{"key":"group_size","op":"lte","value":6,"strength":"required"}]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{"group_size":8},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "مجموعة من ٨ أكبر من الحد ٦",
+    "tags": ["attr","peer"]
+  },
+  {
+    "id": "m102",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"mode","op":"eq","value":"in_person","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"mode":"online"},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "In-person required; teacher only online",
+    "tags": ["attr","education"]
+  },
+  {
+    "id": "m103",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"make","op":"eq","value":"kia","strength":"preferred"},{"key":"year","op":"gte","value":2012,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"600000","hi":"600000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"make":"kia","year":2013},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied","pref_satisfied"],"exclusionCode":null},
+    "why": "Required year and preferred make both satisfied",
+    "tags": ["attr","vehicles","preferred_attr"]
+  },
+  {
+    "id": "m104",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["deal_mismatch"],"exclusionCode":"deal_mismatch"},
+    "why": "Buyer vs rental offer",
+    "tags": ["deal"]
+  },
+  {
+    "id": "m105",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["deal_mismatch"],"exclusionCode":"deal_mismatch"},
+    "why": "بدو يستأجر والسيارة للبيع",
+    "tags": ["deal","vehicles"]
+  },
+  {
+    "id": "m106",
+    "a": {"side":"seek","categoryCode":"real_estate.land","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1106],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":1106,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"1200000","hi":"1200000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["deal_mismatch"],"exclusionCode":"deal_mismatch"},
+    "why": "Land lease (ضمان) vs land sale",
+    "tags": ["deal"]
+  },
+  {
+    "id": "m107",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"7500","hi":"7500","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Apartment wanted, shop offered",
+    "tags": ["category"]
+  },
+  {
+    "id": "m108",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.motorcycle","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"80000","hi":"80000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "سيارة مقابل موتور",
+    "tags": ["category","vehicles"]
+  },
+  {
+    "id": "m109",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.skills","deal":"lesson","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Tutoring vs skills course (siblings)",
+    "tags": ["category","education"]
+  },
+  {
+    "id": "m110",
+    "a": {"side":"seek","categoryCode":"services.plumbing","deal":"service","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.electrical","deal":"service","place":{"pointPlaceId":1104,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "سبّاك مقابل كهربجي",
+    "tags": ["category","services"]
+  },
+  {
+    "id": "m111",
+    "a": {"side":"seek","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"goods.appliances","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"12000","hi":"12000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Electronics vs home appliances",
+    "tags": ["category","goods"]
+  },
+  {
+    "id": "m112",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Trip vs football, same day and city",
+    "tags": ["category","peer"]
+  },
+  {
+    "id": "m113",
+    "a": {"side":"seek","categoryCode":"vehicles","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"450000","hi":"450000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "\"أي مركبة\": category ancestor of the car",
+    "tags": ["category","ancestor","vehicles"]
+  },
+  {
+    "id": "m114",
+    "a": {"side":"seek","categoryCode":"real_estate","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1203],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"rent","place":{"pointPlaceId":1203,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"30000","hi":"30000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Any real estate for rent includes a villa",
+    "tags": ["category","ancestor"]
+  },
+  {
+    "id": "m115",
+    "a": {"side":"seek","categoryCode":"education","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Education root vs tutoring",
+    "tags": ["category","ancestor","education"]
+  },
+  {
+    "id": "m116",
+    "a": {"side":"join","categoryCode":"activities","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap"],"exclusionCode":null},
+    "why": "\"أي نشاط\" يشمل الرحلة",
+    "tags": ["category","ancestor","peer"]
+  },
+  {
+    "id": "m117",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["side_mismatch"],"exclusionCode":"side_mismatch"},
+    "why": "Two seekers never match each other in an exchange",
+    "tags": ["side"]
+  },
+  {
+    "id": "m118",
+    "a": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"520000","hi":"520000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["side_mismatch"],"exclusionCode":"side_mismatch"},
+    "why": "بائعان لنفس الشيء",
+    "tags": ["side","vehicles"]
+  },
+  {
+    "id": "m119",
+    "a": {"side":"seek","categoryCode":"help.general","deal":"help","place":{"pointPlaceId":1210,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"help.general","deal":"help","place":{"pointPlaceId":1210,"scopePlaceIds":[12],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Volunteer covering Idlib governorate; help needed in Atmeh",
+    "tags": ["help","place"]
+  },
+  {
+    "id": "m120",
+    "a": {"side":"seek","categoryCode":"real_estate.room","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Room vs whole apartment (siblings, not ancestor)",
+    "tags": ["category"]
+  },
+  {
+    "id": "m121",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"2000000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "بيت عربي مقابل شقة",
+    "tags": ["category"]
+  },
+  {
+    "id": "m122",
+    "a": {"side":"seek","categoryCode":"services.car_repair","deal":"service","place":{"pointPlaceId":1202,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1202,"scopePlaceIds":[1202],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Car repair vs appliance repair",
+    "tags": ["category","services"]
+  },
+  {
+    "id": "m123",
+    "a": {"side":"provide","categoryCode":"help.general","deal":"help","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"help.general","deal":"help","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["side_mismatch"],"exclusionCode":"side_mismatch"},
+    "why": "Two volunteers offering help",
+    "tags": ["side","help"]
+  },
+  {
+    "id": "m124",
+    "a": {"side":"seek","categoryCode":"goods","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"goods.furniture","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"20000","hi":"20000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Goods root vs furniture",
+    "tags": ["category","ancestor","goods"]
+  },
+  {
+    "id": "m125",
+    "a": {"side":"seek","categoryCode":"services","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.cleaning","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Services root vs cleaning",
+    "tags": ["category","ancestor","services"]
+  },
+  {
+    "id": "m126",
+    "a": {"side":"seek","categoryCode":"vehicles.motorcycle","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1107],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.truck","deal":"rent","place":{"pointPlaceId":1107,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"4000","hi":"4000","currency":"USD","unit":"day","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["category_mismatch"],"exclusionCode":"category_mismatch"},
+    "why": "Motorcycle vs pickup",
+    "tags": ["category","vehicles"]
+  },
+  {
+    "id": "m127",
+    "a": {"side":"seek","categoryCode":"real_estate.shop","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1201],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":1201,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["deal_mismatch"],"exclusionCode":"deal_mismatch"},
+    "why": "شراء محل مقابل محل للإيجار",
+    "tags": ["deal"]
+  },
+  {
+    "id": "m128",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap","place_in_scope"],"exclusionCode":null},
+    "why": "Same city, same Friday",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m129",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-10T00:00:00+03:00","to":"2026-10-11T00:00:00+03:00","strength":"required","label":"يوم السبت"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":"date_no_overlap"},
+    "why": "الجمعة مقابل السبت",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m130",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-10T00:00:00+03:00","to":"2026-10-11T00:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":"date_no_overlap"},
+    "why": "Half-open windows [Fri,Sat) and [Sat,Sun) only touch; they do not overlap",
+    "tags": ["peer","date","half_open_boundary"]
+  },
+  {
+    "id": "m131",
+    "a": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T10:00:00+03:00","to":"2026-10-09T14:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T13:00:00+03:00","to":"2026-10-09T18:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap"],"exclusionCode":null},
+    "why": "One hour of overlap is enough",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m132",
+    "a": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T10:00:00+03:00","to":"2026-10-09T13:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T13:00:00+03:00","to":"2026-10-09T18:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":"date_no_overlap"},
+    "why": "10–13 and 13–18 touch at 13:00 only (half-open)",
+    "tags": ["peer","date","half_open_boundary"]
+  },
+  {
+    "id": "m133",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["date_unknown"],"exclusionCode":null},
+    "why": "أحدهما قال \"أي يوم\" (تاريخ غير معروف)",
+    "tags": ["peer","date","unknown"]
+  },
+  {
+    "id": "m134",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-12T00:00:00+03:00","to":"2026-10-19T00:00:00+03:00","strength":"required","label":"الأسبوع الجاي"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-14T00:00:00+03:00","to":"2026-10-15T00:00:00+03:00","strength":"required","label":"يوم الأربعاء"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap"],"exclusionCode":null},
+    "why": "Next week contains Wednesday",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m135",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-12T00:00:00+03:00","to":"2026-10-19T00:00:00+03:00","strength":"required","label":"الأسبوع الجاي"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":"date_no_overlap"},
+    "why": "بكرا (الجمعة) مقابل الأسبوع الجاي",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m136",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"preferred","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-10T00:00:00+03:00","to":"2026-10-11T00:00:00+03:00","strength":"required","label":"يوم السبت"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":null},
+    "why": "A preferred date that does not overlap is a minus reason, not an exclusion",
+    "tags": ["peer","date","preferred_date"]
+  },
+  {
+    "id": "m137",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "Trip from Azaz vs trip from Afrin, both strict",
+    "tags": ["peer","place"]
+  },
+  {
+    "id": "m138",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1107,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","date_overlap"],"exclusionCode":null},
+    "why": "Both accept anyone in Aleppo governorate",
+    "tags": ["peer","place","region_contains_city"]
+  },
+  {
+    "id": "m139",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"preferred"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","date_overlap"],"exclusionCode":null},
+    "why": "Strict on one side, preferred on the other, both satisfied",
+    "tags": ["peer","place"]
+  },
+  {
+    "id": "m140",
+    "a": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-15T00:00:00+03:00","to":"2026-10-16T00:00:00+03:00","strength":"required","label":"يوم الخميس"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.sports","deal":"activity","place":{"pointPlaceId":1103,"scopePlaceIds":[1103],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-15T00:00:00+03:00","to":"2026-10-16T00:00:00+03:00","strength":"required","label":"يوم الخميس"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap","place_in_scope"],"exclusionCode":null},
+    "why": "Football Thursday in Afrin",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m141",
+    "a": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":90,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":90,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","date_overlap"],"exclusionCode":null},
+    "why": "Online study group",
+    "tags": ["peer","online"]
+  },
+  {
+    "id": "m142",
+    "a": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":90,"scopePlaceIds":[90],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "أونلاين حصراً مقابل حضوري بإعزاز حصراً",
+    "tags": ["peer","online","place"]
+  },
+  {
+    "id": "m143",
+    "a": {"side":"join","categoryCode":"activities.social","deal":"activity","place":{"pointPlaceId":31,"scopePlaceIds":[31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-14T18:00:00+03:00","to":"2026-10-14T22:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.social","deal":"activity","place":{"pointPlaceId":31,"scopePlaceIds":[31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-14T20:00:00+03:00","to":"2026-10-14T23:00:00+03:00","strength":"required"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap"],"exclusionCode":null},
+    "why": "Evening windows overlap 20–22",
+    "tags": ["peer","date"]
+  },
+  {
+    "id": "m144",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["date_unknown"],"exclusionCode":null},
+    "why": "Neither stated a date",
+    "tags": ["peer","date","unknown"]
+  },
+  {
+    "id": "m145",
+    "a": {"side":"seek","categoryCode":"vehicles.truck","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1202],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.truck","deal":"rent","place":{"pointPlaceId":1202,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"4000","hi":"4000","currency":"USD","unit":"day","strength":"required"},"when":{"from":"2026-10-12T00:00:00+03:00","to":"2026-10-16T00:00:00+03:00","strength":"required","label":"متاح من الاثنين للخميس"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["date_no_overlap"],"exclusionCode":"date_no_overlap"},
+    "why": "Van needed Friday; available only Mon–Thu next week",
+    "tags": ["date","exchange_date"]
+  },
+  {
+    "id": "m146",
+    "a": {"side":"seek","categoryCode":"vehicles.truck","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1202],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.truck","deal":"rent","place":{"pointPlaceId":1202,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"4000","hi":"4000","currency":"USD","unit":"day","strength":"required"},"when":{"from":"2026-10-08T00:00:00+03:00","to":"2026-10-11T00:00:00+03:00","strength":"required","label":"متاح الخميس للسبت"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["date_overlap","place_in_scope"],"exclusionCode":null},
+    "why": "Availability covers Friday",
+    "tags": ["date","exchange_date"]
+  },
+  {
+    "id": "m147",
+    "a": {"side":"seek","categoryCode":"services.cleaning","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-15T00:00:00+03:00","to":"2026-10-16T00:00:00+03:00","strength":"required","label":"يوم الخميس"},"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.cleaning","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["date_unknown"],"exclusionCode":null},
+    "why": "الباحث يريد الخميس والعاملة لم تذكر أوقاتها",
+    "tags": ["date","unknown","services"]
+  },
+  {
+    "id": "m148",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[{"key":"group_size","op":"lte","value":5,"strength":"required"}]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{"group_size":3},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["attr_satisfied","date_overlap"],"exclusionCode":null},
+    "why": "Group of 3 fits a max of 5",
+    "tags": ["peer","attr"]
+  },
+  {
+    "id": "m149",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102,31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":31,"scopePlaceIds":[1102,31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","date_overlap"],"exclusionCode":null},
+    "why": "Travel companions on the Azaz–Gaziantep route: each one's point lies inside the other's scope (checked in both directions)",
+    "tags": ["peer","place","two_way"]
+  },
+  {
+    "id": "m150",
+    "a": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102,31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.trip","deal":"activity","place":{"pointPlaceId":31,"scopePlaceIds":[31],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-09T00:00:00+03:00","to":"2026-10-10T00:00:00+03:00","strength":"required","label":"يوم الجمعة"},"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["place_out_of_scope"],"exclusionCode":"place_out_of_scope"},
+    "why": "B is in Gaziantep and accepts only Gaziantep; A is in Azaz → out of B's scope even though B is inside A's scope (two-way check)",
+    "tags": ["peer","place","two_way"]
+  },
+  {
+    "id": "m151",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":2,"strength":"required"},{"key":"furnished","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"18000","hi":"18000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":3,"furnished":true},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","attr_satisfied","pref_satisfied"],"exclusionCode":null},
+    "why": "Everything satisfied",
+    "tags": ["combined"]
+  },
+  {
+    "id": "m152",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":2,"strength":"required"},{"key":"furnished","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"18000","hi":"18000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":3,"furnished":false},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","attr_satisfied","pref_unsatisfied"],"exclusionCode":null},
+    "why": "كل الشروط الإلزامية متحققة، والتفضيل غير متحقق",
+    "tags": ["combined","preferred_attr"]
+  },
+  {
+    "id": "m153",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"rooms","op":"gte","value":2,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"600000","hi":"600000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["currency_mismatch","attr_unknown"],"exclusionCode":null},
+    "why": "Two separate unknowns: currency differs and rooms not stated",
+    "tags": ["combined","unknown"]
+  },
+  {
+    "id": "m154",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"preferred"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1103,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"15000","hi":"15000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_pref_unsatisfied","price_within_max"],"exclusionCode":null},
+    "why": "Preferred place missed but price fine",
+    "tags": ["combined","preferred_place"]
+  },
+  {
+    "id": "m155",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required"},"price":{"op":"between","lo":"400000","hi":"600000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"make","op":"in","values":["kia","hyundai"],"strength":"required"},{"key":"transmission","op":"eq","value":"automatic","strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"550000","hi":"550000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"make":"kia","transmission":"manual"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_in_range","attr_satisfied","pref_unsatisfied"],"exclusionCode":null},
+    "why": "كيا بإعزاز بـ٥٥٠٠ لكن عادي وليس أوتوماتيك",
+    "tags": ["combined","vehicles"]
+  },
+  {
+    "id": "m156",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"600","currency":"USD","unit":"session","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"english","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":90,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500","hi":"500","currency":"USD","unit":"session","strength":"required"},"when":null,"attrs":{"subject":"english"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","attr_satisfied","price_within_max"],"exclusionCode":null},
+    "why": "Online English at 5/session within 6",
+    "tags": ["combined","education"]
+  },
+  {
+    "id": "m157",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"20000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"solar","op":"eq","value":true,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"possible","mustIncludeReasonCodes":["price_unknown","attr_unknown"],"exclusionCode":null},
+    "why": "Price and solar both unknown",
+    "tags": ["combined","unknown"]
+  },
+  {
+    "id": "m158",
+    "a": {"side":"seek","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"appliance","op":"eq","value":"ac","strength":"required"},{"key":"home_visit","op":"eq","value":true,"strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"services.appliance_repair","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102,1107],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"appliance":"ac","home_visit":true},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","attr_satisfied","pref_satisfied"],"exclusionCode":null},
+    "why": "فني مكيفات يغطي إعزاز ويزور البيوت",
+    "tags": ["combined","services"]
+  },
+  {
+    "id": "m159",
+    "a": {"side":"seek","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"12000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"tenant_type":"family"},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.apartment","deal":"rent","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"10000","hi":"10000","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{"rooms":2},"constraints":[{"key":"tenant_type","op":"in","values":["family"],"strength":"required"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","attr_satisfied"],"exclusionCode":null},
+    "why": "Family seeker, families-only landlord, price fine",
+    "tags": ["combined","provider_constraint"]
+  },
+  {
+    "id": "m160",
+    "a": {"side":"seek","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[12],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"30000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"condition","op":"eq","value":"used","strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"goods.electronics","deal":"sale","place":{"pointPlaceId":1203,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"25000","hi":"25000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"condition":"new"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","pref_unsatisfied"],"exclusionCode":null},
+    "why": "Preferred used, offer is new — still a match",
+    "tags": ["combined","goods"]
+  },
+  {
+    "id": "m161",
+    "a": {"side":"seek","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1111],"scopeStrength":"required"},"price":{"op":"between","lo":"1500000","hi":"2000000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.villa","deal":"sale","place":{"pointPlaceId":1111,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"2200000","hi":"2200000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["price_above_max"],"exclusionCode":"price_above_max"},
+    "why": "Villa at 22k above a 15–20k range",
+    "tags": ["combined","between"]
+  },
+  {
+    "id": "m162",
+    "a": {"side":"seek","categoryCode":"real_estate.room","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[31],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"500000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{"tenant_type":"student"},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.room","deal":"rent","place":{"pointPlaceId":31,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"TRY","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"tenant_type","op":"in","values":["student"],"strength":"required"}]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","attr_satisfied"],"exclusionCode":null},
+    "why": "غرفة للطلاب بعنتاب بنفس الميزانية",
+    "tags": ["combined","provider_constraint"]
+  },
+  {
+    "id": "m163",
+    "a": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{"group_size":6},"constraints":[]},
+    "b": {"side":"join","categoryCode":"activities.study_group","deal":"activity","place":{"pointPlaceId":1102,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":null,"when":{"from":"2026-10-11T00:00:00+03:00","to":"2026-10-12T00:00:00+03:00","strength":"required","label":"يوم الأحد"},"attrs":{},"constraints":[{"key":"group_size","op":"lte","value":4,"strength":"required"}]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "Study group of 6 vs a max of 4",
+    "tags": ["combined","peer"]
+  },
+  {
+    "id": "m164",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[3302],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"3000","currency":"USD","unit":"day","strength":"required"},"when":null,"attrs":{},"constraints":[{"key":"transmission","op":"eq","value":"automatic","strength":"preferred"}]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"rent","place":{"pointPlaceId":3302,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"3000","hi":"3000","currency":"USD","unit":"day","strength":"required"},"when":null,"attrs":{"transmission":"automatic"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max","pref_satisfied"],"exclusionCode":null},
+    "why": "Car rental, daily price equal to the max, preferred automatic",
+    "tags": ["combined","vehicles"]
+  },
+  {
+    "id": "m165",
+    "a": {"side":"seek","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[11],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"area_m2","op":"gte","value":5000,"strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"real_estate.land","deal":"sale","place":{"pointPlaceId":1107,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"1200000","hi":"1200000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{"area_m2":3000},"constraints":[]},
+    "expected": {"verdict":"excluded","mustIncludeReasonCodes":["attr_violation"],"exclusionCode":"attr_violation"},
+    "why": "٣ دونم أقل من ٥ دونم المطلوبة",
+    "tags": ["combined","attr"]
+  },
+  {
+    "id": "m166",
+    "a": {"side":"seek","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":null,"scopePlaceIds":[1104],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"8000","currency":"USD","unit":"month","strength":"preferred"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"real_estate.shop","deal":"rent","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"7500","hi":"7500","currency":"USD","unit":"month","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max"],"exclusionCode":null},
+    "why": "Shop at 75 within a preferred 80",
+    "tags": ["combined"]
+  },
+  {
+    "id": "m167",
+    "a": {"side":"seek","categoryCode":"services.moving","deal":"service","place":{"pointPlaceId":1104,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"services.moving","deal":"service","place":{"pointPlaceId":1102,"scopePlaceIds":[1102,1103,1104],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope"],"exclusionCode":null},
+    "why": "Mover covers Al-Bab",
+    "tags": ["combined","services","service_area"]
+  },
+  {
+    "id": "m168",
+    "a": {"side":"seek","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":null,"scopePlaceIds":[90,1203],"scopeStrength":"required"},"price":null,"when":null,"attrs":{},"constraints":[{"key":"subject","op":"eq","value":"quran","strength":"required"}]},
+    "b": {"side":"provide","categoryCode":"education.tutoring","deal":"lesson","place":{"pointPlaceId":1203,"scopePlaceIds":[],"scopeStrength":"required"},"price":null,"when":null,"attrs":{"subject":"quran"},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","attr_satisfied"],"exclusionCode":null},
+    "why": "\"أونلاين أو بالدانا\" والمعلّم بالدانا",
+    "tags": ["combined","education","multi_place"]
+  },
+  {
+    "id": "m169",
+    "a": {"side":"seek","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":null,"scopePlaceIds":[1102],"scopeStrength":"required"},"price":{"op":"lte","lo":null,"hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "b": {"side":"provide","categoryCode":"vehicles.car","deal":"sale","place":{"pointPlaceId":1102,"scopePlaceIds":[],"scopeStrength":"required"},"price":{"op":"eq","lo":"500000","hi":"500000","currency":"USD","unit":"total","strength":"required"},"when":null,"attrs":{},"constraints":[]},
+    "expected": {"verdict":"match","mustIncludeReasonCodes":["place_in_scope","price_within_max"],"exclusionCode":null},
+    "why": "Car at exactly the max",
+    "tags": ["combined","boundary_equal_max"]
+  }
+]

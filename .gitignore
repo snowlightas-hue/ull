@@ -1,0 +1,12 @@
+# secrets
+.env
+.env.*
+!.env.example
+node_modules/
+ultra-link/var/
+ultra-link/backups/
+*.log
+test-results/
+playwright-report/
+ultra-link/test/e2e/artifacts/
+ultra-link/bench/results/*.raw

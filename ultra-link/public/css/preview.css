@@ -1,0 +1,13 @@
+/* Styles for the dev-only ui-preview.html control panel. Not loaded by the app. */
+.pv-panel {
+  position: fixed; z-index: 90; left: 8px; bottom: 84px; max-width: min(92vw, 340px);
+  font: 12px/1.4 system-ui, sans-serif; color: #eef2ff;
+  background: rgba(10, 14, 30, .96); border: 1px solid #3b4c86; border-radius: 12px; padding: 6px 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
+}
+.pv-panel summary { cursor: pointer; font-weight: 700; padding: 4px; }
+.pv-row { display: flex; gap: 6px; margin: 6px 0; }
+.pv-select { background: #151f42; color: #eef2ff; border: 1px solid #3b4c86; border-radius: 6px; padding: 4px; font: inherit; }
+.pv-states { display: flex; flex-wrap: wrap; gap: 4px; max-height: 40vh; overflow: auto; }
+.pv-btn { background: #151f42; color: #eef2ff; border: 1px solid #3b4c86; border-radius: 6px; padding: 4px 6px; font: inherit; cursor: pointer; }
+.pv-btn:hover { background: #1d2a56; }
