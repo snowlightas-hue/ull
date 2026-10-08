@@ -46,6 +46,7 @@ export const VERTICALS: VerticalSeed[] = [
   { id: 5, code: 'activities', nameAr: 'أنشطة' },
   { id: 6, code: 'goods', nameAr: 'سلع' },
   { id: 7, code: 'help', nameAr: 'مساعدة' },
+  { id: 8, code: 'transport', nameAr: 'نقل وتوصيل' },
 ];
 
 export const DEALS: DealSeed[] = [
@@ -96,6 +97,10 @@ export const CATEGORIES: CategorySeed[] = [
   { id: 602, code: 'goods.furniture', parent: 'goods', nameAr: 'أثاث', descriptionAr: 'أثاث منزلي مثل كنب أو غرفة نوم أو طاولة', deals: ['sale'], keywords: ['اثاث', 'أثاث', 'كنباية', 'كنب', 'غرفة نوم', 'سفرة', 'طاولة', 'خزانة', 'تخت', 'فرشة', 'موبيليا', 'سجادة', 'سجاد'] },
   { id: 603, code: 'goods.appliances', parent: 'goods', nameAr: 'أجهزة منزلية', descriptionAr: 'غسالة أو براد أو مكيف أو فرن للبيع', deals: ['sale'], keywords: ['غسالة للبيع', 'براد للبيع', 'ثلاجة للبيع', 'مكيف للبيع', 'فرن للبيع', 'بوتوغاز', 'سخان', 'غسالة', 'غسالات', 'براد', 'برادات', 'ثلاجة', 'مكيف', 'مكيفات', 'فرن'] },
   { id: 604, code: 'goods.clothing', parent: 'goods', nameAr: 'ملابس', descriptionAr: 'ملابس أو أحذية', deals: ['sale'], keywords: ['ملابس', 'تياب', 'تيابات', 'جاكيت', 'فستان', 'صباط', 'احذية', 'بوط'] },
+  // ── Transport (proximity matters: nearest first, live position) ──
+  { id: 800, code: 'transport', parent: null, nameAr: 'نقل وتوصيل', descriptionAr: 'توصيل أشخاص أو أغراض', deals: ['service'], keywords: [] },
+  { id: 801, code: 'transport.ride', parent: 'transport', nameAr: 'توصيلة / سيارة مع سائق', descriptionAr: 'سيارة مع سائق توصل شخصًا من مكان لمكان (تكسي، سرفيس، توصيلة)', deals: ['service'], keywords: ['توصيلة', 'توصيله', 'توصيلات', 'تكسي', 'تاكسي', 'سرفيس', 'سيارة اجرة', 'سياره اجره', 'اوبر', 'يوصلني', 'توصلني', 'يوصلنا', 'توصلنا', 'سيارة توصلني', 'حدا يوصلني', 'سواق مع سيارة', 'سائق مع سيارة', 'سيارة مع سائق', 'مشوار بالسيارة', 'بوصل ركاب', 'بوصل ناس', 'عندي تكسي'] },
+  { id: 802, code: 'transport.delivery', parent: 'transport', nameAr: 'توصيل أغراض', descriptionAr: 'توصيل غرض أو طلب أو طرد صغير من مكان لمكان', deals: ['service'], keywords: ['ديليفري', 'دليفري', 'توصيل طلبات', 'توصيل اغراض', 'يوصل غرض', 'يوصلي غرض', 'طرد', 'توصيل طرد', 'مندوب توصيل'] },
   // ── Help / volunteering ──
   { id: 700, code: 'help', parent: null, nameAr: 'مساعدة', descriptionAr: 'مساعدة أو تطوع', deals: ['help'], keywords: [] },
   { id: 701, code: 'help.general', parent: 'help', nameAr: 'مساعدة عامة وتطوع', descriptionAr: 'شخص يحتاج مساعدة أو متطوع يعرض المساعدة', deals: ['help'], keywords: ['مساعدة', 'مساعده', 'ساعدوني', 'حدا يساعدني', 'يساعدني', 'يساعد', 'ساعد', 'تطوع', 'متطوع', 'متطوعة', 'بساعد', 'فزعة', 'يتبرع', 'تبرع', 'يوصل', 'يوصّل', 'توصيل مريض'] },

@@ -10,3 +10,4 @@ test-results/
 playwright-report/
 ultra-link/test/e2e/artifacts/
 ultra-link/bench/results/*.raw
+ultra-link/web-demo/dist/

@@ -40,6 +40,12 @@ export interface RuleParse {
   /** Raw attribute mentions before deciding self-fact vs counterpart-condition (depends on side). */
   attrMentions: AttrMention[];
   unknownTerms: string[]; // content words not mapped to anything (advisor input)
+  /** "ضمن 5 كم" / "ما يبعد أكتر من 3 كيلو" */
+  radius: { km: number; strength: Strength; evidence: string } | null;
+  /** "قريب مني / الأقرب / جنبي" */
+  nearest: boolean;
+  /** "موقعي الحالي / من هون" — the user refers to where they are now (needs GPS or a place answer) */
+  hereRef: boolean;
   isNegativeAnswer: boolean; // "لا" / "مو هيك"
   isUnsure: boolean; // "ما بعرف" / "مو مهم"
 }

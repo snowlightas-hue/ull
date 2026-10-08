@@ -6,7 +6,7 @@
 import type { Registry } from '../domain/registry.ts';
 import { attributesFor } from '../domain/registry.ts';
 import { priceText } from '../domain/format.ts';
-import type { AttrConstraint, AttrFact, Currency, DealCode, IntentSpec, PlaceSpec, PriceSpec, PriceUnit, Question, Side, SlotName, Strength, TimeWindow } from '../domain/types.ts';
+import type { AttrConstraint, AttrFact, Currency, DealCode, GeoPoint, IntentSpec, PlaceSpec, PriceSpec, PriceUnit, Question, Side, SlotName, Strength, TimeWindow } from '../domain/types.ts';
 import { normalizeAr } from '../nlu/arabic.ts';
 import { assignAttributes, parseUtterance, tokensOf } from '../nlu/parse.ts';
 import { findNumbers } from '../nlu/numbers.ts';
@@ -28,6 +28,10 @@ export interface ConversationDraft {
   currency?: Slot<Currency>;
   unit?: Slot<PriceUnit>;
   when?: Slot<TimeWindow>;
+  /** precise point from the browser (GPS with consent) — never shown to others before a connection */
+  geo?: Slot<GeoPoint>;
+  radius?: Slot<{ value: number; strength: Strength }>;
+  nearest?: boolean;
   mentions: AttrMention[];
   turns: number;
   asked: Record<string, number>; // field → times asked
@@ -43,6 +47,8 @@ export function emptyDraft(): ConversationDraft {
 
 export interface TurnInput {
   text: string;
+  /** coordinates sent by the client when the user tapped "استخدم موقعي" */
+  geo?: { lat: number; lng: number; accuracyM?: number } | null;
   answering: Question | null; // the question the user is answering, if any
   jev?: JevResolution | null;
   now?: Date;
@@ -183,6 +189,14 @@ export function applyTurn(reg: Registry, draftIn: ConversationDraft, input: Turn
     const w = parse.when;
     offer('when', w, w.label ?? '', draft.when?.value.label ?? '', () => { draft.when = { value: w, source: 'rules', confidence: 0.9, evidence: w.evidence, turn }; });
   }
+  // precise location & distance
+  if (input.geo && Number.isFinite(input.geo.lat) && Number.isFinite(input.geo.lng) && Math.abs(input.geo.lat) <= 90 && Math.abs(input.geo.lng) <= 180) {
+    draft.geo = { value: { lat: input.geo.lat, lng: input.geo.lng, accuracyM: input.geo.accuracyM, source: 'gps', at: (input.now ?? new Date()).toISOString() }, source: 'answer', confidence: 1, turn };
+    markResolved(draft, 'geo');
+  }
+  if (parse.radius) draft.radius = { value: { value: parse.radius.km, strength: parse.radius.strength }, source: 'rules', confidence: 0.9, evidence: parse.radius.evidence, turn };
+  if (parse.nearest) draft.nearest = true;
+
   // attribute mentions: newer mention of the same key replaces the older one
   for (const m of parse.attrMentions) {
     const sameUtterance = parse.attrMentions.filter((x) => x.key === m.key).length > 1;
@@ -242,7 +256,13 @@ export function nextQuestion(reg: Registry, d: ConversationDraft): Question | nu
       if (q) return q;
     }
   }
-  if (!d.place?.value.ids.length && !d.resolved.includes('place')) {
+  // distance-based requests (rides, "قريب مني", "ضمن 5 كم"): ask for the precise location instead of a city
+  const needsGeo = (d.nearest || !!d.radius || (cat!.code === 'transport.ride' && side === 'seek')) && !d.geo;
+  if (needsGeo && !d.resolved.includes('geo') && !d.place?.value.ids.length) {
+    const q = ask('geo', 'geo', [{ value: '__use_my_location__', label: 'استخدم موقعي الحالي' }]);
+    if (q) return q;
+  }
+  if (!d.place?.value.ids.length && !d.resolved.includes('place') && !d.geo && !d.resolved.includes('geo')) {
     const key: TemplateKey =
       family === 'goods' ? (side === 'provide' ? 'place_provide' : 'place_seek')
       : family === 'service' ? (side === 'provide' ? 'place_service_provide' : 'place_service_seek')
@@ -286,7 +306,7 @@ export function recordAsked(d: ConversationDraft, q: Question): void {
 // ───────────── spec building ─────────────
 type Family = 'goods' | 'service' | 'lesson' | 'activity';
 function familyOf(vertical: string): Family {
-  if (vertical === 'services' || vertical === 'help') return 'service';
+  if (vertical === 'services' || vertical === 'help' || vertical === 'transport') return 'service';
   if (vertical === 'education') return 'lesson';
   if (vertical === 'activities') return 'activity';
   return 'goods';
@@ -339,7 +359,26 @@ export function buildSpec(reg: Registry, d: ConversationDraft): IntentSpec {
   for (const [k, v] of Object.entries(rawAttrs)) if (allowed.has(k)) attrs[k] = v.value;
   const cons: AttrConstraint[] = constraints.filter((c) => allowed.has(c.key));
 
+  if (d.geo) {
+    place.geo = d.geo.value;
+    if (place.pointPlaceId == null) place.pointPlaceId = nearestCity(reg, d.geo.value.lat, d.geo.value.lng);
+  }
+  if (d.radius) place.radiusKm = d.radius.value;
+  if (d.nearest) place.nearest = true;
   return { side, categoryCode: cat.code, deal, place, price, when: d.when?.value ?? null, attrs, constraints: cons };
+}
+
+/** Nearest city with known coordinates within 30 km (for place-based matching and a coarse display name). */
+export function nearestCity(reg: Registry, lat: number, lng: number): number | null {
+  let best: { id: number; km: number } | null = null;
+  for (const p of reg.places) {
+    if (p.lat == null || p.lng == null || p.kind === 'world' || p.kind === 'country') continue;
+    const r = Math.PI / 180;
+    const h = Math.sin(((p.lat - lat) * r) / 2) ** 2 + Math.cos(lat * r) * Math.cos(p.lat * r) * Math.sin(((p.lng - lng) * r) / 2) ** 2;
+    const km = 2 * 6371 * Math.asin(Math.sqrt(h));
+    if (km <= 30 && (!best || km < best.km)) best = { id: p.id, km };
+  }
+  return best?.id ?? null;
 }
 
 // ───────────── summaries ─────────────
@@ -358,6 +397,9 @@ export function summarize(reg: Registry, d: ConversationDraft): { titleAr: strin
     chips.push({ labelAr: 'السعر', valueAr: priceText(spec, side) ?? '', slot: 'price' });
   }
   if (d.when) chips.push({ labelAr: 'الموعد', valueAr: d.when.value.label ?? '', slot: 'when' });
+  if (d.geo) chips.push({ labelAr: 'موقعك', valueAr: 'محدد بدقة (لا يظهر لأحد قبل موافقتك)', slot: 'geo' });
+  if (d.radius) chips.push({ labelAr: 'المسافة', valueAr: `ضمن ${d.radius.value.value} كم${d.radius.value.strength === 'preferred' ? ' (تقريبًا)' : ''}`, slot: 'geo' });
+  else if (d.nearest) chips.push({ labelAr: 'الترتيب', valueAr: 'الأقرب أولًا', slot: 'geo' });
   const cat = d.category ? reg.categoryByCode.get(d.category.value) : undefined;
   const defs = cat ? attributesFor(reg, cat.code) : [];
   for (const m of d.mentions) {
@@ -436,6 +478,11 @@ function applyDirectAnswer(reg: Registry, d: ConversationDraft, field: SlotName,
       return true;
     }
     case 'deal': {
+      if (v === 'ride' || /(توصيل|توصيله|توصيلات|مع سائق|مع سايق|تكسي|تاكسي)/.test(norm)) {
+        d.category = { value: 'transport.ride', source: 'answer', confidence: 1, evidence: raw, turn };
+        d.deal = { value: 'service', source: 'answer', confidence: 1, evidence: raw, turn };
+        return true;
+      }
       const chip = (['sale', 'rent', 'service', 'lesson', 'activity', 'help'] as DealCode[]).find((x) => v === x);
       const deal = chip ?? (/(ايجار|اجار|استاجر|للايجار|اجر|كري)/.test(norm) ? 'rent' : /(شراء|اشتري|بيع|للبيع|شرا|شري|ملك|تمليك)/.test(norm) ? 'sale' : null);
       if (!deal) return false;
@@ -476,6 +523,12 @@ function applyDirectAnswer(reg: Registry, d: ConversationDraft, field: SlotName,
       if (!unit) return false;
       d.unit = { value: unit, source: 'answer', confidence: 1, evidence: raw, turn };
       return true;
+    }
+    case 'geo': {
+      if (d.geo) return true; // coordinates arrived with this turn
+      const ids = parse.places.filter((p) => !p.negated).map((p) => p.placeId);
+      if (ids.length) { d.place = { value: { ids, strength: d.place?.value.strength ?? null, exclude: d.place?.value.exclude ?? [] }, source: 'answer', confidence: 1, evidence: raw, turn }; return true; }
+      return false;
     }
     default:
       if (field.startsWith('attr.')) {

@@ -31,7 +31,8 @@
     "advisor": "node src/advisor/run.ts",
     "ai:probe": "NODE_USE_ENV_PROXY=1 node src/ai/probe.ts",
     "jev:mock": "node test/mocks/jev-mock-server.ts --port 8787",
-    "db:reset-demo": "node src/seed/seed.ts --reset-demo"
+    "db:reset-demo": "node src/seed/seed.ts --reset-demo",
+    "demo:build": "node web-demo/build.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
+    "esbuild": "^0.25.10",
     "playwright-core": "^1.56.1",
     "typescript": "^5.9.3"
   }

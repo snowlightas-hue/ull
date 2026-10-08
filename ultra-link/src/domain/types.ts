@@ -62,12 +62,26 @@ export interface TimeWindow {
   evidence?: string;
 }
 
+export interface GeoPoint {
+  lat: number; // WGS84 degrees (coordinates are not money: floats are fine)
+  lng: number;
+  accuracyM?: number;
+  source: 'gps' | 'live' | 'place';
+  at?: string; // ISO time of the fix
+}
+
 /** Location: point = where the thing/person is; scope = where a counterpart is acceptable. */
 export interface PlaceSpec {
   pointPlaceId: number | null;
   scopePlaceIds: number[]; // empty = not stated
   scopeStrength: Strength; // 'فقط بإعزاز' => required; 'يفضّل إعزاز' => preferred
   excludePlaceIds?: number[]; // 'مو بعفرين' => never match points inside these places
+  /** Precise point of the owner (browser GPS with consent, or live position). Never shown to others before a connection. */
+  geo?: GeoPoint | null;
+  /** "ضمن 5 كم" → max distance between my point and the counterpart's point. */
+  radiusKm?: { value: number; strength: Strength } | null;
+  /** "الأقرب / قريب مني" → rank by distance. */
+  nearest?: boolean;
   evidence?: string;
 }
 
@@ -94,6 +108,7 @@ export type SlotName =
   | 'price.currency'
   | 'price.unit'
   | 'when'
+  | 'geo'
   | `attr.${string}`;
 
 export interface SlotValue<T = unknown> {

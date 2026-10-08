@@ -19,6 +19,9 @@ export const IntentSpecSchema = z.object({
     scopeStrength: STRENGTH,
     excludePlaceIds: z.array(z.number().int()).max(10).optional(),
     evidence: z.string().max(200).optional(),
+    geo: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), accuracyM: z.number().min(0).max(100_000).optional(), source: z.enum(['gps', 'live', 'place']), at: z.string().max(40).optional() }).nullable().optional(),
+    radiusKm: z.object({ value: z.number().positive().max(500), strength: STRENGTH }).nullable().optional(),
+    nearest: z.boolean().optional(),
   }),
   price: z.object({
     op: z.enum(['eq', 'lte', 'gte', 'between', 'approx']),

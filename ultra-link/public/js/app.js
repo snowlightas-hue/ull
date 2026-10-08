@@ -73,6 +73,7 @@ function startApp() {
     onOption: (value) => {
       const q = state.machine.context.question;
       const opt = q?.options?.find((o) => o.value === value) ?? { value, label: String(value) };
+      if (value === '__use_my_location__') { useMyLocation(opt); return; }
       state.machine.chooseOption(opt);
     },
     onAnswerTap: () => state.machine.startListening(),
@@ -92,12 +93,15 @@ function startApp() {
     optionText: (o) => o.label,
     api: {
       ensureConversation: async () => (await api.post('/api/conversations')).conversation,
-      sendTurn: (id, body) => api.post(`/api/conversations/${id}/turns`, body),
+      // coordinates (when the user just shared them) travel with the answer they belong to
+      sendTurn: (id, body) => { const geo = state.pendingGeo; state.pendingGeo = null; return api.post(`/api/conversations/${id}/turns`, geo ? { ...body, geo } : body); },
       runMatch: (intentId) => api.post(`/api/intents/${intentId}/match`),
       cancelConversation: (id) => api.post(`/api/conversations/${id}/cancel`),
     },
   }));
   machine.subscribe((st, ctx) => renderMachine(st, ctx));
+  // local debugging aid: the event log holds lengths/states only, never transcripts
+  if (['127.0.0.1', 'localhost'].includes(location.hostname)) window.__ulMachine = machine;
   renderMachine(machine.state, machine.context);
 
   // restore an unfinished conversation (draft + pending question survive reloads)
@@ -125,6 +129,23 @@ function renderMachine(st, ctx) {
   if (st === 'saved_no_results') home.showSavedNoResults(ctx.intent, ctx.matchRun?.suggestionsAr ?? [], ctx.matchRun);
   if (st === 'error' && ctx.error) home.showError(ctx.error.messageAr);
   if (['results', 'saved_no_results'].includes(st)) refreshCounts();
+}
+
+/** "استخدم موقعي الحالي": ask the browser for one position (with the user's consent), then answer the question. */
+function useMyLocation(opt) {
+  if (!('geolocation' in navigator)) { toast('تحديد الموقع غير متاح في هذا المتصفح. قل اسم المكان أو اكتبه.', { kind: 'error' }); return; }
+  toast('جارٍ تحديد موقعك… (لن يظهر موقعك الدقيق لأحد قبل موافقتك على التواصل)', { kind: 'info' });
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      state.pendingGeo = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyM: Math.round(pos.coords.accuracy || 0) };
+      state.machine.chooseOption({ value: opt.value, label: 'موقعي الحالي' });
+    },
+    (err) => {
+      const msg = err.code === 1 ? 'لم تسمح بتحديد الموقع. يمكنك قول اسم المكان أو كتابته بدلًا من ذلك.' : 'تعذّر تحديد موقعك الآن. قل اسم المكان أو اكتبه.';
+      toast(msg, { kind: 'error' });
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+  );
 }
 
 async function refreshAiStatus() {

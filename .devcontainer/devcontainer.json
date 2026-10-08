@@ -1,0 +1,27 @@
+{
+  "name": "Ultra Link (full app: voice, GPS, PostgreSQL)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "4gb"
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "cd ultra-link && npm start",
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Ultra Link",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "secrets": {
+    "TYPESAFE_API_KEY": {
+      "description": "Optional: TypeSafe (Jev) API key. Without it the local Arabic parser is used."
+    }
+  },
+  "containerEnv": {
+    "UL_TRUST_PROXY": "1"
+  }
+}

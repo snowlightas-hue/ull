@@ -303,6 +303,7 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
 
   // ── numbers → classify context (rooms/floor/year/mileage/group/area/time) vs price
   const nums = findNumbers(tokens);
+  let radius: RuleParse['radius'] = null;
   const prices: PriceCandidate[] = [];
   const attrMentions: AttrMention[] = [];
   const usedNum = new Set<number>();
@@ -336,6 +337,16 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
       const atLeast = /(علي الاقل|ما تقل عن|ما يقل عن|مو اقل من|لا تقل عن|لا يقل عن|اقل شي)\s*\S{0,3}$/.test(pre);
       attrMentions.push({ key: 'area_m2', op: atLeast ? 'gte' : 'eq', value: Number(whole * factor), strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
       usedNum.add(ni); mark(n.start, n.end + 1); continue;
+    }
+    // distance from me: "ضمن 5 كم", "ما يبعد أكتر من 3 كيلو", "تبعد عني مسافة 2 كم", "بحدود 500 متر"
+    if (/^(كم|كيلو|كيلومتر|كيلومترات|كيلومترا|km|متر|م)$/.test(next)) {
+      const pre = tokens.slice(Math.max(0, n.start - 5), n.start).join(' ');
+      if (/(ضمن|بنطاق|نطاق|قطر|يبعد|تبعد|بعد|بعيد|بعيده|مسافه|حوالي|بحدود|قريب)/.test(pre) && !/(ماشيه|ماشي|مقطوعه|عداد|مشيها)/.test(pre)) {
+        const km = /^(متر|م)$/.test(next) ? Number(n.cents) / 100 / 1000 : Number(n.cents) / 100;
+        const required = /(ضمن|بنطاق|نطاق|ما يبعد|ما تبعد|لا يبعد|لا تبعد|ما بدي ابعد|مو ابعد|حد اقصي|اكتر من|اكثر من|اقصي)/.test(pre);
+        if (km > 0 && km <= 500) radius = { km, strength: required ? 'required' : 'preferred', evidence: tokens.slice(Math.max(0, n.start - 3), n.end + 1).join(' ') };
+        usedNum.add(ni); mark(n.start, n.end + 1); continue;
+      }
     }
     if (/^(كم|كيلو|كيلومتر|km)$/.test(next) && vertical === 'vehicles') {
       attrMentions.push({ key: 'mileage_km', op: 'lte', value: Number(whole), strength: strengthNear(tokens, n.start, n.end + 1), evidence: ev, about: 'either' });
@@ -518,11 +529,26 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
   const isNegativeAnswer = /^(لا|لاء|لأ|مو هيك|مش هيك|لا مو|غلط|لا ابدا)( |$)/.test(norm);
   const isUnsure = /(ما بعرف|مابعرف|مش عارف|ما عندي فكره|مو مهم|مش مهم|مو فارقه|مش فارقه|متل ما بدك|اي شي|عادي|ما بتفرق|ما بيفرق|بلا|ولا شي)/.test(norm) && tokens.length <= 5;
 
+  // proximity: "قريب مني", "الأقرب", "جنبي" — and references to where I am now
+  const nearestEarly = /(?:^| )(?:قريب|قريبه|قريبين|قراب) (?:مني|علي|لعندي)(?: |$)|(?:^| )(?:الاقرب|اقرب سياره|جنبي|حولي)(?: |$)/.test(norm);
+  // "بدي سيارة قريبة مني / تبعد عني 3 كم" without a sale/rent cue = requesting a car to come (a ride)
+  if (categories[0]?.value === 'vehicles.car' && (radius || nearestEarly) && !SALE_RE.test(norm) && !RENT_RE.test(norm) && side?.value !== 'provide') {
+    categories.unshift({ value: 'transport.ride', confidence: 0.8, evidence: radius?.evidence ?? 'قريب', explicit: true });
+    categories[1] = { ...categories[1]!, explicit: false };
+  }
+  const nearest = /(?:^| )(?:قريب|قريبه|قريبين|قراب) (?:مني|علي|عليي|منا|لعندي|من عندي|من موقعي)(?: |$)|(?:^| )(?:الاقرب|اقرب شي|اقرب واحد|اقرب سياره|جنبي|حولي|بمنطقتي|بحارتي)(?: |$)/.test(norm) || (radius !== null && radius.strength === 'preferred');
+  const hereRef = /(?:^| )(?:موقعي|مكاني|موقعي الحالي|مكاني الحالي|من عندي|لعندي|من هون|وين انا|وين ما انا)(?: |$)/.test(norm);
+
+  const finalDeal = categories[0]?.value === 'transport.ride' && deal?.value !== 'service' ? detectDeal(reg, norm, 'transport.ride') : deal;
+
   return {
     normalized: norm,
+    radius,
+    nearest,
+    hereRef,
     side,
     categories,
-    deal,
+    deal: finalDeal,
     places,
     prices: negotiable ? prices.map((p) => ({ ...p })) : prices,
     when,

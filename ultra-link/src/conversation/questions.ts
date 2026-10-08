@@ -25,6 +25,7 @@ export const TEMPLATES = {
   unit_lesson: q('السعر للحصة ولا بالشهر؟', 'السِّعر لَلحِصّة، وَلّا بالشَّهر؟'),
   unit_service: q('السعر للشغلة كلها ولا بالساعة؟', 'السِّعر لَلشَّغلة كُلّها، وَلّا بالسّاعة؟'),
   subject_provide: q('أي مادة بتدرّس؟', 'أَيّ مادّة بْتْدَرِّس؟'),
+  geo: q('وين أنت هلق؟ اضغط «استخدم موقعي الحالي» أو قول اسم المكان.', 'وين أَنت هَلَّق؟ اضغط «استخدم موقعي الحالي» أو قول اسم المكان.'),
   subject_seek: q('بأي مادة؟', 'بِأَيّ مادّة؟'),
 } satisfies Record<string, Tpl>;
 
@@ -82,7 +83,10 @@ const CHIP = {
 export function dealOptions(reg: Registry, categoryCode: string, side: Side | null): { value: string; label: string }[] {
   const cat = reg.categoryByCode.get(categoryCode);
   const labels: Partial<Record<DealCode, [string, string]>> = { sale: ['شراء', 'للبيع'], rent: ['إيجار', 'للإيجار'] };
-  return (cat?.deals ?? []).map((d) => ({ value: d, label: labels[d]?.[side === 'provide' ? 1 : 0] ?? reg.dealByCode.get(d)!.nameAr }));
+  const opts: { value: string; label: string }[] = (cat?.deals ?? []).map((d) => ({ value: d as string, label: labels[d]?.[side === 'provide' ? 1 : 0] ?? reg.dealByCode.get(d)!.nameAr }));
+  // "عندي سيارة" can also mean offering rides (a car with a driver)
+  if (categoryCode === 'vehicles.car') opts.push({ value: 'ride', label: side === 'provide' ? 'توصيلات (سيارة مع سائق)' : 'توصيلة (سيارة مع سائق)' });
+  return opts;
 }
 
 export function makeQuestion(field: SlotName | 'conflict', key: TemplateKey, attempt: number, options?: { value: string; label: string }[]): Question {

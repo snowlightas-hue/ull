@@ -63,7 +63,7 @@ export async function cancelConversation(db: pg.Pool, user: SessionUser, publicI
   return { id: rows[0].public_id, state: rows[0].state };
 }
 
-export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser, convId: string, body: { text: string; modality: 'voice' | 'text'; clientTurnId: string }): Promise<TurnResult> {
+export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser, convId: string, body: { text: string; modality: 'voice' | 'text'; clientTurnId: string; geo?: { lat: number; lng: number; accuracyM?: number } | null }): Promise<TurnResult> {
   const text = (body.text ?? '').trim();
   if (!text || text.length > 1000) throw new HttpError(422, 'bad_text', 'النص فارغ أو طويل جدًا');
   if (!/^[0-9a-f-]{36}$/i.test(convId)) throw new HttpError(404, 'not_found', 'المحادثة غير موجودة');
@@ -106,7 +106,8 @@ export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser
       }
     }
 
-    const out = applyTurn(reg, draft, { text, answering, jev });
+    const geo = body.geo && Number.isFinite(body.geo.lat) && Number.isFinite(body.geo.lng) && Math.abs(body.geo.lat) <= 90 && Math.abs(body.geo.lng) <= 180 ? body.geo : null;
+    const out = applyTurn(reg, draft, { text, answering, jev, geo });
     const engine: TurnResult['understanding']['engine'] = jev && out.appliedJev.length ? jev.engine : 'rules';
     if (out.appliedJev.length) notes.push(`حُدّد بواسطة ${jev?.engine === 'jev-sim' ? 'محاكاة Jev' : 'Jev'}: ${out.appliedJev.join('، ')}`);
     const understanding = { engine, latencyMs: Date.now() - t0, notesAr: notes.length ? notes : undefined };
