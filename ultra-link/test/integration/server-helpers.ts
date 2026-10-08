@@ -2,6 +2,8 @@
 // inject client. Owner: Role 7 (server & ops).
 import './server-env.ts';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:net';
+import { Writable } from 'node:stream';
 import pg from 'pg';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { freshDb, type TestDb } from '../helpers/testdb.ts';
@@ -26,6 +28,29 @@ export async function harness(tag: string, opts: Partial<AppDeps> = {}): Promise
   };
 }
 
+/** A second app on the same database with different deps (rate limits, proxy mode, log capture, plugins). */
+export async function extraApp(h: Harness, opts: Partial<AppDeps> = {}): Promise<FastifyInstance> {
+  const app = await buildApp({ pool: h.db.pool, reg: h.db.reg, databaseUrl: h.db.url, version: 'test', listen: false, logLevel: 'warn', ...opts });
+  await app.ready();
+  return app;
+}
+
+/** Collects everything the app logs (one JSON object per line). */
+export function logSink(): { stream: import('node:stream').Writable; text: () => string; lines: () => any[] } {
+  let buf = '';
+  const stream = new Writable({ write(chunk, _enc, cb) { buf += String(chunk); cb(); } });
+  return { stream, text: () => buf, lines: () => buf.split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
+}
+
+/** A free TCP port on 127.0.0.1 (bound once, then released). */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => { const p = (s.address() as { port: number }).port; s.close(() => resolve(p)); });
+  });
+}
+
 export async function dropDb(name: string): Promise<void> {
   const a = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL! });
   await a.connect();
@@ -40,7 +65,10 @@ export class Client {
   readonly app: FastifyInstance;
   readonly pool: pg.Pool;
   readonly ip: string | undefined;
-  constructor(h: Harness, ip?: string) { this.app = h.app; this.pool = h.db.pool; this.ip = ip; }
+  constructor(h: Harness | { app: FastifyInstance; db: { pool: pg.Pool } }, ip?: string) { this.app = h.app; this.pool = h.db.pool; this.ip = ip; }
+
+  /** the same client (cookie) against another app instance on the same database */
+  on(app: FastifyInstance, ip = this.ip): Client { const c = new Client({ app, db: { pool: this.pool } }, ip); c.cookie = this.cookie; return c; }
 
   async call<T = any>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown, headers: Record<string, string> = {}): Promise<Res<T>> {
     const mutation = method !== 'GET';

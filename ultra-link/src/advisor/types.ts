@@ -45,7 +45,13 @@ export interface IndexStat {
   partial: boolean; scans: number; bytes: number;
 }
 
-export interface ForeignKeyInfo { constraint: string; table: string; refTable: string; columns: string[]; partitionColumns: string[] }
+export interface ForeignKeyInfo {
+  constraint: string; table: string; refTable: string; columns: string[]; partitionColumns: string[];
+  /** pg_constraint.confdeltype: a = no action, r = restrict, c = cascade, n = set null, d = set default */
+  onDelete: string;
+  /** rows ever deleted from the referenced table (pg_stat_user_tables.n_tup_del, summed over partitions) */
+  refDeletes: number;
+}
 export interface IndexKeyInfo { index: string; table: string; keyColumns: string[]; predicate: string | null }
 
 export interface StatementStat {

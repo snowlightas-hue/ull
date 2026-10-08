@@ -1,0 +1,36 @@
+-- typical sample (intent 1:762973), statement 1/1
+SELECT DISTINCT s.intent_id AS id FROM intent_scopes s
+  WHERE s.vertical_id = 1 AND s.realm = 'real' AND s.side = 'seek' AND s.deal_type_id = 1 AND s.category_id = ANY('{105,100}') AND s.place_id = ANY('{1208,12,10,1}')
+  LIMIT 5000;
+
+Limit  (cost=28.34..33.33 rows=499 width=8) (actual time=0.377..0.465 rows=744 loops=1)
+  Buffers: shared hit=31
+  ->  HashAggregate  (cost=28.34..33.33 rows=499 width=8) (actual time=0.376..0.425 rows=744 loops=1)
+        Group Key: intent_id
+        Batches: 1  Memory Usage: 73kB
+        Buffers: shared hit=31
+        ->  Index Only Scan using intent_scopes_probe_idx on intent_scopes s  (cost=0.42..27.09 rows=499 width=8) (actual time=0.045..0.268 rows=745 loops=1)
+              Index Cond: ((vertical_id = '1'::smallint) AND (realm = 'real'::text) AND (side = 'seek'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{105,100}'::integer[])) AND (place_id = ANY ('{1208,12,10,1}'::integer[])))
+              Heap Fetches: 5
+              Buffers: shared hit=31
+Planning Time: 0.086 ms
+Execution Time: 0.508 ms
+
+-- slowest sample (intent 2:815312, 34.4 ms), statement 1/1
+SELECT DISTINCT s.intent_id AS id FROM intent_scopes s
+  WHERE s.vertical_id = 2 AND s.realm = 'real' AND s.side = 'provide' AND s.deal_type_id = 1 AND s.category_id = ANY('{201,200}') AND s.place_id = ANY('{31,30,1}')
+  LIMIT 5000;
+
+Limit  (cost=231.43..281.43 rows=5000 width=8) (actual time=30.946..32.138 rows=5000 loops=1)
+  Buffers: shared hit=398
+  ->  HashAggregate  (cost=231.43..287.61 rows=5618 width=8) (actual time=30.945..31.849 rows=5000 loops=1)
+        Group Key: intent_id
+        Batches: 1  Memory Usage: 3601kB
+        Buffers: shared hit=398
+        ->  Index Only Scan using intent_scopes_probe_idx on intent_scopes s  (cost=0.42..217.38 rows=5620 width=8) (actual time=0.043..19.237 rows=51043 loops=1)
+              Index Cond: ((vertical_id = '2'::smallint) AND (realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (place_id = ANY ('{31,30,1}'::integer[])))
+              Heap Fetches: 334
+              Buffers: shared hit=398
+Planning Time: 0.068 ms
+Execution Time: 32.623 ms
+

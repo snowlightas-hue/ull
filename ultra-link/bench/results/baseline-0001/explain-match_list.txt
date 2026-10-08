@@ -1,0 +1,689 @@
+-- heaviest match user (user 1, 2733 matches), listMatches statement 1/5
+SELECT count(*) FROM matches m WHERE (m.a_user_id = '1' OR m.b_user_id = '1') AND m.state = ANY('{confirmed,possible}');
+
+Aggregate  (cost=2527.26..2527.27 rows=1 width=8) (actual time=5.250..5.265 rows=1 loops=1)
+  Buffers: shared hit=2173
+  ->  Append  (cost=22.67..2521.01 rows=2499 width=0) (actual time=0.348..5.061 rows=2327 loops=1)
+        Buffers: shared hit=2173
+        ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=22.67..948.64 rows=952 width=0) (actual time=0.347..2.095 rows=993 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Heap Blocks: exact=891
+              Buffers: shared hit=908
+              ->  BitmapOr  (cost=22.67..22.67 rows=952 width=0) (actual time=0.210..0.212 rows=0 loops=1)
+                    Buffers: shared hit=17
+                    ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=5 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..19.12 rows=947 width=0) (actual time=0.197..0.197 rows=993 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=11
+        ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=23.21..995.88 rows=1004 width=0) (actual time=0.286..1.585 rows=798 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Heap Blocks: exact=726
+              Buffers: shared hit=743
+              ->  BitmapOr  (cost=23.21..23.21 rows=1004 width=0) (actual time=0.192..0.193 rows=0 loops=1)
+                    Buffers: shared hit=17
+                    ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..19.64 rows=999 width=0) (actual time=0.177..0.178 rows=798 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=11
+        ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..12.30 rows=6 width=0) (actual time=0.019..0.020 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.018..0.019 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.007..0.008 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.17 rows=5 width=0) (actual time=0.015..0.016 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.014..0.015 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.006..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.17 rows=5 width=0) (actual time=0.020..0.021 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.019..0.020 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_goods m_6  (cost=13.24..518.24 rows=522 width=0) (actual time=0.177..1.017 rows=536 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Heap Blocks: exact=479
+              Buffers: shared hit=490
+              ->  BitmapOr  (cost=13.24..13.24 rows=522 width=0) (actual time=0.112..0.113 rows=0 loops=1)
+                    Buffers: shared hit=11
+                    ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..10.16 rows=518 width=0) (actual time=0.105..0.105 rows=536 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=7
+        ->  Bitmap Heap Scan on matches_other m_7  (cost=5.59..11.11 rows=5 width=0) (actual time=0.017..0.018 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.59..5.59 rows=5 width=0) (actual time=0.016..0.016 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=3 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+Planning Time: 0.907 ms
+Execution Time: 5.402 ms
+
+-- heaviest match user (user 1, 2733 matches), listMatches statement 2/5
+SELECT m.* FROM matches m WHERE (m.a_user_id = '1' OR m.b_user_id = '1') AND m.state = ANY('{confirmed,possible}') 
+  ORDER BY m.score DESC, m.id DESC LIMIT 21;
+
+Limit  (cost=2588.38..2588.44 rows=21 width=390) (actual time=4.522..4.538 rows=21 loops=1)
+  Buffers: shared hit=2173
+  ->  Sort  (cost=2588.38..2594.63 rows=2499 width=390) (actual time=4.521..4.535 rows=21 loops=1)
+        Sort Key: m.score DESC, m.id DESC
+        Sort Method: top-N heapsort  Memory: 44kB
+        Buffers: shared hit=2173
+        ->  Append  (cost=22.67..2521.01 rows=2499 width=390) (actual time=0.234..3.877 rows=2327 loops=1)
+              Buffers: shared hit=2173
+              ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=22.67..948.64 rows=952 width=390) (actual time=0.234..1.521 rows=993 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Heap Blocks: exact=891
+                    Buffers: shared hit=908
+                    ->  BitmapOr  (cost=22.67..22.67 rows=952 width=0) (actual time=0.132..0.133 rows=0 loops=1)
+                          Buffers: shared hit=17
+                          ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=5 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+                          ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..19.12 rows=947 width=0) (actual time=0.122..0.122 rows=993 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=11
+              ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=23.21..995.88 rows=1004 width=390) (actual time=0.196..1.336 rows=798 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Heap Blocks: exact=726
+                    Buffers: shared hit=743
+                    ->  BitmapOr  (cost=23.21..23.21 rows=1004 width=0) (actual time=0.102..0.103 rows=0 loops=1)
+                          Buffers: shared hit=17
+                          ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+                          ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..19.64 rows=999 width=0) (actual time=0.091..0.091 rows=798 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=11
+              ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..12.30 rows=6 width=390) (actual time=0.018..0.020 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.017..0.019 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.010..0.011 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.17 rows=5 width=390) (actual time=0.013..0.014 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.012..0.013 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.17 rows=5 width=386) (actual time=0.012..0.013 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.011..0.012 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (actual time=0.006..0.007 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_goods m_6  (cost=13.24..518.24 rows=522 width=390) (actual time=0.127..0.802 rows=536 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Heap Blocks: exact=479
+                    Buffers: shared hit=490
+                    ->  BitmapOr  (cost=13.24..13.24 rows=522 width=0) (actual time=0.076..0.077 rows=0 loops=1)
+                          Buffers: shared hit=11
+                          ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..10.16 rows=518 width=0) (actual time=0.070..0.070 rows=536 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=7
+              ->  Bitmap Heap Scan on matches_other m_7  (cost=5.59..11.11 rows=5 width=390) (actual time=0.014..0.016 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.59..5.59 rows=5 width=0) (actual time=0.013..0.015 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=3 width=0) (actual time=0.008..0.008 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+Planning Time: 0.732 ms
+Execution Time: 4.651 ms
+
+-- heaviest match user (user 1, 2733 matches), listMatches statement 3/5
+SELECT count(*) FROM matches m WHERE (m.a_user_id = '1' OR m.b_user_id = '1') AND m.state = ANY('{confirmed,possible}') AND (m.score, m.id) > (9999::int, '280317'::bigint);
+
+Aggregate  (cost=48.15..48.16 rows=1 width=8) (actual time=0.096..0.098 rows=1 loops=1)
+  Buffers: shared hit=64
+  ->  Append  (cost=6.12..48.14 rows=7 width=0) (actual time=0.094..0.096 rows=0 loops=1)
+        Buffers: shared hit=64
+        ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.12..7.24 rows=1 width=0) (actual time=0.024..0.024 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=12
+              ->  BitmapOr  (cost=6.12..6.12 rows=1 width=0) (actual time=0.022..0.022 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.011..0.012 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.12..7.24 rows=1 width=0) (actual time=0.018..0.019 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=12
+              ->  BitmapOr  (cost=6.12..6.12 rows=1 width=0) (actual time=0.018..0.018 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.008..0.008 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_services m_3  (cost=5.61..6.73 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_education m_4  (cost=5.60..6.72 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.60..5.60 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.60..6.72 rows=1 width=0) (actual time=0.009..0.010 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.60..5.60 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.61..6.73 rows=1 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=1 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_other m_7  (cost=5.58..6.70 rows=1 width=0) (actual time=0.008..0.008 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))) OR ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.58..5.58 rows=1 width=0) (actual time=0.008..0.008 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '1'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9999, '280317'::bigint)))
+                          Buffers: shared hit=4
+Planning Time: 0.848 ms
+Execution Time: 0.199 ms
+
+-- heaviest match user (user 1, 2733 matches), listMatches statement 4/5
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i JOIN unnest('{1,1,6,6,1,1,…}' /* 40 elements, abbreviated here only */::smallint[], '{987035,855847,973770,625819,920942,606374,…}' /* 40 elements, abbreviated here only */::bigint[]) AS k(v, id) ON i.vertical_id = k.v AND i.id = k.id;
+
+Nested Loop  (cost=0.43..715.72 rows=1 width=401) (actual time=0.050..0.437 rows=40 loops=1)
+  Buffers: shared hit=160
+  ->  Function Scan on k  (cost=0.01..0.41 rows=40 width=10) (actual time=0.017..0.024 rows=40 loops=1)
+  ->  Append  (cost=0.42..17.81 rows=7 width=384) (actual time=0.009..0.009 rows=1 loops=40)
+        Buffers: shared hit=160
+        ->  Index Scan using intents_real_estate_pkey on intents_real_estate i_1  (cost=0.42..2.64 rows=1 width=393) (actual time=0.009..0.009 rows=1 loops=8)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+              Buffers: shared hit=32
+        ->  Index Scan using intents_vehicles_pkey on intents_vehicles i_2  (cost=0.42..2.64 rows=1 width=396) (actual time=0.007..0.007 rows=1 loops=18)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+              Buffers: shared hit=72
+        ->  Index Scan using intents_services_pkey on intents_services i_3  (cost=0.42..2.61 rows=1 width=360) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_education_pkey on intents_education i_4  (cost=0.42..2.58 rows=1 width=429) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_activities_pkey on intents_activities i_5  (cost=0.29..2.43 rows=1 width=331) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_goods_pkey on intents_goods i_6  (cost=0.42..2.61 rows=1 width=362) (actual time=0.010..0.010 rows=1 loops=14)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+              Buffers: shared hit=56
+        ->  Index Scan using intents_other_pkey on intents_other i_7  (cost=0.29..2.26 rows=1 width=443) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+Planning Time: 0.881 ms
+Execution Time: 0.546 ms
+
+-- heaviest match user (user 1, 2733 matches), listMatches statement 5/5
+SELECT c.public_id, c.vertical_id, c.match_id, c.requester_id, c.recipient_id, c.status, u.display_name, u.contact_phone
+  FROM contact_requests c JOIN users u ON u.id = CASE WHEN c.requester_id = '1' THEN c.recipient_id ELSE c.requester_id END
+  WHERE (c.vertical_id, c.match_id) IN (SELECT * FROM unnest('{1,6,1,6,2,2,…}' /* 20 elements, abbreviated here only */::smallint[], '{280317,271158,233123,200211,230723,223612,…}' /* 20 elements, abbreviated here only */::bigint[])) AND (c.requester_id = '1' OR c.recipient_id = '1');
+
+Nested Loop  (cost=1.01..44.62 rows=1 width=101) (actual time=0.152..0.153 rows=0 loops=1)
+  Buffers: shared hit=40
+  ->  Nested Loop  (cost=0.59..42.01 rows=1 width=50) (actual time=0.152..0.153 rows=0 loops=1)
+        Buffers: shared hit=40
+        ->  HashAggregate  (cost=0.31..0.51 rows=20 width=10) (actual time=0.025..0.029 rows=20 loops=1)
+              Group Key: unnest.unnest, unnest.unnest_1
+              Batches: 1  Memory Usage: 24kB
+              ->  Function Scan on unnest  (cost=0.01..0.21 rows=20 width=10) (actual time=0.009..0.013 rows=20 loops=1)
+        ->  Index Scan using contact_requests_vertical_id_match_id_requester_id_key on contact_requests c  (cost=0.28..2.06 rows=1 width=50) (actual time=0.006..0.006 rows=0 loops=20)
+              Index Cond: ((vertical_id = unnest.unnest) AND (match_id = unnest.unnest_1))
+              Filter: ((requester_id = '1'::bigint) OR (recipient_id = '1'::bigint))
+              Buffers: shared hit=40
+  ->  Index Scan using users_pkey on users u  (cost=0.42..2.61 rows=1 width=59) (never executed)
+        Index Cond: (id = CASE WHEN (c.requester_id = '1'::bigint) THEN c.recipient_id ELSE c.requester_id END)
+Planning Time: 0.270 ms
+Execution Time: 0.193 ms
+
+-- typical match user (user 41394), listMatches statement 1/5
+SELECT count(*) FROM matches m WHERE (m.a_user_id = '41394' OR m.b_user_id = '41394') AND m.state = ANY('{confirmed,possible}');
+
+Aggregate  (cost=85.09..85.10 rows=1 width=8) (actual time=0.145..0.148 rows=1 loops=1)
+  Buffers: shared hit=66
+  ->  Append  (cost=6.13..84.99 rows=40 width=0) (actual time=0.056..0.144 rows=8 loops=1)
+        Buffers: shared hit=66
+        ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.13..13.93 rows=7 width=0) (actual time=0.055..0.056 rows=1 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Heap Blocks: exact=1
+              Buffers: shared hit=13
+              ->  BitmapOr  (cost=6.13..6.13 rows=7 width=0) (actual time=0.048..0.048 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=5 width=0) (actual time=0.039..0.039 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=2 width=0) (actual time=0.008..0.008 rows=1 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.13..12.82 rows=6 width=0) (actual time=0.014..0.014 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=12
+              ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (actual time=0.013..0.014 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=2 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..12.30 rows=6 width=0) (actual time=0.014..0.014 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.014..0.014 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.17 rows=5 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.17 rows=5 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.62..12.30 rows=6 width=0) (actual time=0.018..0.021 rows=7 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Heap Blocks: exact=1
+              Buffers: shared hit=9
+              ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.014..0.015 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.008..0.008 rows=7 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.006..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_other m_7  (cost=5.59..11.11 rows=5 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.59..5.59 rows=5 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=3 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                          Buffers: shared hit=4
+Planning Time: 1.357 ms
+Execution Time: 0.255 ms
+
+-- typical match user (user 41394), listMatches statement 2/5
+SELECT m.* FROM matches m WHERE (m.a_user_id = '41394' OR m.b_user_id = '41394') AND m.state = ANY('{confirmed,possible}') 
+  ORDER BY m.score DESC, m.id DESC LIMIT 21;
+
+Limit  (cost=86.05..86.10 rows=21 width=389) (actual time=0.145..0.149 rows=8 loops=1)
+  Buffers: shared hit=66
+  ->  Sort  (cost=86.05..86.15 rows=40 width=389) (actual time=0.143..0.147 rows=8 loops=1)
+        Sort Key: m.score DESC, m.id DESC
+        Sort Method: quicksort  Memory: 29kB
+        Buffers: shared hit=66
+        ->  Append  (cost=6.13..84.99 rows=40 width=389) (actual time=0.021..0.136 rows=8 loops=1)
+              Buffers: shared hit=66
+              ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.13..13.93 rows=7 width=390) (actual time=0.020..0.021 rows=1 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Heap Blocks: exact=1
+                    Buffers: shared hit=13
+                    ->  BitmapOr  (cost=6.13..6.13 rows=7 width=0) (actual time=0.016..0.016 rows=0 loops=1)
+                          Buffers: shared hit=12
+                          ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=5 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+                          ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=2 width=0) (actual time=0.006..0.006 rows=1 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+              ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.13..12.82 rows=6 width=390) (actual time=0.052..0.052 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=12
+                    ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (actual time=0.051..0.051 rows=0 loops=1)
+                          Buffers: shared hit=12
+                          ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.044..0.045 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+                          ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=2 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=6
+              ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..12.30 rows=6 width=390) (actual time=0.010..0.011 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.17 rows=5 width=390) (actual time=0.009..0.010 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.17 rows=5 width=386) (actual time=0.009..0.009 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (actual time=0.008..0.009 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.62..12.30 rows=6 width=390) (actual time=0.017..0.019 rows=7 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Heap Blocks: exact=1
+                    Buffers: shared hit=9
+                    ->  BitmapOr  (cost=5.62..5.62 rows=6 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.008..0.008 rows=7 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+              ->  Bitmap Heap Scan on matches_other m_7  (cost=5.59..11.11 rows=5 width=390) (actual time=0.011..0.012 rows=0 loops=1)
+                    Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                    Filter: (state = ANY ('{confirmed,possible}'::text[]))
+                    Buffers: shared hit=8
+                    ->  BitmapOr  (cost=5.59..5.59 rows=5 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                          Buffers: shared hit=8
+                          ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=3 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                                Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+                          ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                                Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                Buffers: shared hit=4
+Planning Time: 0.931 ms
+Execution Time: 0.259 ms
+
+-- typical match user (user 41394), listMatches statement 3/5
+SELECT count(*) FROM matches m WHERE (m.a_user_id = '41394' OR m.b_user_id = '41394') AND m.state = ANY('{confirmed,possible}') AND (m.score, m.id) > (9501::int, '235717'::bigint);
+
+Aggregate  (cost=48.15..48.16 rows=1 width=8) (actual time=0.081..0.085 rows=1 loops=1)
+  Buffers: shared hit=64
+  ->  Append  (cost=6.12..48.14 rows=7 width=0) (actual time=0.079..0.083 rows=0 loops=1)
+        Buffers: shared hit=64
+        ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.12..7.24 rows=1 width=0) (actual time=0.018..0.019 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=12
+              ->  BitmapOr  (cost=6.12..6.12 rows=1 width=0) (actual time=0.017..0.018 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_real_estate_a_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_real_estate_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.12..7.24 rows=1 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=12
+              ->  BitmapOr  (cost=6.12..6.12 rows=1 width=0) (actual time=0.012..0.012 rows=0 loops=1)
+                    Buffers: shared hit=12
+                    ->  Bitmap Index Scan on matches_vehicles_a_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on matches_vehicles_b_user_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=6
+        ->  Bitmap Heap Scan on matches_services m_3  (cost=5.61..6.73 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_services_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_services_b_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_education m_4  (cost=5.60..6.72 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.60..5.60 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_education_a_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_education_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.60..6.72 rows=1 width=0) (actual time=0.008..0.008 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.60..5.60 rows=1 width=0) (actual time=0.007..0.008 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_activities_a_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_activities_b_user_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.61..6.73 rows=1 width=0) (actual time=0.010..0.011 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.61..5.61 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_goods_a_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_goods_b_user_id_state_score_id_idx  (cost=0.00..2.81 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+        ->  Bitmap Heap Scan on matches_other m_7  (cost=5.58..6.70 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Recheck Cond: (((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))) OR ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint))))
+              Filter: (state = ANY ('{confirmed,possible}'::text[]))
+              Buffers: shared hit=8
+              ->  BitmapOr  (cost=5.58..5.58 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+                    Buffers: shared hit=8
+                    ->  Bitmap Index Scan on matches_other_a_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((a_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+                    ->  Bitmap Index Scan on matches_other_b_user_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+                          Index Cond: ((b_user_id = '41394'::bigint) AND (state = ANY ('{confirmed,possible}'::text[])) AND (ROW(score, id) > ROW(9501, '235717'::bigint)))
+                          Buffers: shared hit=4
+Planning Time: 0.897 ms
+Execution Time: 0.234 ms
+
+-- typical match user (user 41394), listMatches statement 4/5
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i JOIN unnest('{6,6,6,6,6,6,…}' /* 16 elements, abbreviated here only */::smallint[], '{924348,500524,924348,915582,924348,892846,…}' /* 16 elements, abbreviated here only */::bigint[]) AS k(v, id) ON i.vertical_id = k.v AND i.id = k.id;
+
+Nested Loop  (cost=0.43..292.23 rows=1 width=401) (actual time=0.039..0.154 rows=16 loops=1)
+  Buffers: shared hit=64
+  ->  Function Scan on k  (cost=0.01..0.17 rows=16 width=10) (actual time=0.011..0.014 rows=16 loops=1)
+  ->  Append  (cost=0.42..18.18 rows=7 width=384) (actual time=0.007..0.007 rows=1 loops=16)
+        Buffers: shared hit=64
+        ->  Index Scan using intents_real_estate_pkey on intents_real_estate i_1  (cost=0.42..2.64 rows=1 width=393) (actual time=0.011..0.011 rows=1 loops=2)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+              Buffers: shared hit=8
+        ->  Index Scan using intents_vehicles_pkey on intents_vehicles i_2  (cost=0.42..2.64 rows=1 width=396) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_services_pkey on intents_services i_3  (cost=0.42..2.64 rows=1 width=360) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_education_pkey on intents_education i_4  (cost=0.42..2.64 rows=1 width=429) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_activities_pkey on intents_activities i_5  (cost=0.29..2.51 rows=1 width=331) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+        ->  Index Scan using intents_goods_pkey on intents_goods i_6  (cost=0.42..2.64 rows=1 width=362) (actual time=0.006..0.006 rows=1 loops=14)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+              Buffers: shared hit=56
+        ->  Index Scan using intents_other_pkey on intents_other i_7  (cost=0.29..2.44 rows=1 width=443) (never executed)
+              Index Cond: ((vertical_id = k.v) AND (id = k.id))
+Planning Time: 0.804 ms
+Execution Time: 0.291 ms
+
+-- typical match user (user 41394), listMatches statement 5/5
+SELECT c.public_id, c.vertical_id, c.match_id, c.requester_id, c.recipient_id, c.status, u.display_name, u.contact_phone
+  FROM contact_requests c JOIN users u ON u.id = CASE WHEN c.requester_id = '41394' THEN c.recipient_id ELSE c.requester_id END
+  WHERE (c.vertical_id, c.match_id) IN (SELECT * FROM unnest('{6,6,6,6,6,6,6,1}'::smallint[], '{235717,235716,235715,235714,235718,235711,235712,181524}'::bigint[])) AND (c.requester_id = '41394' OR c.recipient_id = '41394');
+
+Nested Loop  (cost=0.83..21.87 rows=1 width=101) (actual time=0.044..0.045 rows=0 loops=1)
+  Buffers: shared hit=16
+  ->  Nested Loop  (cost=0.41..19.23 rows=1 width=50) (actual time=0.044..0.045 rows=0 loops=1)
+        Buffers: shared hit=16
+        ->  HashAggregate  (cost=0.12..0.21 rows=8 width=10) (actual time=0.016..0.018 rows=8 loops=1)
+              Group Key: unnest.unnest, unnest.unnest_1
+              Batches: 1  Memory Usage: 24kB
+              ->  Function Scan on unnest  (cost=0.01..0.09 rows=8 width=10) (actual time=0.006..0.008 rows=8 loops=1)
+        ->  Index Scan using contact_requests_vertical_id_match_id_requester_id_key on contact_requests c  (cost=0.28..2.37 rows=1 width=50) (actual time=0.003..0.003 rows=0 loops=8)
+              Index Cond: ((vertical_id = unnest.unnest) AND (match_id = unnest.unnest_1))
+              Filter: ((requester_id = '41394'::bigint) OR (recipient_id = '41394'::bigint))
+              Buffers: shared hit=16
+  ->  Index Scan using users_pkey on users u  (cost=0.42..2.64 rows=1 width=59) (never executed)
+        Index Cond: (id = CASE WHEN (c.requester_id = '41394'::bigint) THEN c.recipient_id ELSE c.requester_id END)
+Planning Time: 0.298 ms
+Execution Time: 0.080 ms
+

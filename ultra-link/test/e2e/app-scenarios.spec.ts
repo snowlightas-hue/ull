@@ -88,6 +88,7 @@ async function runViewport(vp: Viewport): Promise<void> {
         const ranges: string[] = [];
         let dupes = 0;
         let badSize = 0;
+        const flipMs: number[] = [];
         for (let p = 1; p <= 13; p++) {
           const r = await rangeText(page);
           ranges.push(r);
@@ -102,8 +103,10 @@ async function runViewport(vp: Viewport): Promise<void> {
           }
           if (p < 13) {
             const next = page.locator('.panel-matches .pager-btn[data-dir=next]');
+            const tFlip = Date.now();
             await press(next, m);
             await page.waitForFunction((prev) => document.querySelector('.panel-matches .pager-range')?.textContent?.trim() !== prev, r, { timeout: 10_000 });
+            flipMs.push(Date.now() - tFlip);
           }
         }
         s.check('13 pages: 12 × 20 + 1 × 10 cards', badSize === 0, pages.map((x) => x.length));
@@ -114,6 +117,8 @@ async function runViewport(vp: Viewport): Promise<void> {
         s.check('ranking is stable: scores never increase across pages', scores.every((x, i) => i === 0 || x <= scores[i - 1]!), scores.slice(0, 5));
         const nextDisabled = await page.locator('.panel-matches .pager-btn[data-dir=next]').getAttribute('aria-disabled');
         s.check('next is disabled on the last page', nextDisabled === 'true', nextDisabled);
+        const sorted = [...flipMs].sort((a, b) => a - b);
+        console.log(`      perf (measured, not asserted): page flip click→new range median ${sorted[Math.floor(sorted.length / 2)]} ms, max ${sorted[sorted.length - 1]} ms over ${sorted.length} flips`);
         await shot(page, vp.name, 'f3-last-page');
         // backwards: the previous pages must be exactly the pages we saw going forward
         for (const back of [12, 11]) {

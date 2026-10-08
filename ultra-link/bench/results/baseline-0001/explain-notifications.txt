@@ -1,0 +1,199 @@
+-- heaviest recipient (user 1, 3705 notifications), listNotifications statement 1/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1' ;
+
+Aggregate  (cost=271.70..271.71 rows=1 width=8) (actual time=0.956..0.957 rows=1 loops=1)
+  Buffers: shared hit=39
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..262.26 rows=3774 width=0) (actual time=0.015..0.659 rows=3705 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Heap Fetches: 11
+        Buffers: shared hit=39
+Planning Time: 0.054 ms
+Execution Time: 0.978 ms
+
+-- heaviest recipient (user 1, 3705 notifications), listNotifications statement 2/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1' AND read_at IS NULL;
+
+Aggregate  (cost=85.06..85.07 rows=1 width=8) (actual time=0.395..0.395 rows=1 loops=1)
+  Buffers: shared hit=75
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..82.04 rows=1207 width=0) (actual time=0.018..0.309 rows=1206 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Heap Fetches: 76
+        Buffers: shared hit=75
+Planning Time: 0.057 ms
+Execution Time: 0.413 ms
+
+-- heaviest recipient (user 1, 3705 notifications), listNotifications statement 3/4
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '1'   ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=0.42..22.61 rows=21 width=231) (actual time=0.020..0.066 rows=21 loops=1)
+  Buffers: shared hit=22
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..3987.99 rows=3774 width=231) (actual time=0.019..0.062 rows=21 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Buffers: shared hit=22
+Planning Time: 0.070 ms
+Execution Time: 0.084 ms
+
+-- heaviest recipient (user 1, 3705 notifications), listNotifications statement 4/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1'  AND (created_at, id) > ('2026-10-08 18:36:40.078+00'::timestamptz, '599942'::bigint);
+
+Aggregate  (cost=2.65..2.66 rows=1 width=8) (actual time=0.030..0.030 rows=1 loops=1)
+  Buffers: shared hit=6
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..2.64 rows=1 width=0) (actual time=0.028..0.028 rows=0 loops=1)
+        Index Cond: ((recipient_id = '1'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 18:36:40.078+00'::timestamp with time zone, '599942'::bigint)))
+        Heap Fetches: 0
+        Buffers: shared hit=6
+Planning Time: 0.064 ms
+Execution Time: 0.049 ms
+
+-- heaviest recipient (user 1, 3705 notifications) — unread only, listNotifications statement 1/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1' AND read_at IS NULL;
+
+Aggregate  (cost=85.06..85.07 rows=1 width=8) (actual time=0.198..0.198 rows=1 loops=1)
+  Buffers: shared hit=75
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..82.04 rows=1207 width=0) (actual time=0.013..0.118 rows=1206 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Heap Fetches: 76
+        Buffers: shared hit=75
+Planning Time: 0.059 ms
+Execution Time: 0.213 ms
+
+-- heaviest recipient (user 1, 3705 notifications) — unread only, listNotifications statement 2/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1' AND read_at IS NULL;
+
+Aggregate  (cost=85.06..85.07 rows=1 width=8) (actual time=0.160..0.160 rows=1 loops=1)
+  Buffers: shared hit=75
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..82.04 rows=1207 width=0) (actual time=0.009..0.106 rows=1206 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Heap Fetches: 76
+        Buffers: shared hit=75
+Planning Time: 0.043 ms
+Execution Time: 0.172 ms
+
+-- heaviest recipient (user 1, 3705 notifications) — unread only, listNotifications statement 3/4
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '1' AND read_at IS NULL  ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=0.42..69.58 rows=21 width=231) (actual time=0.013..0.057 rows=21 loops=1)
+  Buffers: shared hit=33
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..3975.15 rows=1207 width=231) (actual time=0.013..0.055 rows=21 loops=1)
+        Index Cond: (recipient_id = '1'::bigint)
+        Filter: (read_at IS NULL)
+        Rows Removed by Filter: 12
+        Buffers: shared hit=33
+Planning Time: 0.053 ms
+Execution Time: 0.109 ms
+
+-- heaviest recipient (user 1, 3705 notifications) — unread only, listNotifications statement 4/4
+SELECT count(*) FROM notifications WHERE recipient_id = '1' AND read_at IS NULL AND (created_at, id) > ('2026-10-08 18:36:40.078+00'::timestamptz, '599942'::bigint);
+
+Aggregate  (cost=2.65..2.66 rows=1 width=8) (actual time=0.018..0.019 rows=1 loops=1)
+  Buffers: shared hit=6
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..2.64 rows=1 width=0) (actual time=0.017..0.017 rows=0 loops=1)
+        Index Cond: ((recipient_id = '1'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 18:36:40.078+00'::timestamp with time zone, '599942'::bigint)))
+        Filter: (read_at IS NULL)
+        Buffers: shared hit=6
+Planning Time: 0.050 ms
+Execution Time: 0.032 ms
+
+-- typical recipient (user 37153), listNotifications statement 1/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153' ;
+
+Aggregate  (cost=2.83..2.83 rows=1 width=8) (actual time=0.011..0.011 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..2.80 rows=10 width=0) (actual time=0.007..0.008 rows=9 loops=1)
+        Index Cond: (recipient_id = '37153'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.037 ms
+Execution Time: 0.023 ms
+
+-- typical recipient (user 37153), listNotifications statement 2/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153' AND read_at IS NULL;
+
+Aggregate  (cost=2.68..2.69 rows=1 width=8) (actual time=0.011..0.011 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..2.67 rows=3 width=0) (actual time=0.008..0.009 rows=6 loops=1)
+        Index Cond: (recipient_id = '37153'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.046 ms
+Execution Time: 0.023 ms
+
+-- typical recipient (user 37153), listNotifications statement 3/4
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '37153'   ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=0.42..12.75 rows=10 width=231) (actual time=0.012..0.024 rows=9 loops=1)
+  Buffers: shared hit=8
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..12.75 rows=10 width=231) (actual time=0.012..0.023 rows=9 loops=1)
+        Index Cond: (recipient_id = '37153'::bigint)
+        Buffers: shared hit=8
+Planning Time: 0.059 ms
+Execution Time: 0.039 ms
+
+-- typical recipient (user 37153), listNotifications statement 4/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153'  AND (created_at, id) > ('2026-10-08 18:36:40.078+00'::timestamptz, '771806'::bigint);
+
+Aggregate  (cost=2.65..2.66 rows=1 width=8) (actual time=0.007..0.008 rows=1 loops=1)
+  Buffers: shared hit=3
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..2.64 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+        Index Cond: ((recipient_id = '37153'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 18:36:40.078+00'::timestamp with time zone, '771806'::bigint)))
+        Heap Fetches: 0
+        Buffers: shared hit=3
+Planning Time: 0.049 ms
+Execution Time: 0.020 ms
+
+-- typical recipient (user 37153) — unread only, listNotifications statement 1/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153' AND read_at IS NULL;
+
+Aggregate  (cost=2.68..2.69 rows=1 width=8) (actual time=0.012..0.012 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..2.67 rows=3 width=0) (actual time=0.008..0.009 rows=6 loops=1)
+        Index Cond: (recipient_id = '37153'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.052 ms
+Execution Time: 0.026 ms
+
+-- typical recipient (user 37153) — unread only, listNotifications statement 2/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153' AND read_at IS NULL;
+
+Aggregate  (cost=2.68..2.69 rows=1 width=8) (actual time=0.010..0.010 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..2.67 rows=3 width=0) (actual time=0.007..0.008 rows=6 loops=1)
+        Index Cond: (recipient_id = '37153'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.045 ms
+Execution Time: 0.021 ms
+
+-- typical recipient (user 37153) — unread only, listNotifications statement 3/4
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '37153' AND read_at IS NULL  ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=4.91..4.92 rows=3 width=231) (actual time=0.022..0.023 rows=6 loops=1)
+  Buffers: shared hit=6
+  ->  Sort  (cost=4.91..4.92 rows=3 width=231) (actual time=0.021..0.022 rows=6 loops=1)
+        Sort Key: created_at DESC, id DESC
+        Sort Method: quicksort  Memory: 27kB
+        Buffers: shared hit=6
+        ->  Index Scan using notifications_unread_idx on notifications  (cost=0.42..4.89 rows=3 width=231) (actual time=0.010..0.014 rows=6 loops=1)
+              Index Cond: (recipient_id = '37153'::bigint)
+              Buffers: shared hit=6
+Planning Time: 0.054 ms
+Execution Time: 0.035 ms
+
+-- typical recipient (user 37153) — unread only, listNotifications statement 4/4
+SELECT count(*) FROM notifications WHERE recipient_id = '37153' AND read_at IS NULL AND (created_at, id) > ('2026-10-08 12:05:31.193+00'::timestamptz, '419856'::bigint);
+
+Aggregate  (cost=2.65..2.66 rows=1 width=8) (actual time=0.011..0.011 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..2.64 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+        Index Cond: ((recipient_id = '37153'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 12:05:31.193+00'::timestamp with time zone, '419856'::bigint)))
+        Filter: (read_at IS NULL)
+        Rows Removed by Filter: 1
+        Buffers: shared hit=4
+Planning Time: 0.101 ms
+Execution Time: 0.026 ms
+

@@ -7,6 +7,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Client, electricianSpec, harness, mkPersona, seedIntents, type Harness } from './server-helpers.ts';
+import { resolveIntentRef } from '../../src/repo/intents.ts';
+import { runJob } from '../../src/worker/main.ts';
 
 let h: Harness;
 let A: Client; let B: Client; let C: Client;
@@ -71,7 +73,7 @@ test('CSRF: mutations need JSON (415) from our own origin (403)', async () => {
   }
   const noCt = await A.app.inject({ method: 'POST', url: conv, headers: { cookie: A.cookie } });
   assert.equal(noCt.statusCode, 415);
-  for (const headers of [
+  const crossOrigin: Record<string, string>[] = [
     { origin: 'http://evil.example' },
     { origin: 'null' },
     { origin: 'http://localhost:81' },
@@ -79,8 +81,9 @@ test('CSRF: mutations need JSON (415) from our own origin (403)', async () => {
     { referer: 'http://evil.example/page' },
     { 'sec-fetch-site': 'cross-site' },
     { origin: 'http://localhost', 'sec-fetch-site': 'cross-site' },
-    { origin: 'http://localhost', 'x-forwarded-host': 'evil.example' }, // ignored without a trusted proxy
-  ]) {
+    { origin: 'https://app.example', 'x-forwarded-host': 'app.example' }, // X-Forwarded-Host counts only behind a trusted proxy
+  ];
+  for (const headers of crossOrigin) {
     const r = await A.post(conv, {}, headers);
     assert.equal(r.status, 403, JSON.stringify(headers));
     assert.equal(r.body.error, 'bad_origin');
@@ -273,8 +276,8 @@ test('simulation is refused for real accounts (403) and works for a synthetic pe
   assert.equal(saved.action, 'saved');
   const sim = await S.post('/api/demo/simulate', { scenario: 'later_match' });
   assert.equal(sim.status, 200, sim.raw);
-  const { rows } = await h.db.pool.query('SELECT realm FROM intents i JOIN users u ON u.id = i.user_id WHERE i.public_id = $1', [sim.body.created.id]);
-  assert.equal(rows[0].realm, 'synthetic', 'simulated data never enters the real realm');
+  const { rows } = await h.db.pool.query('SELECT i.realm, u.realm AS owner_realm FROM intents i JOIN users u ON u.id = i.user_id WHERE i.public_id = $1', [sim.body.created.id]);
+  assert.deepEqual(rows[0], { realm: 'synthetic', owner_realm: 'synthetic' }, 'simulated data never enters the real realm');
   assert.equal((await S.post('/api/demo/simulate', { scenario: 'other' })).status, 400);
   assert.equal((await new Client(h).post('/api/auth/demo-login', { handle: 'nobody_here' })).status, 404);
 });
@@ -320,4 +323,38 @@ test('no duplicate notifications: repeated contact requests, answers and match r
   assert.equal(d2.find((r) => r.kind === 'contact_accepted')?.n, 1);
   const dup = await h.db.pool.query('SELECT recipient_id, dedupe_key, count(*) FROM notifications GROUP BY 1, 2 HAVING count(*) > 1');
   assert.equal(dup.rowCount, 0);
+});
+
+test('status change commits its safety-net match_intent job in the same transaction (crash-safe re-match)', async () => {
+  const D = new Client(h); await D.register('حالة الطلب');
+  const saved = await D.dialogue('بدي كهربجي', 'الباب');
+  const ref = (await resolveIntentRef(h.db.pool, saved.intent.id))!;
+  const jobs = async () => (await h.db.pool.query(
+    "SELECT id::text, kind, payload, attempts, max_attempts, dedupe_key, status FROM jobs WHERE kind = 'match_intent' AND payload->>'intentId' = $1 AND payload->>'trigger' = 'status' ORDER BY id",
+    [ref.id])).rows;
+  const runs = async (version: number) => (await h.db.pool.query('SELECT count(*)::int AS n FROM match_runs WHERE vertical_id = $1 AND intent_id = $2 AND intent_version = $3', [ref.verticalId, ref.id, version])).rows[0].n;
+  const p = await D.post(`/api/intents/${saved.intent.id}/status`, { action: 'pause' });
+  assert.equal(p.status, 200, p.raw);
+  assert.equal(p.body.intent.status, 'paused');
+  const v = p.body.intent.version;
+  let js = await jobs();
+  assert.equal(js.length, 1);
+  assert.deepEqual(js[0].payload, { verticalId: ref.verticalId, intentId: ref.id, version: v, trigger: 'status' });
+  assert.equal(js[0].dedupe_key, `match:${ref.verticalId}:${ref.id}:${v}`);
+  assert.equal((await D.post(`/api/intents/${saved.intent.id}/status`, { action: 'pause' })).status, 409);
+  assert.equal((await jobs()).length, 1, 'a refused transition enqueues nothing');
+  // normal case: the inline re-match already evaluated this version → the job is a cheap no-op
+  assert.equal(await runs(v), 1);
+  assert.equal(await runJob(h.db.pool, h.db.reg, js[0]), 'done');
+  assert.equal(await runs(v), 1);
+  // crash between the commit and the inline re-match: the committed job alone re-evaluates the new version
+  const r = await D.post(`/api/intents/${saved.intent.id}/status`, { action: 'resume' });
+  assert.equal(r.status, 200);
+  const v2 = r.body.intent.version;
+  await h.db.pool.query('DELETE FROM match_runs WHERE vertical_id = $1 AND intent_id = $2 AND intent_version = $3', [ref.verticalId, ref.id, v2]);
+  js = await jobs();
+  const j2 = js.find((j) => j.payload.version === v2);
+  assert.ok(j2, 'resume enqueued its own versioned job');
+  assert.equal(await runJob(h.db.pool, h.db.reg, j2), 'done');
+  assert.equal(await runs(v2), 1, 'the worker job re-ran matching for the new version');
 });

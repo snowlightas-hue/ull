@@ -49,6 +49,8 @@ async function convRow(publicId: string) {
   return (await db.pool.query('SELECT id, state, draft, pending_question, revision FROM conversations WHERE public_id = $1', [publicId])).rows[0];
 }
 const count = async (sql: string, params: unknown[]) => Number((await db.pool.query(sql, params)).rows[0].n);
+/** What the client receives (the route returns JSON): keys whose value is undefined do not exist on the wire. */
+const wire = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
 interface Step { i: number; text: string; action: TurnResult['action']; field: string | null; qid: string | null; expect: string | null; resolvedAfter: string[]; asked: Record<string, number> }
 
@@ -135,7 +137,7 @@ test('the pending question is asked once per turn, persisted with the draft, and
   await turn(u, c3.id, 'عندي سيارة للبيع');
   const c4 = await startConversation(db.pool, u);
   await assert.rejects(turn(u, c3.id, 'بإعزاز'), (e: HttpError) => e.status === 409 && e.code === 'conversation_closed');
-  assert.equal((await currentConversation(db.pool, db.reg, u))?.id ?? null, null, 'the new (empty) conversation is collecting; the old one is cancelled');
+  assert.equal((await currentConversation(db.pool, db.reg, u))?.id, c4.id, 'the new conversation is the current one; the unfinished one is cancelled');
   assert.equal((await convRow(c3.id)).state, 'cancelled');
   await cancelConversation(db.pool, u, c4.id);
   await assert.rejects(cancelConversation(db.pool, u, c4.id), (e: HttpError) => e.status === 404);
@@ -148,14 +150,14 @@ test('retry with the same clientTurnId: identical result, one stored turn, one i
   const id1 = randomUUID();
   const a = await turn(u, conv.id, 'بدي شقة بإعزاز', id1);
   const b = await turn(u, conv.id, 'بدي شقة بإعزاز', id1); // the network dropped the first response
-  assert.deepEqual(b, a);
+  assert.deepEqual(wire(b), wire(a));
   const id2 = randomUUID();
   const s1 = await turn(u, conv.id, 'إيجار', id2);
   assert.equal(s1.action, 'saved');
   const s2 = await turn(u, conv.id, 'إيجار', id2); // conversation is 'saved' now: the retry still gets its answer, not 409
-  assert.deepEqual(s2, s1);
+  assert.deepEqual(wire(s2), wire(s1));
   const s3 = await turn(u, conv.id, 'شراء', id2); // same id, different text: the stored answer wins, nothing re-processed
-  assert.deepEqual(s3, s1);
+  assert.deepEqual(wire(s3), wire(s1));
   const row = await convRow(conv.id);
   assert.equal(await count("SELECT count(*) AS n FROM conversation_messages WHERE conversation_id = $1 AND role = 'user'", [row.id]), 2);
   assert.equal(await count('SELECT count(*) AS n FROM intents WHERE conversation_id = $1', [row.id]), 1);
@@ -171,7 +173,7 @@ test('concurrent duplicates of one clientTurnId all get the same answer; exactly
   const errs = rs.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => r.reason as HttpError);
   assert.ok(ok.length >= 1, 'at least one caller got the answer');
   for (const e of errs) assert.ok(e instanceof HttpError && e.status === 409, `only a retryable 409 is acceptable, got ${e}`);
-  for (const r of ok) assert.deepEqual(r, ok[0], 'every duplicate sees the same TurnResult');
+  for (const r of ok) assert.deepEqual(wire(r), wire(ok[0]), 'every duplicate sees the same TurnResult');
   const row = await convRow(conv.id);
   assert.equal(await count("SELECT count(*) AS n FROM conversation_messages WHERE conversation_id = $1 AND role = 'user'", [row.id]), 1);
   assert.equal(await count('SELECT count(*) AS n FROM intents WHERE conversation_id = $1', [row.id]), ok[0]!.action === 'saved' ? 1 : 0);
@@ -202,18 +204,50 @@ test('racing different answers to the same question: one wins, the other is told
 test('many concurrent turns on one open conversation: no lost update (draft.turns == stored turns == accepted turns)', async () => {
   const u = await sessionUser('مستخدم سريع جدًا');
   const conv = await startConversation(db.pool, u);
-  await turn(u, conv.id, 'بدي حدا يصلحلي شي'); // vague: stays open and keeps asking
-  const texts = ['ممم', 'يعني', 'لحظة', 'شو؟', 'طيب', 'آه', 'خليني فكر', 'تمام'];
+  // greetings are answered without a question, so no attempt counter is exhausted while the turns race
+  const texts = ['مرحبا', 'اهلين', 'هلا', 'السلام عليكم', 'صباح الخير', 'مسا الخير', 'شكرا', 'يسلمو'];
   const rs = await Promise.allSettled(texts.map((t) => turn(u, conv.id, t)));
-  const ok = rs.filter((r) => r.status === 'fulfilled').length;
+  const ok = rs.filter((r): r is PromiseFulfilledResult<TurnResult> => r.status === 'fulfilled').map((r) => r.value);
   const errs = rs.filter((r): r is PromiseRejectedResult => r.status === 'rejected').map((r) => r.reason as HttpError);
-  for (const e of errs) assert.ok(e instanceof HttpError && e.status === 409, `only 409 busy/closed is acceptable: ${e}`);
+  for (const e of errs) assert.ok(e instanceof HttpError && e.status === 409 && e.code === 'busy', `only a retryable 409 busy is acceptable: ${e}`);
+  assert.ok(ok.every((r) => r.action === 'unclear'), 'a greeting is not a request');
   const row = await convRow(conv.id);
   const stored = await count("SELECT count(*) AS n FROM conversation_messages WHERE conversation_id = $1 AND role = 'user'", [row.id]);
-  assert.equal(stored, 1 + ok, 'every accepted turn is stored exactly once');
+  assert.equal(stored, ok.length, 'every accepted turn is stored exactly once, rejected ones not at all');
   assert.equal(row.draft.turns, stored, 'the draft counted every stored turn (no lost update)');
-  assert.ok(await count('SELECT count(*) AS n FROM intents WHERE conversation_id = $1', [row.id]) <= 1);
-  console.log(`      info: ${texts.length} concurrent turns → ${ok} accepted, ${errs.length} × 409 (${[...new Set(errs.map((e) => e.code))].join(',') || '-'})`);
+  assert.deepEqual(ok.map((r) => r.conversation.turns).sort((a, b) => a - b), Array.from({ length: ok.length }, (_, i) => i + 1), 'each accepted turn saw a distinct, gap-free turn number');
+  console.log(`      info: ${texts.length} concurrent turns → ${ok.length} accepted, ${errs.length} × 409 busy (client retries those)`);
+});
+
+// ───────────────────────────── giving up on an essential field ─────────────────────────────
+test('after 3 unanswered attempts the assistant gives up politely: no crash, no invented deal, no silent widening of the place', async () => {
+  const u = await sessionUser('مستخدم لا يجيب');
+  const NON_ANSWERS = ['ممم', 'يعني', 'لحظة', 'شو؟'];
+  const problems: string[] = [];
+  const cases = [
+    { start: 'بدي حدا يصلحلي شي', field: 'category' },   // vague service: category is essential
+    { start: 'بدي شقة بإعزاز', field: 'deal' },            // rent or buy: never guessed (PRODUCT §5.3, §6.1)
+    { start: 'بدي غسالة مستعملة', field: 'place' },         // a seeker's place is a required scope (PRODUCT §6.1)
+  ];
+  for (const c of cases) {
+    const conv = await startConversation(db.pool, u);
+    let r: TurnResult | null = null;
+    try {
+      r = await turn(u, conv.id, c.start);
+      for (const t of NON_ANSWERS) { if (r.action === 'saved') break; r = await turn(u, conv.id, t); }
+    } catch (e) {
+      problems.push(`«${c.start}» + non-answers: ${e instanceof HttpError ? `${e.status} ${e.code}` : `CRASH ${(e as Error).message}`} (a 500 for the user, and every later turn of this conversation fails the same way)`);
+      continue;
+    }
+    if (r.action === 'saved' && r.intent) {
+      const { rows } = await db.pool.query('SELECT deal_type_id, scope_place_ids, point_place_id, side FROM intents WHERE public_id = $1', [r.intent.id]);
+      const row = rows[0];
+      if (c.field === 'deal') problems.push(`«${c.start}» saved as «${r.intent.dealAr}» (${db.reg.dealById.get(row.deal_type_id)!.code}) although the user never chose buy or rent`);
+      if (c.field === 'place' && row.side === 'seek' && !row.scope_place_ids.length) problems.push(`«${c.start}» saved with an empty scope (= anywhere) although the user never named a place`);
+      if (c.field === 'category') problems.push(`«${c.start}» saved with category «${r.intent.categoryAr}» that the user never chose`);
+    }
+  }
+  assert.deepEqual(problems, []);
 });
 
 // ───────────────────────────── provider failure fallback ─────────────────────────────

@@ -1,0 +1,770 @@
+-- heaviest owner (user 1, 6031 intents) — sides provide, listIntents statement 1/4
+SELECT count(*) FROM intents WHERE user_id = '1' AND side = ANY('{provide}') AND status = ANY('{active,paused,fulfilled,closed,expired}');
+
+Aggregate  (cost=3874.13..3874.14 rows=1 width=8) (actual time=14.951..14.957 rows=1 loops=1)
+  Buffers: shared hit=5533
+  ->  Append  (cost=30.42..3866.44 rows=3073 width=0) (actual time=0.817..14.407 rows=6031 loops=1)
+        Buffers: shared hit=5533
+        ->  Bitmap Heap Scan on intents_real_estate intents_1  (cost=30.42..1589.88 rows=1531 width=0) (actual time=0.817..5.580 rows=2507 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Heap Blocks: exact=2269
+              Buffers: shared hit=2297
+              ->  Bitmap Index Scan on intents_real_estate_user_id_side_created_at_id_idx  (cost=0.00..30.03 rows=1531 width=0) (actual time=0.479..0.480 rows=2507 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Buffers: shared hit=28
+        ->  Bitmap Heap Scan on intents_vehicles intents_2  (cost=26.16..1389.93 rows=947 width=0) (actual time=0.702..4.984 rows=2174 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Heap Blocks: exact=1959
+              Buffers: shared hit=1985
+              ->  Bitmap Index Scan on intents_vehicles_user_id_side_created_at_id_idx  (cost=0.00..25.92 rows=1340 width=0) (actual time=0.407..0.407 rows=2174 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Buffers: shared hit=26
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services intents_3  (cost=0.42..2.65 rows=1 width=0) (actual time=0.019..0.019 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education intents_4  (cost=0.42..2.64 rows=1 width=0) (actual time=0.011..0.012 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities intents_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.007..0.008 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Bitmap Heap Scan on intents_goods intents_6  (cost=16.65..860.95 rows=591 width=0) (actual time=0.425..3.053 rows=1350 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Heap Blocks: exact=1225
+              Buffers: shared hit=1241
+              ->  Bitmap Index Scan on intents_goods_user_id_side_created_at_id_idx  (cost=0.00..16.50 rows=838 width=0) (actual time=0.229..0.229 rows=1350 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Buffers: shared hit=16
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other intents_7  (cost=0.29..2.51 rows=1 width=0) (actual time=0.012..0.013 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+Planning Time: 1.801 ms
+Execution Time: 15.036 ms
+
+-- heaviest owner (user 1, 6031 intents) — sides provide, listIntents statement 2/4
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.user_id = '1' AND i.side = ANY('{provide}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') 
+  ORDER BY i.created_at DESC, i.id DESC LIMIT 21;
+
+Limit  (cost=3980.03..3980.08 rows=21 width=404) (actual time=17.874..17.884 rows=21 loops=1)
+  Buffers: shared hit=5533
+  ->  Sort  (cost=3980.03..3987.71 rows=3073 width=404) (actual time=17.873..17.881 rows=21 loops=1)
+        Sort Key: i.created_at DESC, i.id DESC
+        Sort Method: top-N heapsort  Memory: 46kB
+        Buffers: shared hit=5533
+        ->  Append  (cost=30.42..3897.17 rows=3073 width=404) (actual time=0.629..13.542 rows=6031 loops=1)
+              Buffers: shared hit=5533
+              ->  Bitmap Heap Scan on intents_real_estate i_1  (cost=30.42..1605.19 rows=1531 width=404) (actual time=0.629..5.532 rows=2507 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Heap Blocks: exact=2269
+                    Buffers: shared hit=2297
+                    ->  Bitmap Index Scan on intents_real_estate_user_id_side_created_at_id_idx  (cost=0.00..30.03 rows=1531 width=0) (actual time=0.292..0.292 rows=2507 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                          Buffers: shared hit=28
+              ->  Bitmap Heap Scan on intents_vehicles i_2  (cost=26.16..1399.40 rows=947 width=404) (actual time=0.518..4.592 rows=2174 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Heap Blocks: exact=1959
+                    Buffers: shared hit=1985
+                    ->  Bitmap Index Scan on intents_vehicles_user_id_side_created_at_id_idx  (cost=0.00..25.92 rows=1340 width=0) (actual time=0.293..0.293 rows=2174 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                          Buffers: shared hit=26
+              ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..2.66 rows=1 width=404) (actual time=0.018..0.018 rows=0 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..2.65 rows=1 width=404) (actual time=0.011..0.012 rows=0 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.53 rows=1 width=404) (actual time=0.008..0.008 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+              ->  Bitmap Heap Scan on intents_goods i_6  (cost=16.65..866.86 rows=591 width=404) (actual time=0.404..2.969 rows=1350 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Heap Blocks: exact=1225
+                    Buffers: shared hit=1241
+                    ->  Bitmap Index Scan on intents_goods_user_id_side_created_at_id_idx  (cost=0.00..16.50 rows=838 width=0) (actual time=0.238..0.238 rows=1350 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])))
+                          Buffers: shared hit=16
+              ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=404) (actual time=0.011..0.012 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+Planning Time: 1.957 ms
+Execution Time: 17.984 ms
+
+-- heaviest owner (user 1, 6031 intents) — sides provide, listIntents statement 3/4
+SELECT count(*) FROM intents i WHERE i.user_id = '1' AND i.side = ANY('{provide}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') AND (i.created_at, i.id) > ('2026-10-08 18:35:49.39+00'::timestamptz, '999803'::bigint);
+
+Aggregate  (cost=18.33..18.34 rows=1 width=8) (actual time=0.080..0.082 rows=1 loops=1)
+  Buffers: shared hit=19
+  ->  Append  (cost=0.42..18.31 rows=7 width=0) (actual time=0.077..0.079 rows=0 loops=1)
+        Buffers: shared hit=19
+        ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate i_1  (cost=0.42..2.65 rows=1 width=0) (actual time=0.021..0.021 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles i_2  (cost=0.42..2.65 rows=1 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..2.65 rows=1 width=0) (actual time=0.011..0.012 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..2.65 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods i_6  (cost=0.42..2.65 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((user_id = '1'::bigint) AND (ROW(created_at, id) > ROW('2026-10-08 18:35:49.39+00'::timestamp with time zone, '999803'::bigint)))
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+Planning Time: 1.181 ms
+Execution Time: 0.153 ms
+
+-- heaviest owner (user 1, 6031 intents) — sides provide, listIntents statement 4/4
+SELECT x.id::text AS id, m.state, count(*)::int AS n
+  FROM unnest('{2,2,2,6,1,1,…}' /* 20 elements, abbreviated here only */::smallint[], '{999803,999616,998742,999299,998128,999104,…}' /* 20 elements, abbreviated here only */::bigint[]) AS x(v, id)
+  JOIN matches m ON m.vertical_id = x.v AND (m.a_intent_id = x.id OR m.b_intent_id = x.id)
+  WHERE m.state IN ('confirmed','possible')
+  GROUP BY x.id, m.state;
+
+GroupAggregate  (cost=1579.63..1579.82 rows=7 width=53) (actual time=0.385..0.396 rows=11 loops=1)
+  Group Key: x.id, m.state
+  Buffers: shared hit=224
+  ->  Sort  (cost=1579.63..1579.65 rows=7 width=17) (actual time=0.379..0.384 rows=12 loops=1)
+        Sort Key: x.id, m.state
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=224
+        ->  Nested Loop  (cost=6.03..1579.53 rows=7 width=17) (actual time=0.082..0.364 rows=12 loops=1)
+              Buffers: shared hit=224
+              ->  Function Scan on x  (cost=0.01..0.21 rows=20 width=10) (actual time=0.013..0.017 rows=20 loops=1)
+              ->  Append  (cost=6.02..78.60 rows=37 width=27) (actual time=0.016..0.017 rows=1 loops=20)
+                    Buffers: shared hit=224
+                    ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.02..12.72 rows=6 width=27) (actual time=0.014..0.015 rows=1 loops=6)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Heap Blocks: exact=4
+                          Buffers: shared hit=76
+                          ->  BitmapOr  (cost=6.02..6.02 rows=6 width=0) (actual time=0.013..0.013 rows=0 loops=6)
+                                Buffers: shared hit=72
+                                ->  Bitmap Index Scan on matches_real_estate_a_intent_id_state_score_id_idx  (cost=0.00..3.02 rows=4 width=0) (actual time=0.005..0.005 rows=0 loops=6)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=36
+                                ->  Bitmap Index Scan on matches_real_estate_b_intent_id_state_score_id_idx  (cost=0.00..3.00 rows=1 width=0) (actual time=0.005..0.005 rows=1 loops=6)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=36
+                    ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.02..12.72 rows=6 width=27) (actual time=0.019..0.019 rows=0 loops=7)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Heap Blocks: exact=3
+                          Buffers: shared hit=87
+                          ->  BitmapOr  (cost=6.02..6.02 rows=6 width=0) (actual time=0.017..0.017 rows=0 loops=7)
+                                Buffers: shared hit=84
+                                ->  Bitmap Index Scan on matches_vehicles_a_intent_id_state_score_id_idx  (cost=0.00..3.02 rows=4 width=0) (actual time=0.010..0.010 rows=0 loops=7)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=42
+                                ->  Bitmap Index Scan on matches_vehicles_b_intent_id_state_score_id_idx  (cost=0.00..3.00 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=7)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=42
+                    ->  Bitmap Heap Scan on matches_services m_3  (cost=5.40..10.98 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.40..5.40 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_services_a_intent_id_state_score_id_idx  (cost=0.00..2.71 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_services_b_intent_id_state_score_id_idx  (cost=0.00..2.69 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_education m_4  (cost=5.12..10.68 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.12..5.12 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_education_a_intent_id_state_score_id_idx  (cost=0.00..2.54 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_education_b_intent_id_state_score_id_idx  (cost=0.00..2.58 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.12..10.68 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.12..5.12 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_activities_a_intent_id_state_score_id_idx  (cost=0.00..2.54 rows=3 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_activities_b_intent_id_state_score_id_idx  (cost=0.00..2.58 rows=2 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.40..10.98 rows=5 width=27) (actual time=0.010..0.011 rows=1 loops=7)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Heap Blocks: exact=5
+                          Buffers: shared hit=61
+                          ->  BitmapOr  (cost=5.40..5.40 rows=5 width=0) (actual time=0.009..0.009 rows=0 loops=7)
+                                Buffers: shared hit=56
+                                ->  Bitmap Index Scan on matches_goods_a_intent_id_state_score_id_idx  (cost=0.00..2.71 rows=4 width=0) (actual time=0.004..0.004 rows=0 loops=7)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=28
+                                ->  Bitmap Index Scan on matches_goods_b_intent_id_state_score_id_idx  (cost=0.00..2.69 rows=1 width=0) (actual time=0.004..0.004 rows=1 loops=7)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=28
+                    ->  Bitmap Heap Scan on matches_other m_7  (cost=4.11..9.64 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=4.11..4.11 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_other_a_intent_id_state_score_id_idx  (cost=0.00..2.04 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_other_b_intent_id_state_score_id_idx  (cost=0.00..2.07 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+Planning Time: 1.669 ms
+Execution Time: 0.516 ms
+
+-- heaviest owner (user 1, 6031 intents) — sides seek,join, listIntents statement 1/2
+SELECT count(*) FROM intents WHERE user_id = '1' AND side = ANY('{seek,join}') AND status = ANY('{active,paused,fulfilled,closed,expired}');
+
+Aggregate  (cost=2364.11..2364.12 rows=1 width=8) (actual time=0.038..0.044 rows=1 loops=1)
+  Buffers: shared hit=28
+  ->  Append  (cost=18.91..2359.60 rows=1807 width=0) (actual time=0.036..0.043 rows=0 loops=1)
+        Buffers: shared hit=28
+        ->  Bitmap Heap Scan on intents_real_estate intents_1  (cost=18.91..970.11 rows=903 width=0) (actual time=0.012..0.017 rows=0 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=6
+              ->  Bitmap Index Scan on intents_real_estate_user_id_side_created_at_id_idx  (cost=0.00..18.69 rows=903 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Buffers: shared hit=6
+        ->  Bitmap Heap Scan on intents_vehicles intents_2  (cost=17.62..843.98 rows=554 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=6
+              ->  Bitmap Index Scan on intents_vehicles_user_id_side_created_at_id_idx  (cost=0.00..17.48 rows=784 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Buffers: shared hit=6
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services intents_3  (cost=0.42..3.77 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education intents_4  (cost=0.42..3.77 rows=1 width=0) (actual time=0.003..0.003 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities intents_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.003..0.003 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Bitmap Heap Scan on intents_goods intents_6  (cost=10.23..523.90 rows=346 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=6
+              ->  Bitmap Index Scan on intents_goods_user_id_side_created_at_id_idx  (cost=0.00..10.14 rows=491 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                    Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Buffers: shared hit=6
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other intents_7  (cost=0.29..2.51 rows=1 width=0) (actual time=0.002..0.002 rows=0 loops=1)
+              Index Cond: (user_id = '1'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+Planning Time: 0.996 ms
+Execution Time: 0.089 ms
+
+-- heaviest owner (user 1, 6031 intents) — sides seek,join, listIntents statement 2/2
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.user_id = '1' AND i.side = ANY('{seek,join}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') 
+  ORDER BY i.created_at DESC, i.id DESC LIMIT 21;
+
+Limit  (cost=2426.39..2426.44 rows=21 width=404) (actual time=0.038..0.039 rows=0 loops=1)
+  Buffers: shared hit=28
+  ->  Sort  (cost=2426.39..2430.90 rows=1807 width=404) (actual time=0.038..0.039 rows=0 loops=1)
+        Sort Key: i.created_at DESC, i.id DESC
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=28
+        ->  Append  (cost=18.91..2377.67 rows=1807 width=404) (actual time=0.034..0.035 rows=0 loops=1)
+              Buffers: shared hit=28
+              ->  Bitmap Heap Scan on intents_real_estate i_1  (cost=18.91..979.14 rows=903 width=404) (actual time=0.011..0.011 rows=0 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=6
+                    ->  Bitmap Index Scan on intents_real_estate_user_id_side_created_at_id_idx  (cost=0.00..18.69 rows=903 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                          Buffers: shared hit=6
+              ->  Bitmap Heap Scan on intents_vehicles i_2  (cost=17.62..849.52 rows=554 width=404) (actual time=0.006..0.006 rows=0 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=6
+                    ->  Bitmap Index Scan on intents_vehicles_user_id_side_created_at_id_idx  (cost=0.00..17.48 rows=784 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                          Buffers: shared hit=6
+              ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..3.78 rows=1 width=404) (actual time=0.004..0.004 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..3.78 rows=1 width=404) (actual time=0.003..0.003 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.53 rows=1 width=404) (actual time=0.003..0.003 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+              ->  Bitmap Heap Scan on intents_goods i_6  (cost=10.23..527.36 rows=346 width=404) (actual time=0.005..0.005 rows=0 loops=1)
+                    Recheck Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=6
+                    ->  Bitmap Index Scan on intents_goods_user_id_side_created_at_id_idx  (cost=0.00..10.14 rows=491 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+                          Index Cond: ((user_id = '1'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                          Buffers: shared hit=6
+              ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=404) (actual time=0.002..0.002 rows=0 loops=1)
+                    Index Cond: (user_id = '1'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+Planning Time: 1.068 ms
+Execution Time: 0.112 ms
+
+-- typical owner (user 33886) — sides provide, listIntents statement 1/4
+SELECT count(*) FROM intents WHERE user_id = '33886' AND side = ANY('{provide}') AND status = ANY('{active,paused,fulfilled,closed,expired}');
+
+Aggregate  (cost=22.84..22.85 rows=1 width=8) (actual time=0.072..0.074 rows=1 loops=1)
+  Buffers: shared hit=25
+  ->  Append  (cost=0.42..22.81 rows=10 width=0) (actual time=0.026..0.071 rows=5 loops=1)
+        Buffers: shared hit=25
+        ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate intents_1  (cost=0.42..4.90 rows=3 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles intents_2  (cost=0.42..3.77 rows=2 width=0) (actual time=0.012..0.014 rows=2 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=5
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services intents_3  (cost=0.42..2.65 rows=1 width=0) (actual time=0.010..0.012 rows=2 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=5
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education intents_4  (cost=0.42..2.64 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities intents_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods intents_6  (cost=0.42..3.77 rows=1 width=0) (actual time=0.009..0.009 rows=1 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=4
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other intents_7  (cost=0.29..2.51 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Rows Removed by Filter: 1
+              Buffers: shared hit=3
+Planning Time: 1.617 ms
+Execution Time: 0.124 ms
+
+-- typical owner (user 33886) — sides provide, listIntents statement 2/4
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.user_id = '33886' AND i.side = ANY('{provide}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') 
+  ORDER BY i.created_at DESC, i.id DESC LIMIT 21;
+
+Limit  (cost=23.08..23.10 rows=10 width=407) (actual time=0.071..0.073 rows=5 loops=1)
+  Buffers: shared hit=25
+  ->  Sort  (cost=23.08..23.10 rows=10 width=407) (actual time=0.071..0.072 rows=5 loops=1)
+        Sort Key: i.created_at DESC, i.id DESC
+        Sort Method: quicksort  Memory: 27kB
+        Buffers: shared hit=25
+        ->  Append  (cost=0.42..22.91 rows=10 width=407) (actual time=0.024..0.060 rows=5 loops=1)
+              Buffers: shared hit=25
+              ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate i_1  (cost=0.42..4.93 rows=3 width=407) (actual time=0.010..0.010 rows=0 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles i_2  (cost=0.42..3.79 rows=2 width=407) (actual time=0.013..0.016 rows=2 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=5
+              ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..2.66 rows=1 width=407) (actual time=0.008..0.010 rows=2 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=5
+              ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..2.65 rows=1 width=407) (actual time=0.005..0.005 rows=0 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.53 rows=1 width=407) (actual time=0.004..0.004 rows=0 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+              ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods i_6  (cost=0.42..3.78 rows=1 width=407) (actual time=0.008..0.008 rows=1 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=4
+              ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=407) (actual time=0.005..0.005 rows=0 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Rows Removed by Filter: 1
+                    Buffers: shared hit=3
+Planning Time: 1.219 ms
+Execution Time: 0.136 ms
+
+-- typical owner (user 33886) — sides provide, listIntents statement 3/4
+SELECT count(*) FROM intents i WHERE i.user_id = '33886' AND i.side = ANY('{provide}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') AND (i.created_at, i.id) > ('2026-09-27 04:45:24.568+00'::timestamptz, '789667'::bigint);
+
+Aggregate  (cost=18.33..18.34 rows=1 width=8) (actual time=0.036..0.037 rows=1 loops=1)
+  Buffers: shared hit=19
+  ->  Append  (cost=0.42..18.31 rows=7 width=0) (actual time=0.035..0.035 rows=0 loops=1)
+        Buffers: shared hit=19
+        ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate i_1  (cost=0.42..2.65 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles i_2  (cost=0.42..2.65 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..2.65 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..2.65 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.003..0.003 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods i_6  (cost=0.42..2.65 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{provide}'::text[])) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=0) (actual time=0.003..0.003 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-09-27 04:45:24.568+00'::timestamp with time zone, '789667'::bigint)))
+              Filter: ((side = ANY ('{provide}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+Planning Time: 1.045 ms
+Execution Time: 0.100 ms
+
+-- typical owner (user 33886) — sides provide, listIntents statement 4/4
+SELECT x.id::text AS id, m.state, count(*)::int AS n
+  FROM unnest('{6,2,3,3,2}'::smallint[], '{789667,757369,570658,222791,31823}'::bigint[]) AS x(v, id)
+  JOIN matches m ON m.vertical_id = x.v AND (m.a_intent_id = x.id OR m.b_intent_id = x.id)
+  WHERE m.state IN ('confirmed','possible')
+  GROUP BY x.id, m.state;
+
+GroupAggregate  (cost=408.42..408.56 rows=5 width=53) (actual time=0.150..0.155 rows=3 loops=1)
+  Group Key: x.id, m.state
+  Buffers: shared hit=52
+  ->  Sort  (cost=408.42..408.43 rows=5 width=17) (actual time=0.145..0.148 rows=4 loops=1)
+        Sort Key: x.id, m.state
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=52
+        ->  Nested Loop  (cost=6.14..408.36 rows=5 width=17) (actual time=0.043..0.135 rows=4 loops=1)
+              Buffers: shared hit=52
+              ->  Function Scan on x  (cost=0.01..0.06 rows=5 width=10) (actual time=0.008..0.009 rows=5 loops=1)
+              ->  Append  (cost=6.13..81.29 rows=37 width=27) (actual time=0.022..0.024 rows=1 loops=5)
+                    Buffers: shared hit=52
+                    ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.13..12.83 rows=6 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_real_estate_a_intent_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_real_estate_b_intent_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.13..12.83 rows=6 width=27) (actual time=0.019..0.019 rows=0 loops=2)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Buffers: shared hit=24
+                          ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (actual time=0.019..0.019 rows=0 loops=2)
+                                Buffers: shared hit=24
+                                ->  Bitmap Index Scan on matches_vehicles_a_intent_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.008..0.008 rows=0 loops=2)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=12
+                                ->  Bitmap Index Scan on matches_vehicles_b_intent_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=2)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=12
+                    ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..11.20 rows=5 width=27) (actual time=0.017..0.020 rows=2 loops=2)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Heap Blocks: exact=3
+                          Buffers: shared hit=19
+                          ->  BitmapOr  (cost=5.62..5.62 rows=5 width=0) (actual time=0.014..0.014 rows=0 loops=2)
+                                Buffers: shared hit=16
+                                ->  Bitmap Index Scan on matches_services_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.004..0.004 rows=0 loops=2)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=8
+                                ->  Bitmap Index Scan on matches_services_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.008..0.008 rows=2 loops=2)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=8
+                    ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.18 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_education_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_education_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.18 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_activities_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_activities_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.62..11.20 rows=5 width=27) (actual time=0.030..0.031 rows=1 loops=1)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Heap Blocks: exact=1
+                          Buffers: shared hit=9
+                          ->  BitmapOr  (cost=5.62..5.62 rows=5 width=0) (actual time=0.023..0.023 rows=0 loops=1)
+                                Buffers: shared hit=8
+                                ->  Bitmap Index Scan on matches_goods_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=4
+                                ->  Bitmap Index Scan on matches_goods_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (actual time=0.008..0.008 rows=1 loops=1)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=4
+                    ->  Bitmap Heap Scan on matches_other m_7  (cost=5.15..10.69 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.15..5.15 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_other_a_intent_id_state_score_id_idx  (cost=0.00..2.58 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_other_b_intent_id_state_score_id_idx  (cost=0.00..2.56 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+Planning Time: 1.893 ms
+Execution Time: 0.294 ms
+
+-- typical owner (user 33886) — sides seek,join, listIntents statement 1/4
+SELECT count(*) FROM intents WHERE user_id = '33886' AND side = ANY('{seek,join}') AND status = ANY('{active,paused,fulfilled,closed,expired}');
+
+Aggregate  (cost=26.28..26.29 rows=1 width=8) (actual time=0.082..0.083 rows=1 loops=1)
+  Buffers: shared hit=32
+  ->  Append  (cost=0.42..26.26 rows=8 width=0) (actual time=0.021..0.079 rows=2 loops=1)
+        Buffers: shared hit=32
+        ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate intents_1  (cost=0.42..5.30 rows=2 width=0) (actual time=0.021..0.022 rows=1 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=7
+        ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles intents_2  (cost=0.42..4.18 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=6
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services intents_3  (cost=0.42..3.77 rows=1 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Rows Removed by Filter: 2
+              Buffers: shared hit=5
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education intents_4  (cost=0.42..3.77 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities intents_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods intents_6  (cost=0.42..4.18 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+              Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+              Buffers: shared hit=6
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other intents_7  (cost=0.29..2.51 rows=1 width=0) (actual time=0.010..0.010 rows=1 loops=1)
+              Index Cond: (user_id = '33886'::bigint)
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+Planning Time: 1.780 ms
+Execution Time: 0.132 ms
+
+-- typical owner (user 33886) — sides seek,join, listIntents statement 2/4
+SELECT i.id, i.vertical_id, i.public_id, i.user_id, i.realm, i.side, i.category_id, i.deal_type_id, i.status, i.version,
+  i.title_ar, i.source_text, i.point_place_id, i.scope_strength, i.scope_place_ids, i.price_op, i.price_lo, i.price_hi, i.currency,
+  i.price_unit, i.price_strength, i.negotiable, lower(i.when_range) AS when_from, upper(i.when_range) AS when_to, i.when_strength,
+  i.when_label_ar, i.attrs, i.constraints, i.expires_at, i.created_at, i.updated_at, i.created_at::text AS created_key FROM intents i WHERE i.user_id = '33886' AND i.side = ANY('{seek,join}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') 
+  ORDER BY i.created_at DESC, i.id DESC LIMIT 21;
+
+Limit  (cost=26.46..26.48 rows=8 width=406) (actual time=0.088..0.090 rows=2 loops=1)
+  Buffers: shared hit=32
+  ->  Sort  (cost=26.46..26.48 rows=8 width=406) (actual time=0.087..0.088 rows=2 loops=1)
+        Sort Key: i.created_at DESC, i.id DESC
+        Sort Method: quicksort  Memory: 26kB
+        Buffers: shared hit=32
+        ->  Append  (cost=0.42..26.34 rows=8 width=406) (actual time=0.026..0.077 rows=2 loops=1)
+              Buffers: shared hit=32
+              ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate i_1  (cost=0.42..5.32 rows=2 width=406) (actual time=0.025..0.026 rows=1 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=7
+              ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles i_2  (cost=0.42..4.19 rows=1 width=406) (actual time=0.008..0.008 rows=0 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=6
+              ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..3.78 rows=1 width=406) (actual time=0.011..0.011 rows=0 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Rows Removed by Filter: 2
+                    Buffers: shared hit=5
+              ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..3.78 rows=1 width=406) (actual time=0.006..0.006 rows=0 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=3
+              ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.53 rows=1 width=406) (actual time=0.006..0.006 rows=0 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=2
+              ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods i_6  (cost=0.42..4.19 rows=1 width=406) (actual time=0.008..0.008 rows=0 loops=1)
+                    Index Cond: ((user_id = '33886'::bigint) AND (side = ANY ('{seek,join}'::text[])))
+                    Filter: (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[]))
+                    Buffers: shared hit=6
+              ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=406) (actual time=0.010..0.010 rows=1 loops=1)
+                    Index Cond: (user_id = '33886'::bigint)
+                    Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+                    Buffers: shared hit=3
+Planning Time: 1.777 ms
+Execution Time: 0.179 ms
+
+-- typical owner (user 33886) — sides seek,join, listIntents statement 3/4
+SELECT count(*) FROM intents i WHERE i.user_id = '33886' AND i.side = ANY('{seek,join}') AND i.status = ANY('{active,paused,fulfilled,closed,expired}') AND (i.created_at, i.id) > ('2026-08-19 11:17:21.054+00'::timestamptz, '439888'::bigint);
+
+Aggregate  (cost=20.67..20.68 rows=1 width=8) (actual time=0.058..0.059 rows=1 loops=1)
+  Buffers: shared hit=22
+  ->  Append  (cost=0.42..20.65 rows=7 width=0) (actual time=0.056..0.057 rows=0 loops=1)
+        Buffers: shared hit=22
+        ->  Index Scan using intents_real_estate_user_id_side_created_at_id_idx on intents_real_estate i_1  (cost=0.42..3.80 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_vehicles_user_id_side_created_at_id_idx on intents_vehicles i_2  (cost=0.42..3.80 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Rows Removed by Filter: 1
+              Buffers: shared hit=4
+        ->  Index Scan using intents_services_user_id_side_created_at_id_idx on intents_services i_3  (cost=0.42..2.66 rows=1 width=0) (actual time=0.009..0.010 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Rows Removed by Filter: 1
+              Buffers: shared hit=4
+        ->  Index Scan using intents_education_user_id_side_created_at_id_idx on intents_education i_4  (cost=0.42..2.66 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=3
+        ->  Index Scan using intents_activities_user_id_side_created_at_id_idx on intents_activities i_5  (cost=0.29..2.52 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_user_id_side_created_at_id_idx on intents_goods i_6  (cost=0.42..2.67 rows=1 width=0) (actual time=0.009..0.009 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Rows Removed by Filter: 1
+              Buffers: shared hit=4
+        ->  Index Scan using intents_other_user_id_side_created_at_id_idx on intents_other i_7  (cost=0.29..2.52 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)
+              Index Cond: ((user_id = '33886'::bigint) AND (ROW(created_at, id) > ROW('2026-08-19 11:17:21.054+00'::timestamp with time zone, '439888'::bigint)))
+              Filter: ((side = ANY ('{seek,join}'::text[])) AND (status = ANY ('{active,paused,fulfilled,closed,expired}'::text[])))
+              Buffers: shared hit=2
+Planning Time: 1.732 ms
+Execution Time: 0.117 ms
+
+-- typical owner (user 33886) — sides seek,join, listIntents statement 4/4
+SELECT x.id::text AS id, m.state, count(*)::int AS n
+  FROM unnest('{7,1}'::smallint[], '{439888,238072}'::bigint[]) AS x(v, id)
+  JOIN matches m ON m.vertical_id = x.v AND (m.a_intent_id = x.id OR m.b_intent_id = x.id)
+  WHERE m.state IN ('confirmed','possible')
+  GROUP BY x.id, m.state;
+
+GroupAggregate  (cost=164.24..164.29 rows=2 width=53) (actual time=0.077..0.080 rows=0 loops=1)
+  Group Key: x.id, m.state
+  Buffers: shared hit=20
+  ->  Sort  (cost=164.24..164.24 rows=2 width=17) (actual time=0.076..0.079 rows=0 loops=1)
+        Sort Key: x.id, m.state
+        Sort Method: quicksort  Memory: 25kB
+        Buffers: shared hit=20
+        ->  Nested Loop  (cost=6.14..164.23 rows=2 width=17) (actual time=0.068..0.071 rows=0 loops=1)
+              Buffers: shared hit=20
+              ->  Function Scan on x  (cost=0.01..0.03 rows=2 width=10) (actual time=0.008..0.009 rows=2 loops=1)
+              ->  Append  (cost=6.13..81.73 rows=37 width=27) (actual time=0.029..0.030 rows=0 loops=2)
+                    Buffers: shared hit=20
+                    ->  Bitmap Heap Scan on matches_real_estate m_1  (cost=6.13..12.83 rows=6 width=27) (actual time=0.025..0.025 rows=0 loops=1)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Buffers: shared hit=12
+                          ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (actual time=0.024..0.025 rows=0 loops=1)
+                                Buffers: shared hit=12
+                                ->  Bitmap Index Scan on matches_real_estate_a_intent_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (actual time=0.010..0.011 rows=0 loops=1)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=6
+                                ->  Bitmap Index Scan on matches_real_estate_b_intent_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=6
+                    ->  Bitmap Heap Scan on matches_vehicles m_2  (cost=6.13..12.83 rows=6 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=6.13..6.13 rows=6 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_vehicles_a_intent_id_state_score_id_idx  (cost=0.00..3.08 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_vehicles_b_intent_id_state_score_id_idx  (cost=0.00..3.06 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_services m_3  (cost=5.62..11.20 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.62..5.62 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_services_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_services_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_education m_4  (cost=5.61..11.18 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_education_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_education_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_activities m_5  (cost=5.61..11.18 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.61..5.61 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_activities_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=3 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_activities_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=2 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_goods m_6  (cost=5.62..11.20 rows=5 width=27) (never executed)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          ->  BitmapOr  (cost=5.62..5.62 rows=5 width=0) (never executed)
+                                ->  Bitmap Index Scan on matches_goods_a_intent_id_state_score_id_idx  (cost=0.00..2.82 rows=4 width=0) (never executed)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                ->  Bitmap Index Scan on matches_goods_b_intent_id_state_score_id_idx  (cost=0.00..2.80 rows=1 width=0) (never executed)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                    ->  Bitmap Heap Scan on matches_other m_7  (cost=5.59..11.13 rows=5 width=27) (actual time=0.027..0.028 rows=0 loops=1)
+                          Recheck Cond: (((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))) OR ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[]))))
+                          Filter: ((state = ANY ('{confirmed,possible}'::text[])) AND (vertical_id = x.v))
+                          Buffers: shared hit=8
+                          ->  BitmapOr  (cost=5.59..5.59 rows=5 width=0) (actual time=0.025..0.025 rows=0 loops=1)
+                                Buffers: shared hit=8
+                                ->  Bitmap Index Scan on matches_other_a_intent_id_state_score_id_idx  (cost=0.00..2.81 rows=4 width=0) (actual time=0.013..0.013 rows=0 loops=1)
+                                      Index Cond: ((a_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=4
+                                ->  Bitmap Index Scan on matches_other_b_intent_id_state_score_id_idx  (cost=0.00..2.79 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)
+                                      Index Cond: ((b_intent_id = x.id) AND (state = ANY ('{confirmed,possible}'::text[])))
+                                      Buffers: shared hit=4
+Planning Time: 1.959 ms
+Execution Time: 0.229 ms
+

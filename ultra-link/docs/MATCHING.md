@@ -136,13 +136,28 @@ Run: `node --test test/unit/matching-*.test.ts` and
 attributes, constraints, activity windows) in a throw-away database, clones it per engine, and runs `matchIntent` for the
 same 300 intents twice (cold: all pairs/notes new; warm: same pairs again). Statements = client round trips incl. BEGIN/COMMIT.
 
-PERF_TABLE
+Measured 2026-10-08 on this machine (PostgreSQL 16 local, seed 7, 296 distinct intents, mean 380 candidates and 263
+confirmed/possible pairs per run, max 1805 candidates):
+
+| Engine | Pass | mean ms | p50 | p95 | max | statements / run (mean · max) |
+|---|---|---|---|---|---|---|
+| before (row-wise) | cold | 675.0 | 450.0 | 2166 | 4078 | 1823.6 · 9651 |
+| **batched (current)** | cold | **191.7** | **137.0** | **604** | **983** | **14 · 17** |
+| before (row-wise) | warm | 194.6 | 140.4 | 598 | 994 | 520 · 2621 |
+| **batched (current)** | warm | **42.7** | **33.4** | **126** | **223** | **12 · 15** |
+| before (bc888ed verbatim) | cold / warm | 738.5 / 206.2 | 489 / 149 | 2314 / 612 | 4387 / 1137 | 1795.9 / 512 |
+
+Cold: 3.5× faster, 130× fewer round trips; warm: 4.6× faster. The batched run's statement count does not depend on the number of
+pairs (BEGIN, lock, eval_seq, load, existing pairs, retrieval = one query per scope place + ≤ 3, candidates, invalidations,
+upserts, refs, notifications, pg_notify, run row, COMMIT). Both 20k results: 77 171 matches, 77 171 refs, 154 342 notifications, fingerprint `25ccbdc98b561164`.
 
 `before (row-wise)` is the pre-batching engine (commit bc888ed: one upsert, one `match_refs` insert, two notification
 inserts and per-user `pg_notify` per pair, plus a linear title lookup per notification) fed by the current retrieval;
 its result fingerprint (all match rows: state, score, reasons, missing, versions; all notifications) is **identical** to the
 batched engine's, so batching kept the semantics. `before (bc888ed)` is that commit verbatim; it also finds fewer pairs
-(its retrieval missed broader points and point-less counterparts, fixed since).
+(76 007 vs 77 171: its retrieval missed broader points and point-less counterparts, fixed since). To reproduce a "before"
+column: `git show bc888ed:ultra-link/src/matching/engine.ts`, point its `../` imports at this checkout's `src/`, and pass
+`--engine before=/abs/path/engine.ts`.
 
 ## 8. Known limits / follow-ups
 - Status changes (`POST /api/intents/:id/status`) run matching right after the commit but enqueue no safety-net job

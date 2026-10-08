@@ -19,10 +19,11 @@
 --  3. notifications_unread_idx → (recipient_id, created_at DESC, id DESC) WHERE read_at IS NULL. Still serves the
 --     unread badge count; now also the "unread only" page and its rangeStart count in index order.
 --  4. Indexes for foreign keys whose referencing side had none. Every ON DELETE CASCADE / SET NULL from users,
---     intents, matches, conversations and conversation_messages seq-scanned the referencing table, per row:
---     baseline DELETE of one user owning 5 intents = 1.3 s, almost all in "Trigger for constraint
---     intent_refs_vertical_id_intent_id_fkey*" (seq scan of 1M intent_refs per deleted intent), and
---     POST /api/contact-requests/:id/respond hash-joined a Seq Scan of all match_refs (≈ 290k rows) per response.
+--     intents, matches, conversations and conversation_messages seq-scanned the referencing table, per row.
+--     Baseline (bench/results/baseline-0001): deleting one user with 11 intents p50 1.1 s, p95 2.0 s — the EXPLAIN shows
+--     the time in "Trigger for constraint intent_refs_vertical_id_intent_id_fkey*" (a seq scan of ~1M intent_refs per
+--     deleted intent) and match_refs_vertical_id_match_id_fkey*; POST /api/contact-requests/:id/respond hash-joined a
+--     Seq Scan of all ~290k match_refs per response (p50 27.5 ms).
 --       intent_refs  UNIQUE (vertical_id, intent_id)   one ref per intent — also a real invariant (createIntent)
 --       match_refs   UNIQUE (vertical_id, match_id)    one ref per match  — also a real invariant (registerNewMatches)
 --       intent_refs (user_id), contact_requests (requester_id), conversations (user_id),

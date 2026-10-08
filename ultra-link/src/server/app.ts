@@ -320,7 +320,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<{ Params: { id: string } }>('/api/intents/:id/status', async (req) => {
     const ref = await ownIntent(req);
     const { action } = body(z.object({ action: z.enum(['pause', 'resume', 'fulfill', 'close']) }), req);
-    const res = await withTx(pool, async (tx) => setIntentStatus(tx, reg, ref.verticalId, ref.id, u(req).id, action as StatusAction));
+    const res = await withTx(pool, async (tx) => {
+      const r = await setIntentStatus(tx, reg, ref.verticalId, ref.id, u(req).id, action as StatusAction);
+      // safety net in the same transaction: if the process dies before the inline re-match below, the worker
+      // still re-evaluates this version (and notifies counterparts); the inline run makes the job a no-op
+      if (r.ok) await enqueue(tx, 'match_intent', { verticalId: ref.verticalId, intentId: ref.id, version: r.version, trigger: 'status' }, { dedupeKey: `match:${ref.verticalId}:${ref.id}:${r.version}`, priority: 50 });
+      return r;
+    });
     if (!res.ok) throw new HttpError(409, 'invalid_transition', 'لا يمكن تنفيذ هذا الإجراء على حالته الحالية');
     const run = await matchIntent(pool, reg, { verticalId: ref.verticalId, intentId: ref.id, version: res.version, trigger: 'status' });
     const row = await loadIntent(pool, ref.verticalId, ref.id);

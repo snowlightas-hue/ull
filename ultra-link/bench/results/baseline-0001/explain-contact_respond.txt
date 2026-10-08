@@ -1,0 +1,22 @@
+-- accept a pending contact request (executed inside a rolled-back transaction)
+UPDATE contact_requests c SET status = 'accepted', responded_at = now() FROM match_refs r
+  WHERE c.public_id = '441ec33a-886d-4c4d-883e-c0d92ce2c71f' AND c.recipient_id = '58382' AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
+  RETURNING c.public_id, c.status, c.requester_id, r.public_id AS match_public_id;
+
+Update on contact_requests c  (cost=2.52..6842.13 rows=1 width=68) (actual time=12.703..40.752 rows=1 loops=1)
+  Buffers: shared hit=2248 dirtied=1 written=1
+  ->  Hash Join  (cost=2.52..6842.13 rows=1 width=68) (actual time=12.476..40.522 rows=1 loops=1)
+        Hash Cond: ((r.vertical_id = c.vertical_id) AND (r.match_id = c.match_id))
+        Buffers: shared hit=2230
+        ->  Seq Scan on match_refs r  (cost=0.00..5251.66 rows=302466 width=32) (actual time=0.005..24.091 rows=289156 loops=1)
+              Buffers: shared hit=2227
+        ->  Hash  (cost=2.50..2.50 rows=1 width=16) (actual time=0.027..0.029 rows=1 loops=1)
+              Buckets: 1024  Batches: 1  Memory Usage: 9kB
+              Buffers: shared hit=3
+              ->  Index Scan using contact_requests_recipient_idx on contact_requests c  (cost=0.28..2.50 rows=1 width=16) (actual time=0.023..0.024 rows=1 loops=1)
+                    Index Cond: ((recipient_id = '58382'::bigint) AND (status = 'pending'::text))
+                    Filter: (public_id = '441ec33a-886d-4c4d-883e-c0d92ce2c71f'::uuid)
+                    Buffers: shared hit=3
+Planning Time: 0.170 ms
+Execution Time: 40.795 ms
+
