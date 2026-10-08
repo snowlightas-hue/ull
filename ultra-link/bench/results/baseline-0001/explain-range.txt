@@ -1,0 +1,124 @@
+-- typical sample (intent 1:904792), query 1
+SELECT id FROM intents WHERE vertical_id = 1 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{103,100}')
+  AND status = 'active' AND point_lft BETWEEN 4000 AND 5000 AND user_id <> '55785'
+  ORDER BY created_at DESC LIMIT 5000;
+
+Limit  (cost=773.02..776.38 rows=1343 width=16) (actual time=4.483..4.812 rows=2588 loops=1)
+  Buffers: shared hit=2171
+  ->  Sort  (cost=773.02..776.38 rows=1343 width=16) (actual time=4.482..4.659 rows=2588 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: quicksort  Memory: 198kB
+        Buffers: shared hit=2171
+        ->  Index Scan using intents_real_estate_realm_side_deal_type_id_category_id_poi_idx on intents_real_estate intents  (cost=0.42..703.25 rows=1343 width=16) (actual time=0.059..4.071 rows=2588 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{103,100}'::integer[])) AND (point_lft >= 4000) AND (point_lft <= 5000))
+              Filter: ((user_id <> '55785'::bigint) AND (vertical_id = '1'::smallint))
+              Buffers: shared hit=2171
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.341 ms
+Execution Time: 4.981 ms
+
+-- typical sample (intent 1:904792), query 2
+SELECT count(*)::int AS n FROM (SELECT 1 FROM intents WHERE vertical_id = 1 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2
+  AND category_id = ANY('{103,100}') AND status = 'active' AND user_id <> '55785' AND point_lft IS NOT NULL
+  AND NOT (point_lft BETWEEN 4000 AND 5000) LIMIT 1000) x;
+
+Aggregate  (cost=843.82..843.83 rows=1 width=4) (actual time=5.087..5.089 rows=1 loops=1)
+  Buffers: shared hit=3066
+  ->  Limit  (cost=0.42..831.32 rows=1000 width=4) (actual time=3.359..5.021 rows=1000 loops=1)
+        Buffers: shared hit=3066
+        ->  Index Scan using intents_real_estate_realm_side_deal_type_id_category_id_poi_idx on intents_real_estate intents  (cost=0.42..2614.42 rows=3146 width=4) (actual time=3.358..4.940 rows=1000 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{103,100}'::integer[])) AND (point_lft IS NOT NULL))
+              Filter: ((user_id <> '55785'::bigint) AND (vertical_id = '1'::smallint) AND ((point_lft < 4000) OR (point_lft > 5000)))
+              Rows Removed by Filter: 2588
+              Buffers: shared hit=3066
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.384 ms
+Execution Time: 5.123 ms
+
+-- typical sample (intent 1:904792), query 3
+SELECT id FROM intents WHERE vertical_id = 1 AND realm = 'real' AND side = 'provide' AND deal_type_id = 2 AND category_id = ANY('{103,100}')
+  AND status = 'active' AND point_lft IS NULL AND user_id <> '55785' ORDER BY created_at DESC LIMIT 200;
+
+Limit  (cost=1258.46..1258.96 rows=200 width=16) (actual time=1.159..1.177 rows=200 loops=1)
+  Buffers: shared hit=613
+  ->  Sort  (cost=1258.46..1264.22 rows=2305 width=16) (actual time=1.158..1.165 rows=200 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: top-N heapsort  Memory: 40kB
+        Buffers: shared hit=613
+        ->  Index Scan using intents_real_estate_realm_side_deal_type_id_category_id_poi_idx on intents_real_estate intents  (cost=0.42..1158.84 rows=2305 width=16) (actual time=0.046..1.027 rows=626 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '2'::smallint) AND (category_id = ANY ('{103,100}'::integer[])) AND (point_lft IS NULL))
+              Filter: ((user_id <> '55785'::bigint) AND (vertical_id = '1'::smallint))
+              Buffers: shared hit=613
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.333 ms
+Execution Time: 1.204 ms
+
+-- slowest sample (intent 2:628168, 110.7 ms), query 1
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 1 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND point_lft BETWEEN 2000 AND 89000 AND user_id <> '126356'
+  ORDER BY created_at DESC LIMIT 5000;
+
+Limit  (cost=8278.70..8291.20 rows=5000 width=16) (actual time=70.341..70.857 rows=5000 loops=1)
+  Buffers: shared hit=29249
+  ->  Sort  (cost=8278.70..8344.56 rows=26345 width=16) (actual time=70.339..70.594 rows=5000 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: top-N heapsort  Memory: 775kB
+        Buffers: shared hit=29249
+        ->  Index Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..6528.37 rows=26345 width=16) (actual time=0.045..60.135 rows=40657 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft >= 2000) AND (point_lft <= 89000))
+              Filter: ((user_id <> '126356'::bigint) AND (vertical_id = '2'::smallint))
+              Buffers: shared hit=29249
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.384 ms
+Execution Time: 71.290 ms
+
+-- slowest sample (intent 2:628168, 110.7 ms), query 2
+SELECT count(*)::int AS n FROM (SELECT 1 FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 1
+  AND category_id = ANY('{201,200}') AND status = 'active' AND user_id <> '126356' AND point_lft IS NOT NULL
+  AND NOT (point_lft BETWEEN 2000 AND 89000) LIMIT 1000) x;
+
+Aggregate  (cost=1037.56..1037.58 rows=1 width=4) (actual time=3.848..3.852 rows=1 loops=1)
+  Buffers: shared hit=647
+  ->  Limit  (cost=118.20..1025.06 rows=1000 width=4) (actual time=2.863..3.802 rows=1000 loops=1)
+        Buffers: shared hit=647
+        ->  Bitmap Heap Scan on intents_vehicles intents  (cost=118.20..3616.89 rows=3858 width=4) (actual time=2.861..3.740 rows=1000 loops=1)
+              Recheck Cond: (((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft < 2000) AND (point_lft IS NOT NULL) AND (status = 'active'::text)) OR ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft > 89000) AND (point_lft IS NOT NULL) AND (status = 'active'::text)))
+              Filter: ((category_id = ANY ('{201,200}'::integer[])) AND (user_id <> '126356'::bigint) AND (vertical_id = '2'::smallint))
+              Heap Blocks: exact=571
+              Buffers: shared hit=647
+              ->  BitmapOr  (cost=118.20..118.20 rows=3858 width=0) (actual time=2.242..2.244 rows=0 loops=1)
+                    Buffers: shared hit=76
+                    ->  Bitmap Index Scan on intents_vehicles_realm_side_deal_type_id_category_id_point__idx  (cost=0.00..3.08 rows=1 width=0) (actual time=0.020..0.020 rows=0 loops=1)
+                          Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft < 2000) AND (point_lft IS NOT NULL))
+                          Buffers: shared hit=6
+                    ->  Bitmap Index Scan on intents_vehicles_realm_side_deal_type_id_category_id_point__idx  (cost=0.00..113.19 rows=3858 width=0) (actual time=2.221..2.221 rows=8260 loops=1)
+                          Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft > 89000) AND (point_lft IS NOT NULL))
+                          Buffers: shared hit=70
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.502 ms
+Execution Time: 3.895 ms
+
+-- slowest sample (intent 2:628168, 110.7 ms), query 3
+SELECT id FROM intents WHERE vertical_id = 2 AND realm = 'real' AND side = 'provide' AND deal_type_id = 1 AND category_id = ANY('{201,200}')
+  AND status = 'active' AND point_lft IS NULL AND user_id <> '126356' ORDER BY created_at DESC LIMIT 200;
+
+Limit  (cost=5157.97..5158.47 rows=200 width=16) (actual time=4.601..4.620 rows=200 loops=1)
+  Buffers: shared hit=2133
+  ->  Sort  (cost=5157.97..5190.31 rows=12936 width=16) (actual time=4.599..4.607 rows=200 loops=1)
+        Sort Key: intents.created_at DESC
+        Sort Method: top-N heapsort  Memory: 40kB
+        Buffers: shared hit=2133
+        ->  Index Scan using intents_vehicles_realm_side_deal_type_id_category_id_point__idx on intents_vehicles intents  (cost=0.42..4598.89 rows=12936 width=16) (actual time=0.050..3.968 rows=2557 loops=1)
+              Index Cond: ((realm = 'real'::text) AND (side = 'provide'::text) AND (deal_type_id = '1'::smallint) AND (category_id = ANY ('{201,200}'::integer[])) AND (point_lft IS NULL))
+              Filter: ((user_id <> '126356'::bigint) AND (vertical_id = '2'::smallint))
+              Buffers: shared hit=2133
+Planning:
+  Buffers: shared hit=1
+Planning Time: 0.384 ms
+Execution Time: 4.656 ms
+

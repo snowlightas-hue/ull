@@ -1,27 +1,35 @@
-// Matching engine: candidate retrieval (index-only directions), pure evaluation, versioned upserts,
-// exclusion statistics, and de-duplicated notifications.
+// Matching engine: candidate retrieval (index-only directions), pure evaluation, versioned batch upserts,
+// exclusion statistics, and de-duplicated notifications. Match semantics live in evaluate.ts (docs/MATCHING.md).
 //
-// Retrieval directions (see docs/ARCHITECTURE.md "Hierarchical Match Keys"):
-//   RANGE  — counterpart POINTS inside my REQUIRED scope: B-tree range scan on point_lft per scope interval.
-//   PROBE  — counterpart SCOPES that contain my POINT: equality probes on intent_scopes with my point's
-//            ancestors (≈ depth ≤ 5) × category ancestors (≤ 3).
+// Retrieval directions (each one complete for every non-excluded verdict — docs/MATCHING.md §2):
+//   RANGE  — counterpart POINTS inside my REQUIRED scope (B-tree range on point_lft per scope interval), plus
+//            points that are ANCESTORS of my scope places (a broader point can only be 'possible'), plus
+//            counterparts without a point (probed by my point when I have one, else a bounded sample).
+//   PROBE  — counterpart SCOPES that contain my POINT (equality probes on intent_scopes with my point's
+//            ancestors, ≈ depth ≤ 5) or lie inside it (my point is a region → 'possible').
 //   BROAD  — no point and no hard scope: recent counterparts in the category (capped, marked truncated).
+//
+// Concurrency & cost: one evaluation per intent at a time (advisory xact lock); eval_seq is taken before
+// anything is read, and every write is guarded by eval_seq AND a_version/b_version, so an older evaluation
+// can never overwrite a newer one. Writes are batched (a fixed number of statements per run, sorted by
+// pair key); notifications are de-duplicated by UNIQUE(recipient_id, dedupe_key).
 
 import type pg from 'pg';
 import { withTx, type Queryable } from '../db/pool.ts';
 import type { Registry } from '../domain/registry.ts';
-import type { PairVerdict } from '../domain/types.ts';
-import { notify, emitUserEvent } from '../repo/notifications.ts';
+import type { MatchReason } from '../domain/types.ts';
 import { INTENT_COLS, loadIntent, rowToMatchable, toCard, type IntentCard, type IntentRow } from '../repo/intents.ts';
 import { decodeCursor, encodeCursor, type Page } from '../repo/paging.ts';
 import { evaluatePair, type MatchableIntent } from './evaluate.ts';
 import { attributesFor } from '../domain/registry.ts';
 
 const MISSING_AR: Record<string, string> = {
-  price: 'السعر', 'price.currency': 'عملة السعر', 'price.unit': 'وحدة السعر (شهري/سنوي…)', place: 'المكان', when: 'الموعد',
+  price: 'السعر', 'price.currency': 'عملة السعر', 'price.unit': 'وحدة السعر (شهري/سنوي…)', place: 'المكان', when: 'الموعد', category: 'الصنف بالتحديد',
 };
 
 export const CANDIDATE_LIMIT = Number(process.env.UL_CANDIDATE_LIMIT ?? 5000);
+/** Counterparts without a point when I have no point either: a bounded, newest-first sample (truncation is reported). */
+export const NULL_POINT_SAMPLE = Number(process.env.UL_NULL_POINT_SAMPLE ?? 200);
 
 export interface MatchRunSummary {
   status: 'done' | 'superseded' | 'inactive';
@@ -36,128 +44,248 @@ export interface MatchRunSummary {
   directions: string[];
 }
 
-export async function matchIntent(
-  pool: pg.Pool, reg: Registry,
-  args: { verticalId: number; intentId: string; version?: number; trigger: 'interactive' | 'job' | 'edit' | 'status' | 'seed'; now?: Date },
-): Promise<MatchRunSummary> {
-  const t0 = Date.now();
-  return withTx(pool, async (tx) => {
-    // one evaluation per intent at a time; later versions simply run after
-    await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [args.verticalId, Number(BigInt(args.intentId) % 2147483647n)]);
-    const evalSeq = (await tx.query("SELECT nextval('match_eval_seq') AS s")).rows[0].s as string;
-    const row = await loadIntent(tx, args.verticalId, args.intentId, 'FOR SHARE');
-    const base: MatchRunSummary = { status: 'done', intentId: args.intentId, version: row?.version ?? 0, totals: { confirmed: 0, possible: 0, excluded: 0, candidates: 0 }, exclusions: [], truncated: false, newMatches: 0, invalidated: 0, durationMs: 0, directions: [] };
-    if (!row) return { ...base, status: 'inactive' };
-    if (args.version !== undefined && row.version !== args.version) return { ...base, status: 'superseded' };
-    const me = rowToMatchable(reg, row);
+export type MatchTrigger = 'interactive' | 'job' | 'edit' | 'status' | 'seed';
+export interface MatchArgs { verticalId: number; intentId: string; version?: number; trigger: MatchTrigger; now?: Date }
 
-    // existing matches (any state) must be re-evaluated so stale ones get invalidated
-    const existing = await tx.query(
-      `SELECT id, public_id, a_intent_id, b_intent_id, state, a_user_id, b_user_id FROM matches
-        WHERE vertical_id = $1 AND (a_intent_id = $2 OR b_intent_id = $2)`,
-      [args.verticalId, args.intentId],
-    );
-    const existingByOther = new Map<string, { id: string; state: string }>();
-    for (const m of existing.rows) existingByOther.set(String(m.a_intent_id) === args.intentId ? String(m.b_intent_id) : String(m.a_intent_id), { id: String(m.id), state: m.state });
-
-    if (row.status !== 'active') {
-      // closed / paused / expired: invalidate everything still active
-      const reason = row.status === 'paused' ? 'الطلب موقوف مؤقتًا' : row.status === 'expired' ? 'انتهت صلاحية الطلب' : 'الطلب مغلق';
-      const r = await tx.query(
-        `UPDATE matches SET state = 'invalidated', invalid_reason_ar = $3, eval_seq = $4, updated_at = now()
-          WHERE vertical_id = $1 AND (a_intent_id = $2 OR b_intent_id = $2) AND state <> 'invalidated' AND eval_seq < $4
-          RETURNING a_user_id, b_user_id`,
-        [args.verticalId, args.intentId, reason, evalSeq],
-      );
-      for (const u of new Set(r.rows.flatMap((x) => [String(x.a_user_id), String(x.b_user_id)]))) await emitUserEvent(tx, u, 'match_update');
-      await recordRun(tx, args, row.version, evalSeq, base.totals, [], false, Date.now() - t0);
-      return { ...base, status: 'inactive', invalidated: r.rowCount ?? 0, durationMs: Date.now() - t0 };
+/**
+ * Evaluate one intent (its current version) against its candidates and persist the outcome.
+ * A run is idempotent, so a deadlock / serialization failure between concurrent batches is simply retried.
+ */
+export async function matchIntent(pool: pg.Pool, reg: Registry, args: MatchArgs): Promise<MatchRunSummary> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await withTx(pool, (tx) => matchIntentTx(tx, reg, args));
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (attempt < 3 && (code === '40P01' || code === '40001')) continue;
+      throw e;
     }
-
-    const { ids, truncated, directions, outsideScope } = await retrieveCandidates(tx, reg, row, me);
-    for (const other of existingByOther.keys()) ids.add(other);
-    ids.delete(args.intentId);
-    const candidates = ids.size
-      ? (await tx.query(`SELECT ${INTENT_COLS} FROM intents i WHERE i.vertical_id = $1 AND i.id = ANY($2::bigint[])`, [args.verticalId, [...ids]])).rows as IntentRow[]
-      : [];
-
-    const totals = { confirmed: 0, possible: 0, excluded: 0, candidates: candidates.length };
-    const exclusionAgg = new Map<string, { count: number; textAr: string }>();
-    let newMatches = 0;
-    let invalidated = 0;
-    const touchedUsers = new Set<string>();
-    for (const c of candidates) {
-      const other = rowToMatchable(reg, c);
-      const v: PairVerdict = evaluatePair(reg, me, other, { now: args.now });
-      const peer = me.side === 'join';
-      const [a, b] = peer ? (BigInt(me.id) < BigInt(other.id) ? [me, other] : [other, me]) : me.side === 'seek' ? [me, other] : [other, me];
-      const prev = existingByOther.get(other.id);
-      if (v.verdict === 'excluded') {
-        totals.excluded++;
-        const code = v.exclusion?.code ?? 'excluded';
-        const agg = exclusionAgg.get(code) ?? { count: 0, textAr: v.exclusion?.text ?? '' };
-        agg.count++;
-        exclusionAgg.set(code, agg);
-        if (prev && prev.state !== 'invalidated') {
-          const r = await tx.query(
-            `UPDATE matches SET state = 'invalidated', invalid_reason_ar = $4, a_version = $5, b_version = $6, eval_seq = $7, updated_at = now()
-              WHERE vertical_id = $1 AND a_intent_id = $2 AND b_intent_id = $3 AND eval_seq < $7 AND a_version <= $5 AND b_version <= $6`,
-            [args.verticalId, a.id, b.id, v.exclusion?.text ?? 'لم تعد مطابقة', a.version, b.version, evalSeq],
-          );
-          if (r.rowCount) { invalidated++; touchedUsers.add(a.userId); touchedUsers.add(b.userId); }
-        }
-        continue;
-      }
-      const state = v.verdict === 'match' ? 'confirmed' : 'possible';
-      totals[state]++;
-      const up = await tx.query(
-        `INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, reasons, missing, a_version, b_version, eval_seq)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT (vertical_id, a_intent_id, b_intent_id) DO UPDATE SET
-           state = EXCLUDED.state, score = EXCLUDED.score, reasons = EXCLUDED.reasons, missing = EXCLUDED.missing,
-           a_version = EXCLUDED.a_version, b_version = EXCLUDED.b_version, eval_seq = EXCLUDED.eval_seq, invalid_reason_ar = NULL, updated_at = now()
-         WHERE matches.eval_seq < EXCLUDED.eval_seq AND matches.a_version <= EXCLUDED.a_version AND matches.b_version <= EXCLUDED.b_version
-         RETURNING id, public_id, (first_matched_at = now()) AS inserted`,
-        [args.verticalId, peer ? 'peer' : 'exchange', a.id, b.id, a.userId, b.userId, state, v.score, JSON.stringify(v.reasons), JSON.stringify(v.missing), a.version, b.version, evalSeq],
-      );
-      const m = up.rows[0];
-      if (!m) continue; // a newer evaluation already wrote this pair — never overwrite newer results
-      if (m.inserted) {
-        await tx.query('INSERT INTO match_refs (public_id, vertical_id, match_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [m.public_id, args.verticalId, m.id]);
-        newMatches++;
-      }
-      touchedUsers.add(a.userId); touchedUsers.add(b.userId);
-      // notify each side once per pair (dedupe key) — except the person looking at results right now
-      if (!prev || prev.state === 'invalidated') {
-        for (const [recipient, mine, theirs] of [[a, a, b], [b, b, a]] as const) {
-          if (args.trigger === 'interactive' && recipient.userId === me.userId) continue;
-          const theirsTitle = candidates.find((x) => String(x.id) === theirs.id)?.title_ar ?? (theirs.id === me.id ? row.title_ar : '');
-          const mineTitle = mine.id === me.id ? row.title_ar : candidates.find((x) => String(x.id) === mine.id)?.title_ar ?? '';
-          await notify(tx, {
-            recipientId: recipient.userId,
-            kind: state === 'confirmed' ? 'match_new' : 'match_possible',
-            titleAr: state === 'confirmed' ? 'مطابقة جديدة مناسبة' : 'مطابقة محتملة تحتاج تأكيد',
-            bodyAr: `«${theirsTitle}» يناسب «${mineTitle}»`,
-            payload: { matchId: m.public_id, verticalId: args.verticalId },
-            dedupeKey: `match:${args.verticalId}:${a.id}:${b.id}`,
-          });
-        }
-      }
-    }
-    for (const u of touchedUsers) await emitUserEvent(tx, u, 'match_update');
-    if (outsideScope > 0) {
-      const names = me.scopePlaceIds.map((p) => reg.placeById.get(p)?.nameAr).join(' أو ');
-      const agg = exclusionAgg.get('place_out_of_scope') ?? { count: 0, textAr: '' };
-      agg.count += outsideScope;
-      exclusionAgg.set('place_out_of_scope', agg);
-      totals.excluded += outsideScope;
-      void names;
-    }
-    const exclusions = [...exclusionAgg.entries()].map(([code, x]) => ({ code, count: x.count, textAr: exclusionLabel(code, x.count, x.textAr) })).sort((p, q) => q.count - p.count);
-    await recordRun(tx, args, row.version, evalSeq, totals, exclusions, truncated, Date.now() - t0);
-    return { status: 'done', intentId: args.intentId, version: row.version, totals, exclusions, truncated, newMatches, invalidated, durationMs: Date.now() - t0, directions };
-  });
+  }
 }
+
+/** The same run inside the caller's transaction (the caller commits). */
+export async function matchIntentTx(tx: Queryable, reg: Registry, args: MatchArgs): Promise<MatchRunSummary> {
+  const t0 = Date.now();
+  // one evaluation per intent at a time; later versions simply run after
+  await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [args.verticalId, lockKey(args.intentId)]);
+  // taken BEFORE any read: a run with a higher eval_seq never saw older committed data
+  const evalSeq = await nextEvalSeq(tx);
+  const row = await loadIntent(tx, args.verticalId, args.intentId, 'FOR SHARE');
+  const base: MatchRunSummary = { status: 'done', intentId: args.intentId, version: row?.version ?? 0, totals: { confirmed: 0, possible: 0, excluded: 0, candidates: 0 }, exclusions: [], truncated: false, newMatches: 0, invalidated: 0, durationMs: 0, directions: [] };
+  if (!row) return { ...base, status: 'inactive' };
+  if (args.version !== undefined && row.version !== args.version) return { ...base, status: 'superseded' };
+  const me = rowToMatchable(reg, row);
+
+  // existing pairs (any state) are always re-evaluated so stale ones get invalidated
+  const existing = await tx.query(
+    `SELECT a_intent_id, b_intent_id, state FROM matches WHERE vertical_id = $1 AND (a_intent_id = $2 OR b_intent_id = $2)`,
+    [args.verticalId, args.intentId],
+  );
+  const prevState = new Map<string, string>(); // counterpart intent id → state
+  for (const m of existing.rows) prevState.set(String(m.a_intent_id) === args.intentId ? String(m.b_intent_id) : String(m.a_intent_id), m.state);
+
+  if (row.status !== 'active') {
+    // paused / closed / fulfilled / expired: invalidate everything, and fence every row of this intent with
+    // the new version + eval_seq so that no older run can resurrect a pair (even an already-invalidated one)
+    const reason = row.status === 'paused' ? 'الطلب موقوف مؤقتًا' : row.status === 'expired' ? 'انتهت صلاحية الطلب' : row.status === 'fulfilled' ? 'تمت تلبية الطلب' : 'الطلب مغلق';
+    const r = await tx.query(
+      `UPDATE matches SET state = 'invalidated',
+          invalid_reason_ar = CASE WHEN state = 'invalidated' THEN invalid_reason_ar ELSE $3 END,
+          updated_at = CASE WHEN state = 'invalidated' THEN updated_at ELSE now() END,
+          eval_seq = $4,
+          a_version = CASE WHEN a_intent_id = $2 THEN GREATEST(a_version, $5) ELSE a_version END,
+          b_version = CASE WHEN b_intent_id = $2 THEN GREATEST(b_version, $5) ELSE b_version END
+        WHERE vertical_id = $1 AND (a_intent_id = $2 OR b_intent_id = $2) AND eval_seq < $4
+        RETURNING a_intent_id, b_intent_id, a_user_id, b_user_id`,
+      [args.verticalId, args.intentId, reason, evalSeq, row.version],
+    );
+    let invalidated = 0;
+    const touched = new Set<string>();
+    for (const x of r.rows) {
+      const other = String(x.a_intent_id) === args.intentId ? String(x.b_intent_id) : String(x.a_intent_id);
+      if (prevState.get(other) === 'invalidated') continue;
+      invalidated++;
+      touched.add(String(x.a_user_id)); touched.add(String(x.b_user_id));
+    }
+    await emitEvents(tx, [], touched);
+    await recordRun(tx, args, row.version, evalSeq, base.totals, [], false, Date.now() - t0);
+    return { ...base, status: 'inactive', invalidated, durationMs: Date.now() - t0 };
+  }
+
+  const { ids, truncated, directions, outsideScope } = await retrieveCandidates(tx, reg, row, me);
+  for (const other of prevState.keys()) ids.add(other);
+  ids.delete(args.intentId);
+  const candidates = ids.size
+    ? (await tx.query(`SELECT ${INTENT_COLS} FROM intents i WHERE i.vertical_id = $1 AND i.id = ANY($2::bigint[])`, [args.verticalId, [...ids]])).rows as IntentRow[]
+    : [];
+  const titleOf = new Map<string, string>([[me.id, row.title_ar]]);
+  for (const c of candidates) titleOf.set(String(c.id), c.title_ar);
+
+  // ── evaluate everything in memory (pure), then write in a fixed number of batched statements
+  const totals = { confirmed: 0, possible: 0, excluded: 0, candidates: candidates.length };
+  const exclusionAgg = new Map<string, { count: number; textAr: string }>();
+  const peer = me.side === 'join';
+  const writes: PairWrite[] = [];
+  const invalidations: PairInvalidation[] = [];
+  for (const c of candidates) {
+    const other = rowToMatchable(reg, c);
+    const v = evaluatePair(reg, me, other, { now: args.now });
+    const [a, b] = pairOrder(me, other);
+    if (v.verdict === 'excluded') {
+      totals.excluded++;
+      const code = v.exclusion?.code ?? 'excluded';
+      const agg = exclusionAgg.get(code) ?? { count: 0, textAr: v.exclusion?.text ?? '' };
+      agg.count++;
+      exclusionAgg.set(code, agg);
+      if (prevState.has(other.id)) invalidations.push({ a, b, reasonAr: v.exclusion?.text ?? 'لم تعد مطابقة' });
+      continue;
+    }
+    const state = v.verdict === 'match' ? 'confirmed' : 'possible';
+    totals[state]++;
+    writes.push({ kind: peer ? 'peer' : 'exchange', a, b, state, score: v.score, reasons: v.reasons, missing: v.missing });
+  }
+
+  const touched = new Set<string>();
+  let invalidated = 0;
+  for (const x of await invalidatePairs(tx, args.verticalId, evalSeq, invalidations)) {
+    const other = x.aId === me.id ? x.bId : x.aId;
+    if (prevState.get(other) === 'invalidated') continue; // fenced only
+    invalidated++;
+    touched.add(x.aUserId); touched.add(x.bUserId);
+  }
+
+  const written = await upsertPairs(tx, args.verticalId, evalSeq, writes); // rows a newer evaluation already wrote are skipped
+  const byKey = new Map(writes.map((w) => [`${w.a.id}:${w.b.id}`, w] as const));
+  const otherOf = (aId: string, bId: string) => (aId === me.id ? bId : aId);
+  const newMatches = await registerNewMatches(tx, args.verticalId, written.filter((w) => !prevState.has(otherOf(w.aId, w.bId))));
+  const notes: NewNotification[] = [];
+  for (const w of written) {
+    const pw = byKey.get(`${w.aId}:${w.bId}`)!;
+    touched.add(pw.a.userId); touched.add(pw.b.userId);
+    const prev = prevState.get(otherOf(w.aId, w.bId));
+    if (prev !== undefined && prev !== 'invalidated') continue;
+    // notify each side once per pair (dedupe key) — except the person looking at results right now
+    for (const [mine, theirs] of [[pw.a, pw.b], [pw.b, pw.a]] as const) {
+      if (args.trigger === 'interactive' && mine.userId === me.userId) continue;
+      notes.push({
+        recipientId: mine.userId,
+        kind: pw.state === 'confirmed' ? 'match_new' : 'match_possible',
+        titleAr: pw.state === 'confirmed' ? 'مطابقة جديدة مناسبة' : 'مطابقة محتملة تحتاج تأكيد',
+        bodyAr: `«${titleOf.get(theirs.id) ?? ''}» يناسب «${titleOf.get(mine.id) ?? ''}»`,
+        payload: { matchId: w.publicId, verticalId: args.verticalId },
+        dedupeKey: `match:${args.verticalId}:${pw.a.id}:${pw.b.id}`,
+      });
+    }
+  }
+  const notified = await notifyMany(tx, notes);
+  await emitEvents(tx, notified, touched);
+
+  if (outsideScope > 0) {
+    const agg = exclusionAgg.get('place_out_of_scope') ?? { count: 0, textAr: '' };
+    agg.count += outsideScope;
+    exclusionAgg.set('place_out_of_scope', agg);
+    totals.excluded += outsideScope;
+  }
+  const exclusions = [...exclusionAgg.entries()].map(([code, x]) => ({ code, count: x.count, textAr: exclusionLabel(code, x.count, x.textAr) })).sort((p, q) => q.count - p.count);
+  await recordRun(tx, args, row.version, evalSeq, totals, exclusions, truncated, Date.now() - t0);
+  return { status: 'done', intentId: args.intentId, version: row.version, totals, exclusions, truncated, newMatches, invalidated, durationMs: Date.now() - t0, directions };
+}
+
+// ───────────── batched, guarded writes (exported for tests) ─────────────
+type Side3 = Pick<MatchableIntent, 'id' | 'userId' | 'version'>;
+export interface PairWrite { kind: 'exchange' | 'peer'; a: Side3; b: Side3; state: 'confirmed' | 'possible'; score: number; reasons: MatchReason[]; missing: string[] }
+export interface PairInvalidation { a: Side3; b: Side3; reasonAr: string }
+export interface WrittenPair { id: string; publicId: string; aId: string; bId: string; state: string }
+
+export async function nextEvalSeq(db: Queryable): Promise<string> {
+  return String((await db.query("SELECT nextval('match_eval_seq') AS s")).rows[0].s);
+}
+
+/** exchange: a = seeker, b = provider; peer: a = lower intent id. */
+function pairOrder(me: MatchableIntent, other: MatchableIntent): [MatchableIntent, MatchableIntent] {
+  if (me.side === 'join') return BigInt(me.id) < BigInt(other.id) ? [me, other] : [other, me];
+  return me.side === 'seek' ? [me, other] : [other, me];
+}
+const byPairKey = <T extends { a: Side3; b: Side3 }>(xs: T[]) => [...xs].sort((p, q) => cmpBig(p.a.id, q.a.id) || cmpBig(p.b.id, q.b.id));
+function cmpBig(x: string, y: string): number { const a = BigInt(x); const b = BigInt(y); return a < b ? -1 : a > b ? 1 : 0; }
+
+/**
+ * Insert or update pairs, never overwriting a row written by a NEWER evaluation (higher eval_seq) or from
+ * NEWER intent versions. Returns only the rows actually written. Rows are processed in pair-key order.
+ */
+export async function upsertPairs(db: Queryable, verticalId: number, evalSeq: string, pairs: PairWrite[]): Promise<WrittenPair[]> {
+  if (!pairs.length) return [];
+  const xs = byPairKey(pairs);
+  const { rows } = await db.query(
+    `INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, reasons, missing, a_version, b_version, eval_seq)
+     SELECT $1, t.kind, t.a, t.b, t.au, t.bu, t.state, t.score, t.reasons::jsonb, t.missing::jsonb, t.av, t.bv, $2
+       FROM unnest($3::text[], $4::bigint[], $5::bigint[], $6::bigint[], $7::bigint[], $8::text[], $9::int[], $10::text[], $11::text[], $12::int[], $13::int[])
+            WITH ORDINALITY AS t(kind, a, b, au, bu, state, score, reasons, missing, av, bv, ord)
+      ORDER BY t.ord
+     ON CONFLICT (vertical_id, a_intent_id, b_intent_id) DO UPDATE SET
+       state = EXCLUDED.state, score = EXCLUDED.score, reasons = EXCLUDED.reasons, missing = EXCLUDED.missing,
+       a_version = EXCLUDED.a_version, b_version = EXCLUDED.b_version, eval_seq = EXCLUDED.eval_seq, invalid_reason_ar = NULL,
+       updated_at = CASE WHEN matches.state IS DISTINCT FROM EXCLUDED.state OR matches.score IS DISTINCT FROM EXCLUDED.score
+                           OR matches.reasons IS DISTINCT FROM EXCLUDED.reasons THEN now() ELSE matches.updated_at END
+     WHERE matches.eval_seq < EXCLUDED.eval_seq AND matches.a_version <= EXCLUDED.a_version AND matches.b_version <= EXCLUDED.b_version
+     RETURNING id, public_id, a_intent_id, b_intent_id, state`,
+    [verticalId, evalSeq, xs.map((x) => x.kind), xs.map((x) => x.a.id), xs.map((x) => x.b.id), xs.map((x) => x.a.userId), xs.map((x) => x.b.userId),
+      xs.map((x) => x.state), xs.map((x) => x.score), xs.map((x) => JSON.stringify(x.reasons)), xs.map((x) => JSON.stringify(x.missing)),
+      xs.map((x) => x.a.version), xs.map((x) => x.b.version)],
+  );
+  return rows.map((r) => ({ id: String(r.id), publicId: r.public_id, aId: String(r.a_intent_id), bId: String(r.b_intent_id), state: r.state }));
+}
+
+/** Invalidate (and fence) existing pairs with the same guards as upsertPairs. Returns the rows written. */
+export async function invalidatePairs(db: Queryable, verticalId: number, evalSeq: string, pairs: PairInvalidation[]): Promise<{ aId: string; bId: string; aUserId: string; bUserId: string }[]> {
+  if (!pairs.length) return [];
+  const xs = byPairKey(pairs);
+  const { rows } = await db.query(
+    `UPDATE matches m SET state = 'invalidated', invalid_reason_ar = t.reason, a_version = t.av, b_version = t.bv, eval_seq = $2,
+            updated_at = CASE WHEN m.state = 'invalidated' AND m.invalid_reason_ar IS NOT DISTINCT FROM t.reason THEN m.updated_at ELSE now() END
+       FROM unnest($3::bigint[], $4::bigint[], $5::int[], $6::int[], $7::text[]) AS t(a, b, av, bv, reason)
+      WHERE m.vertical_id = $1 AND m.a_intent_id = t.a AND m.b_intent_id = t.b
+        AND m.eval_seq < $2 AND m.a_version <= t.av AND m.b_version <= t.bv
+      RETURNING m.a_intent_id, m.b_intent_id, m.a_user_id, m.b_user_id`,
+    [verticalId, evalSeq, xs.map((x) => x.a.id), xs.map((x) => x.b.id), xs.map((x) => x.a.version), xs.map((x) => x.b.version), xs.map((x) => x.reasonAr)],
+  );
+  return rows.map((r) => ({ aId: String(r.a_intent_id), bId: String(r.b_intent_id), aUserId: String(r.a_user_id), bUserId: String(r.b_user_id) }));
+}
+
+/** match_refs rows for pairs not seen before; the idempotent insert tells exactly which matches are new. */
+async function registerNewMatches(db: Queryable, verticalId: number, rows: WrittenPair[]): Promise<number> {
+  if (!rows.length) return 0;
+  const r = await db.query(
+    `INSERT INTO match_refs (public_id, vertical_id, match_id) SELECT t.p, $1, t.id FROM unnest($2::uuid[], $3::bigint[]) AS t(p, id)
+     ON CONFLICT DO NOTHING`,
+    [verticalId, rows.map((x) => x.publicId), rows.map((x) => x.id)],
+  );
+  return r.rowCount ?? 0;
+}
+
+// Same contract as repo/notifications.ts notify(), batched: one row per (recipient, dedupe_key), ever.
+interface NewNotification { recipientId: string; kind: string; titleAr: string; bodyAr: string; payload: Record<string, unknown>; dedupeKey: string }
+async function notifyMany(db: Queryable, ns: NewNotification[]): Promise<string[]> {
+  if (!ns.length) return [];
+  const { rows } = await db.query(
+    `INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key)
+     SELECT t.rcp, t.knd, t.ttl, t.bdy, t.pl::jsonb, t.dk FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS t(rcp, knd, ttl, bdy, pl, dk)
+     ON CONFLICT (recipient_id, dedupe_key) DO NOTHING RETURNING recipient_id`,
+    [ns.map((n) => n.recipientId), ns.map((n) => n.kind), ns.map((n) => n.titleAr), ns.map((n) => n.bodyAr), ns.map((n) => JSON.stringify(n.payload)), ns.map((n) => n.dedupeKey)],
+  );
+  return [...new Set(rows.map((r) => String(r.recipient_id)))];
+}
+
+/** One pg_notify per user and event type (delivered at commit; the SSE layer pushes fresh counts). */
+async function emitEvents(db: Queryable, notified: string[], touched: Set<string>): Promise<void> {
+  const payloads = [
+    ...notified.map((userId) => JSON.stringify({ userId, type: 'notification' })),
+    ...[...touched].map((userId) => JSON.stringify({ userId, type: 'match_update' })),
+  ];
+  if (payloads.length) await db.query(`SELECT pg_notify('ul_events', p) FROM unnest($1::text[]) AS p`, [payloads]);
+}
+
+function lockKey(intentId: string): number { return Number(BigInt(intentId) % 2147483647n); }
 
 async function recordRun(tx: Queryable, args: { verticalId: number; intentId: string; trigger: string }, version: number, evalSeq: string, totals: MatchRunSummary['totals'], exclusions: MatchRunSummary['exclusions'], truncated: boolean, ms: number) {
   await tx.query(
@@ -177,8 +305,8 @@ function exclusionLabel(code: string, n: number, sample: string): string {
   return `${n} ${labels[code] ?? sample}`;
 }
 
-/** Candidate ids using index-friendly directions. Never a full scan of the vertical. */
-async function retrieveCandidates(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent): Promise<{ ids: Set<string>; truncated: boolean; directions: string[]; outsideScope: number }> {
+/** Candidate ids using index-friendly directions. Never a full scan of the vertical. Exported for tests. */
+export async function retrieveCandidates(tx: Queryable, reg: Registry, row: IntentRow, me: MatchableIntent): Promise<{ ids: Set<string>; truncated: boolean; directions: string[]; outsideScope: number }> {
   let outsideScope = 0;
   const ids = new Set<string>();
   const directions: string[] = [];
@@ -186,71 +314,92 @@ async function retrieveCandidates(tx: Queryable, reg: Registry, row: IntentRow, 
   const counterSide = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
   const cat = reg.categoryByCode.get(me.categoryCode)!;
   const catSet = [...new Set([...cat.ancestors, ...cat.descendants])];
-  const catAncestors = cat.ancestors;
   const scope = me.scopePlaceIds.filter((p) => p !== reg.rootPlaceId);
   const add = (rows: { id: string }[], limit: number) => { for (const r of rows) ids.add(String(r.id)); if (rows.length >= limit) truncated = true; };
+  const common = [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId] as const; // $1..$6
+  const point = me.pointPlaceId != null ? reg.placeById.get(me.pointPlaceId)! : null;
+  // scope rows that relate to my point: containing it (ancestors) or inside it (my point is a region)
+  const probePlaces = point ? [...point.ancestors, ...reg.places.filter((p) => p.lft > point.lft && p.rgt < point.rgt).map((p) => p.id)] : [];
 
   const hardScope = scope.length > 0 && me.scopeStrength === 'required';
-  // RANGE: counterpart points inside my required scope (necessary for any match, so it is the only
-  // direction needed for exchange; peers also probe because "either area contains the other")
+  // RANGE: a counterpart point must lie inside (or, as a broader region, contain) my required scope — necessary
+  // for any non-excluded verdict, so for exchange it is the only place direction needed
   if (hardScope) {
     directions.push('range');
-    for (const s of scope) {
-      const p = reg.placeById.get(s)!;
+    const scopePlaces = scope.map((s) => reg.placeById.get(s)!);
+    for (const p of scopePlaces) {
       const { rows } = await tx.query(
         `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-            AND status = 'active' AND point_lft BETWEEN $6 AND $7 AND user_id <> $8
+            AND status = 'active' AND user_id <> $6 AND point_lft BETWEEN $7 AND $8
           ORDER BY created_at DESC LIMIT $9`,
-        [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, p.lft, p.rgt, me.userId, CANDIDATE_LIMIT],
+        [...common, p.lft, p.rgt, CANDIDATE_LIMIT],
+      );
+      add(rows, CANDIDATE_LIMIT);
+    }
+    const ancestorLfts = [...new Set(scopePlaces.flatMap((p) => p.ancestors.slice(1)))].map((id) => reg.placeById.get(id)!.lft);
+    {
+      const { rows } = await tx.query(
+        `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
+            AND status = 'active' AND user_id <> $6 AND point_lft = ANY($7::int[]) ORDER BY created_at DESC LIMIT $8`,
+        [...common, ancestorLfts, CANDIDATE_LIMIT],
       );
       add(rows, CANDIDATE_LIMIT);
     }
     // transparency: how many active counterparts exist OUTSIDE the hard scope (bounded count, not fetched)
+    const ranges = scopePlaces.map((_, k) => `NOT (point_lft BETWEEN $${8 + 2 * k} AND $${9 + 2 * k})`).join(' AND ');
     const outside = await tx.query(
       `SELECT count(*)::int AS n FROM (SELECT 1 FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4
           AND category_id = ANY($5) AND status = 'active' AND user_id <> $6 AND point_lft IS NOT NULL
-          AND NOT (point_lft BETWEEN ANY_LO AND ANY_HI) LIMIT 1000) x`.replace('NOT (point_lft BETWEEN ANY_LO AND ANY_HI)', scope.map((_, k) => `NOT (point_lft BETWEEN $${7 + 2 * k} AND $${8 + 2 * k})`).join(' AND ')),
-      [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId, ...scope.flatMap((s) => [reg.placeById.get(s)!.lft, reg.placeById.get(s)!.rgt])],
+          AND NOT (point_lft = ANY($7::int[])) AND ${ranges} LIMIT 1000) x`,
+      [...common, ancestorLfts, ...scopePlaces.flatMap((p) => [p.lft, p.rgt])],
     );
     outsideScope = outside.rows[0].n;
-    // counterparts with an unknown point can only be "possible" — fetch a bounded sample
-    const { rows } = await tx.query(
-      `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-          AND status = 'active' AND point_lft IS NULL AND user_id <> $6 ORDER BY created_at DESC LIMIT 200`,
-      [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId],
-    );
-    add(rows, 1_000_000);
+    // counterparts with an unknown point can only be "possible"
+    if (point && me.side !== 'join') {
+      // complete: those whose scope reaches my point (an empty or preferred scope is keyed on the root place)
+      const { rows } = await tx.query(
+        `SELECT DISTINCT s.intent_id AS id FROM intent_scopes s JOIN intents i ON i.vertical_id = s.vertical_id AND i.id = s.intent_id
+          WHERE s.vertical_id = $1 AND s.realm = $2 AND s.side = $3 AND s.deal_type_id = $4 AND s.category_id = ANY($5)
+            AND s.place_id = ANY($7) AND i.point_lft IS NULL AND i.status = 'active' AND i.user_id <> $6 LIMIT $8`,
+        [...common, probePlaces, CANDIDATE_LIMIT],
+      );
+      add(rows, CANDIDATE_LIMIT);
+    } else if (!point) {
+      const { rows } = await tx.query(
+        `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
+            AND status = 'active' AND point_lft IS NULL AND user_id <> $6 ORDER BY created_at DESC LIMIT $7`,
+        [...common, NULL_POINT_SAMPLE],
+      );
+      add(rows, NULL_POINT_SAMPLE);
+    }
   }
-  // PROBE: counterpart scopes containing my point (ancestors × category ancestors)
-  if (me.pointPlaceId != null && (!hardScope || me.side === 'join')) {
+  // PROBE: counterpart scopes related to my point (ancestors × category set, plus places inside a region point)
+  if (point && (!hardScope || me.side === 'join')) {
     directions.push('probe');
-    const placeAnc = reg.placeById.get(me.pointPlaceId)!.ancestors;
     const { rows } = await tx.query(
       `SELECT DISTINCT s.intent_id AS id FROM intent_scopes s
         WHERE s.vertical_id = $1 AND s.realm = $2 AND s.side = $3 AND s.deal_type_id = $4 AND s.category_id = ANY($5) AND s.place_id = ANY($6)
         LIMIT $7`,
-      [row.vertical_id, me.realm, counterSide, row.deal_type_id, me.side === 'join' ? catSet : catAncestors.concat(cat.descendants), placeAnc, CANDIDATE_LIMIT],
+      [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, probePlaces, CANDIDATE_LIMIT],
     );
     add(rows, CANDIDATE_LIMIT);
   }
   // BROAD: neither a point nor a hard scope (e.g. "بدي سيارة" anywhere)
-  if (!hardScope && me.pointPlaceId == null) {
+  if (!hardScope && !point) {
     directions.push('broad');
-    if (scope.length) {
-      for (const s of scope) {
-        const p = reg.placeById.get(s)!;
-        const { rows } = await tx.query(
-          `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-              AND status = 'active' AND point_lft BETWEEN $6 AND $7 AND user_id <> $8 ORDER BY created_at DESC LIMIT $9`,
-          [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, p.lft, p.rgt, me.userId, CANDIDATE_LIMIT],
-        );
-        add(rows, CANDIDATE_LIMIT);
-      }
+    for (const s of scope) {
+      const p = reg.placeById.get(s)!;
+      const { rows } = await tx.query(
+        `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
+            AND status = 'active' AND user_id <> $6 AND point_lft BETWEEN $7 AND $8 ORDER BY created_at DESC LIMIT $9`,
+        [...common, p.lft, p.rgt, CANDIDATE_LIMIT],
+      );
+      add(rows, CANDIDATE_LIMIT);
     }
     const { rows } = await tx.query(
       `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
           AND status = 'active' AND user_id <> $6 ORDER BY created_at DESC LIMIT $7`,
-      [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId, CANDIDATE_LIMIT],
+      [...common, CANDIDATE_LIMIT],
     );
     add(rows, CANDIDATE_LIMIT);
   }

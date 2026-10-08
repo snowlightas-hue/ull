@@ -251,12 +251,17 @@ function oracle(x: MatchableIntent, y: MatchableIntent): { violations: Cat[]; un
   if (!peer) {
     for (const [pt, sc] of [[p, s], [s, p]] as const) {
       if (sc.excludePlaceIds.length) {
-        if (pt.pointPlaceId == null) U.push('place.excl');
-        else if (sc.excludePlaceIds.some((e) => inside(pt.pointPlaceId!, e))) V.push('place.excl');
+        const q = pt.pointPlaceId;
+        if (q == null) U.push('place.excl');
+        else if (sc.excludePlaceIds.some((e) => inside(q, e))) V.push('place.excl');
+        else if (sc.excludePlaceIds.some((e) => inside(e, q))) U.push('place.excl'); // a region that contains an excluded place
       }
       if (sc.scopeStrength !== 'required' || !sc.scopePlaceIds.length || sc.scopePlaceIds.includes(ROOT)) continue;
-      if (pt.pointPlaceId == null) U.push('place.scope');
-      else if (!sc.scopePlaceIds.some((z) => inside(pt.pointPlaceId!, z))) V.push('place.scope');
+      const q = pt.pointPlaceId;
+      if (q == null) U.push('place.scope');
+      else if (sc.scopePlaceIds.some((z) => inside(q, z))) continue;
+      else if (sc.scopePlaceIds.some((z) => inside(z, q))) U.push('place.scope'); // broader point: maybe inside
+      else V.push('place.scope');
     }
   } else {
     const loc = (i: MatchableIntent) => (i.pointPlaceId != null ? [i.pointPlaceId] : i.scopePlaceIds.filter((z) => z !== ROOT));
@@ -266,7 +271,7 @@ function oracle(x: MatchableIntent, y: MatchableIntent): { violations: Cat[]; un
       if (!l.length) continue;
       if (o.excludePlaceIds.length) {
         if (l.every((q) => o.excludePlaceIds.some((e) => inside(q, e)))) V.push('place.excl');
-        else if (l.some((q) => o.excludePlaceIds.some((e) => inside(e, q)))) U.push('place.excl');
+        else if (l.some((q) => o.excludePlaceIds.some((e) => inside(e, q) || inside(q, e)))) U.push('place.excl'); // may be in an excluded place
       }
       const area = o.scopePlaceIds.length ? o.scopePlaceIds : o.pointPlaceId != null ? [o.pointPlaceId] : [];
       if (o.scopeStrength !== 'required' || !area.length || area.includes(ROOT)) continue;
@@ -491,7 +496,7 @@ test('properties: multi-valued facts — eq/in = has any requested value, neq = 
   }
   // a missing or empty multi-valued fact is unknown (possible), never a violation
   const seek = mk(h, 'seek', 'services.appliance_repair', 'service', { pointPlaceId: 1102, constraints: [{ key: 'appliance', op: 'neq', value: 'tv', strength: 'required' }] });
-  for (const attrs of [{}, { appliance: [] as string[] }]) {
+  for (const attrs of [{}, { appliance: [] }] as Record<string, AttrFact>[]) {
     const prov = mk(h, 'provide', 'services.appliance_repair', 'service', { pointPlaceId: 1102, attrs });
     const v = evaluatePair(reg, seek, prov, { now: NOW });
     assert.equal(v.verdict, 'possible');

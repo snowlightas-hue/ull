@@ -226,7 +226,9 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
 
   // ── categories
   const catHits = matchPhrases(tokens, reg.categoryPhrases, 4);
-  const repairCue = /(?:^| )(?:يصلح\S*|تصليح|صيانه|خربان\S*|معطل\S*|عطلان\S*|عطل|بتصلح|يزبط\S*|تزبيط|فني)(?= |$)/.test(norm);
+  const repairCue = /(?:^| )(?:يصلح\S*|بصلح|تصليح|صيانه|خربان\S*|معطل\S*|عطلان\S*|عطل|بتصلح|يزبط\S*|تزبيط|فني)(?= |$)/.test(norm) && !SALE_RE.test(norm) && !RENT_RE.test(norm);
+  // hiring a person ("بدي حدا ينضّف البيت") — the house is the object, not the request
+  const wantsPerson = /(?:^| )[وف]?(?:بدي|بدنا|محتاج|بحاجه|مطلوب) (?:حدا|احد|شخص|واحد|فني|معلم|كهربجي|سباك)(?= |$)/.test(norm) || /^(?:بنضف|بنظف|بصلح|بركب|بعمل|بدهن)(?= |$)/.test(norm);
   const scored = new Map<string, { score: number; evidence: string; pos: number }>();
   for (const h of catHits) {
     let code = h.value;
@@ -235,8 +237,11 @@ export function parseUtterance(reg: Registry, text: string, opts: ParseOptions =
       else if (code === 'goods.electronics') code = 'services.it_repair';
       else if (code.startsWith('vehicles')) code = 'services.car_repair';
     }
-    const cat = reg.categoryByCode.get(code)!;
-    const score = 0.55 + 0.1 * Math.min(h.end - h.start, 3) + (cat.depth >= 1 ? 0.1 : 0);
+    let cat = reg.categoryByCode.get(code)!;
+    // a root with a single child ("مساعدة" → help.general) resolves to that child
+    if (cat.depth === 0) { const kids = reg.categories.filter((c) => c.parent === cat.code); if (kids.length === 1) { cat = kids[0]!; code = cat.code; } }
+    let score = 0.55 + 0.1 * Math.min(h.end - h.start, 3) + (cat.depth >= 1 ? 0.1 : 0);
+    if (wantsPerson && (cat.verticalCode === 'real_estate' || cat.verticalCode === 'goods' || cat.verticalCode === 'vehicles')) score -= 0.25;
     const prev = scored.get(code);
     if (!prev || prev.score < score) scored.set(code, { score: Math.min(score, 0.95), evidence: h.phrase, pos: prev ? Math.min(prev.pos, h.start) : h.start });
     mark(h.start, h.end);

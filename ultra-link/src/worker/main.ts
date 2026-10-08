@@ -1,4 +1,6 @@
 // Background worker: match jobs (versioned; stale jobs are superseded), expiry sweep, heartbeat.
+// Every job is idempotent: a retry after a crash or a lost lease repeats at most work that is already
+// guarded (eval_seq / versions for matches, UNIQUE dedupe keys for notifications).
 import { hostname } from 'node:os';
 import pg from 'pg';
 import { loadEnv } from '../lib/env.ts';
@@ -7,32 +9,63 @@ import { loadRegistry } from '../seed/reference.ts';
 import { claim, complete, enqueue, fail, type Job } from '../repo/jobs.ts';
 import { setIntentStatus } from '../repo/intents.ts';
 import { notify } from '../repo/notifications.ts';
-import { latestRun, matchIntent } from '../matching/engine.ts';
+import { latestRun, matchIntent, type MatchTrigger } from '../matching/engine.ts';
 import type { Registry } from '../domain/registry.ts';
+
+/** Max intents one expire_sweep job expires (the next sweep continues). */
+export const SWEEP_MAX = Number(process.env.UL_SWEEP_MAX ?? 2000);
 
 export async function runJob(pool: pg.Pool, reg: Registry, job: Job): Promise<'done' | 'superseded'> {
   if (job.kind === 'match_intent') {
-    const p = job.payload as { verticalId: number; intentId: string; version: number; trigger?: string };
-    const cur = await pool.query('SELECT version, status FROM intents WHERE vertical_id = $1 AND id = $2', [p.verticalId, p.intentId]);
+    const p = job.payload as { verticalId: number; intentId: string; version: number; trigger?: MatchTrigger };
+    const cur = await pool.query('SELECT version FROM intents WHERE vertical_id = $1 AND id = $2', [p.verticalId, p.intentId]);
     if (!cur.rows[0] || cur.rows[0].version !== p.version) return 'superseded'; // a newer version has its own job
-    // the interactive path may already have evaluated this exact version → nothing to do
-    if (p.trigger === 'job' && (await latestRun(pool, p.verticalId, p.intentId, p.version))) return 'done';
-    const r = await matchIntent(pool, reg, { verticalId: p.verticalId, intentId: p.intentId, version: p.version, trigger: (p.trigger as any) ?? 'job' });
+    // the interactive / edit / status path usually evaluated this exact version already (a run row is only
+    // committed together with its writes) → nothing left to do
+    if (await latestRun(pool, p.verticalId, p.intentId, p.version)) return 'done';
+    const r = await matchIntent(pool, reg, { verticalId: p.verticalId, intentId: p.intentId, version: p.version, trigger: p.trigger ?? 'job' });
     return r.status === 'superseded' ? 'superseded' : 'done';
   }
   if (job.kind === 'expire_sweep') {
-    const { rows } = await pool.query(
-      "SELECT vertical_id, id, user_id, title_ar FROM intents WHERE status = 'active' AND expires_at < now() ORDER BY expires_at LIMIT 500",
-    );
-    for (const r of rows) {
-      const res = await withTx(pool, (tx) => setIntentStatus(tx, reg, r.vertical_id, String(r.id), null, 'expire'));
-      if (!res.ok) continue;
-      await matchIntent(pool, reg, { verticalId: r.vertical_id, intentId: String(r.id), version: res.version, trigger: 'status' });
-      await notify(pool, { recipientId: String(r.user_id), kind: 'intent_expired', titleAr: 'انتهت صلاحية طلب', bodyAr: `«${r.title_ar}» — يمكنك استئنافه من القائمة`, payload: { verticalId: r.vertical_id }, dedupeKey: `expired:${r.vertical_id}:${r.id}:${res.version}` });
-    }
+    await sweepExpired(pool, reg);
     return 'done';
   }
   throw new Error(`unknown job kind ${job.kind}`);
+}
+
+/**
+ * Expire active intents whose expires_at passed. Per intent, ONE transaction re-checks the row under a lock
+ * (a concurrent resume/edit wins), flips the status, enqueues the versioned re-match job and the owner's
+ * notification; the re-match then runs right away (the job is the crash-safety net, and becomes a no-op).
+ */
+export async function sweepExpired(pool: pg.Pool, reg: Registry, max = SWEEP_MAX): Promise<number> {
+  let expired = 0;
+  while (expired < max) {
+    const { rows } = await pool.query(
+      "SELECT vertical_id, id FROM intents WHERE status = 'active' AND expires_at < now() ORDER BY expires_at, id LIMIT $1",
+      [Math.min(500, max - expired)],
+    );
+    if (!rows.length) break;
+    let progressed = 0;
+    for (const r of rows) {
+      const id = String(r.id);
+      const res = await withTx(pool, async (tx) => {
+        const cur = await tx.query("SELECT user_id, title_ar FROM intents WHERE vertical_id = $1 AND id = $2 AND status = 'active' AND expires_at < now() FOR UPDATE", [r.vertical_id, id]);
+        if (!cur.rows[0]) return null;
+        const s = await setIntentStatus(tx, reg, r.vertical_id, id, null, 'expire');
+        if (!s.ok) return null;
+        await enqueue(tx, 'match_intent', { verticalId: r.vertical_id, intentId: id, version: s.version, trigger: 'status' }, { dedupeKey: `match:${r.vertical_id}:${id}:${s.version}`, priority: 50 });
+        await notify(tx, { recipientId: String(cur.rows[0].user_id), kind: 'intent_expired', titleAr: 'انتهت صلاحية طلب', bodyAr: `«${cur.rows[0].title_ar}» — يمكنك استئنافه من القائمة`, payload: { verticalId: r.vertical_id }, dedupeKey: `expired:${r.vertical_id}:${id}:${s.version}` });
+        return s.version;
+      });
+      if (res === null) continue;
+      progressed++;
+      expired++;
+      await matchIntent(pool, reg, { verticalId: r.vertical_id, intentId: id, version: res, trigger: 'status' });
+    }
+    if (!progressed) break;
+  }
+  return expired;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -75,7 +108,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
       const t0 = Date.now();
       const status = await runJob(pool, reg, job);
-      await complete(pool, job.id, status, { ms: Date.now() - t0 });
+      const kept = await complete(pool, job, status, { ms: Date.now() - t0 });
+      if (!kept) console.warn(`[worker] job ${job.id}: lease lost before completion (another worker owns it now)`);
       console.log(`[worker] job ${job.id} ${job.kind} → ${status} (${Date.now() - t0} ms)`);
     } catch (e) {
       console.error(`[worker] job ${job?.id ?? '-'} failed: ${(e as Error).message}`);

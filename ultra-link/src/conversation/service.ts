@@ -16,6 +16,7 @@ import { createIntent, loadIntent, toCard, type IntentCard } from '../repo/inten
 import { enqueue } from '../repo/jobs.ts';
 import type { SessionUser } from '../repo/users.ts';
 import { applyTurn, emptyDraft, recordAsked, summarize, titleOf, type ConversationDraft } from './engine.ts';
+import { jevUsable, reportJevFailure } from './jev-gate.ts';
 
 export interface TurnResult {
   conversation: { id: string; state: 'collecting' | 'asking' | 'saved' | 'cancelled'; turns: number };
@@ -87,7 +88,7 @@ export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser
     let jev: JevResolution | null = null;
     const notes: string[] = [];
     const rt = getJev();
-    if (rt.client) {
+    if (rt.client && jevUsable(rt.client)) {
       const open: JevField[] = [];
       if (!draft.side) open.push('side');
       if (!draft.category) open.push('category');
@@ -99,6 +100,7 @@ export async function handleTurn(pool: pg.Pool, reg: Registry, user: SessionUser
         try {
           jev = await resolveWithJev(rt.client, reg, text, pre, { only: open, signal: AbortSignal.timeout(JEV_BUDGET_MS) });
         } catch {
+          reportJevFailure();
           notes.push('تعذّر الوصول إلى Jev — استُخدم المحلّل المحلي');
         }
       }

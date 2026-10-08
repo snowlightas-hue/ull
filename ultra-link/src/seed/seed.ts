@@ -13,6 +13,14 @@ try {
   await syncReference(pool);
   const reg = await loadRegistry(pool);
   console.log(`reference data synced: ${reg.version}`);
+  if (process.argv.includes('--reset-demo')) {
+    // deletes ONLY synthetic users (cascade: their intents, matches, notifications, conversations); real users untouched
+    const before = await pool.query("SELECT count(*)::int AS n FROM users WHERE realm = 'real'");
+    const del = await pool.query("DELETE FROM users WHERE realm = 'synthetic'");
+    await pool.query("DELETE FROM jobs WHERE status IN ('done','superseded','failed')"); // pending jobs of deleted intents become 'superseded' on their own
+    const after = await pool.query("SELECT count(*)::int AS n FROM users WHERE realm = 'real'");
+    console.log(`removed ${del.rowCount} synthetic users (real users before=${before.rows[0].n}, after=${after.rows[0].n})`);
+  }
   if (!process.argv.includes('--no-demo')) await seedDemo(pool, reg);
 } catch (e) {
   console.error((e as Error).stack);

@@ -57,29 +57,40 @@ export function skeleton(input: string): string {
 // Attached clitics that commonly precede nouns in Levantine/MSA: و، ف، ب، ل، ك، ال، بال، لل، وبال، وال ...
 const PREFIXES = ['وبال', 'وال', 'بال', 'فال', 'كال', 'عال', 'لل', 'ال', 'وب', 'ول', 'وف', 'عل', 'و', 'ف', 'ب', 'ل', 'ك'];
 
-/** Possible stems of a normalized token after removing attached prefixes (longest prefix first). */
+/**
+ * Possible stems of a normalized token, in priority order: the token itself, its suffix-stripped forms,
+ * then clitic-stripped forms (and their suffix-stripped forms). Synthetic "ال"+stem forms are added last
+ * and are never suffix-stripped again (avoids compounding into unrelated words).
+ */
 export function tokenVariants(token: string): string[] {
-  const out = new Set<string>([token]);
-  for (const p of PREFIXES) {
-    if (token.startsWith(p) && token.length - p.length >= 2) {
-      const rest = token.slice(p.length);
-      out.add(rest);
-      if (!rest.startsWith('ال') && rest.length >= 2) out.add('ال' + rest);
-    }
-  }
-  // possessive/plural suffixes: ـي، ـنا، ـك، ـها، ـو
-  for (const suf of ['تين', 'تي', 'تنا', 'تك', 'ها', 'نا', 'كم', 'ين', 'ي', 'ك']) {
-    for (const base of [...out]) {
+  const out: string[] = [];
+  const add = (v: string) => { if (v.length >= 2 && !out.includes(v)) out.push(v); };
+  const suffixForms = (base: string) => {
+    for (const suf of SUFFIXES) {
       const min = suf.startsWith('ت') ? 2 : 3;
       if (base.endsWith(suf) && base.length - suf.length >= min) {
         const stem = base.slice(0, -suf.length);
-        out.add(stem);
-        if (suf.startsWith('ت')) out.add(stem + 'ه'); // سيارتي/شقتين -> سياره/شقه
+        add(stem);
+        if (suf.startsWith('ت')) add(stem + 'ه'); // سيارتي/شقتين -> سياره/شقه
       }
     }
+  };
+  add(token);
+  suffixForms(token);
+  const stripped: string[] = [];
+  for (const p of PREFIXES) {
+    if (token.startsWith(p) && token.length - p.length >= 2) {
+      const rest = token.slice(p.length);
+      add(rest);
+      suffixForms(rest);
+      stripped.push(rest);
+    }
   }
-  return [...out];
+  for (const rest of stripped) if (!rest.startsWith('ال') && rest.length >= 3) add('ال' + rest);
+  return out;
 }
+
+const SUFFIXES = ['تين', 'تي', 'تنا', 'تك', 'ها', 'نا', 'كم', 'ين', 'ات', 'ي', 'ك'];
 
 export function tokenize(normalized: string): string[] {
   return normalized.split(' ').filter(Boolean);

@@ -180,50 +180,67 @@ export function evaluatePair(reg: Registry, x: MatchableIntent, y: MatchableInte
     return s.length ? s : null;
   }
 
+  /**
+   * How a location (one or more places) relates to an area (one or more places):
+   * inside = every location place lies within some area place (proven);
+   * disjoint = no location place overlaps any area place (violated);
+   * partial = they overlap but containment is not proven (e.g. "ريف حلب" against "إعزاز") → unknown.
+   */
+  function relate(loc: number[], area: number[]): 'inside' | 'partial' | 'disjoint' {
+    if (loc.every((l) => area.some((s) => within(l, s)))) return 'inside';
+    if (loc.every((l) => area.every((s) => !within(l, s) && !within(s, l)))) return 'disjoint';
+    return 'partial';
+  }
+
   /** Exchange: is `pt.point` inside `sc.scope` and outside `sc.exclude`? (sc = the side whose condition applies). */
   function placeDirection(pt: MatchableIntent, sc: MatchableIntent, scSide: 'seek' | 'provide') {
     const who = scSide === 'seek' ? 'طلبك' : 'العرض';
+    const point = pt.pointPlaceId;
+    const here = point != null ? placeAr(reg, point) : '';
     const excl = sc.excludePlaceIds;
     if (excl.length) {
-      if (pt.pointPlaceId == null) {
-        unknown('place_unknown', `المكان غير محدد — ${who} يستثني ${excl.map((p) => placeAr(reg, p)).join('، ')}`, 'place');
-      } else if (excl.some((e) => within(pt.pointPlaceId!, e))) {
-        exclude('place_excluded', `في ${placeAr(reg, pt.pointPlaceId)} — ${scSide === 'seek' ? 'استثنيتها' : 'مستثناة في العرض'}`);
-        return;
+      const ex = excl.map((p) => placeAr(reg, p)).join('، ');
+      if (point == null) unknown('place_unknown', `المكان غير محدد — ${who} يستثني ${ex}`, 'place');
+      else {
+        const r = relate([point], excl);
+        if (r === 'inside') { exclude('place_excluded', `في ${here} — ${scSide === 'seek' ? 'استثنيتها' : 'مستثناة في العرض'}`); return; }
+        if (r === 'partial') unknown('place_unknown', `${here} تشمل ${ex} المستثناة — يحتاج تأكيد المكان`, 'place');
       }
     }
     if (!sc.scopePlaceIds.length) return;
-    const anywhere = sc.scopePlaceIds.includes(reg.rootPlaceId);
+    const req = sc.scopeStrength === 'required';
+    if (sc.scopePlaceIds.includes(reg.rootPlaceId)) {
+      if (point != null && req) plus('place_in_scope', `في ${here} (أي مكان مقبول)`, 'required');
+      return;
+    }
     const scope = nonRoot(sc.scopePlaceIds);
-    if (anywhere) {
-      if (pt.pointPlaceId != null && sc.scopeStrength === 'required') plus('place_in_scope', `في ${placeAr(reg, pt.pointPlaceId)} (أي مكان مقبول)`, 'required');
-      return;
-    }
     const names = scope.map((p) => placeAr(reg, p)).join(' أو ');
-    if (pt.pointPlaceId == null) {
-      if (sc.scopeStrength === 'required') unknown('place_unknown', `المكان غير محدد — ${who} يشترط ${names}`, 'place');
+    if (point == null) {
+      if (req) unknown('place_unknown', `المكان غير محدد — ${who} يشترط ${names}`, 'place');
       return;
     }
-    const inside = scope.some((s) => within(pt.pointPlaceId!, s));
-    const here = placeAr(reg, pt.pointPlaceId);
-    if (inside) {
-      if (sc.scopeStrength === 'required') plus('place_in_scope', scSide === 'seek' ? `في ${here} كما طلبت` : `ضمن منطقة الخدمة (${names})`, 'required');
+    const r = relate([point], scope);
+    if (r === 'inside') {
+      if (req) plus('place_in_scope', scSide === 'seek' ? `في ${here} كما طلبت` : `ضمن منطقة الخدمة (${names})`, 'required');
       else plus('place_pref_satisfied', `في ${here} (مكان مفضّل)`, 'preferred', 600);
-    } else if (sc.scopeStrength === 'required') {
-      exclude('place_out_of_scope', scSide === 'seek' ? `في ${here} — خارج ${names}` : `${here} خارج منطقة خدمة العرض (${names})`);
+    } else if (r === 'disjoint') {
+      if (req) exclude('place_out_of_scope', scSide === 'seek' ? `في ${here} — خارج ${names}` : `${here} خارج منطقة خدمة العرض (${names})`);
+      else minus('place_pref_unsatisfied', `في ${here} (كنت تفضّل ${names})`, 'preferred', 600);
     } else {
-      minus('place_pref_unsatisfied', `في ${here} (كنت تفضّل ${names})`, 'preferred', 600);
+      // a broader point ("ريف حلب") may or may not lie inside the scope: never confirmed, never excluded
+      unknown('place_unknown', `${here} أوسع من ${names} — يحتاج تأكيد المكان`, 'place', sc.scopeStrength);
     }
   }
 
-  /** Peer: `other`'s location (point, else named area) against `owner`'s scope and exclusions. */
+  /** Peer: `other`'s location (point, else named area) against `owner`'s area and exclusions. */
   function peerPlace(owner: MatchableIntent, other: MatchableIntent) {
     const loc = locationOf(other);
     if (!loc) return; // reported once as place_unknown above
     const there = loc.map((p) => placeAr(reg, p)).join(' أو ');
     if (owner.excludePlaceIds.length) {
-      if (loc.every((l) => owner.excludePlaceIds.some((e) => within(l, e)))) { exclude('place_excluded', `${there} — مكان مستثنى`); return; }
-      if (loc.some((l) => owner.excludePlaceIds.some((e) => within(e, l)))) unknown('place_unknown', `${there} قد يكون في مكان مستثنى`, 'place');
+      const r = relate(loc, owner.excludePlaceIds);
+      if (r === 'inside') { exclude('place_excluded', `${there} — مكان مستثنى`); return; }
+      if (r === 'partial') unknown('place_unknown', `${there} قد يكون في مكان مستثنى`, 'place');
     }
     // no stated area → the owner's own point is the area (never widened to "anywhere")
     const own = owner.scopePlaceIds.length ? owner.scopePlaceIds : owner.pointPlaceId != null ? [owner.pointPlaceId] : [];
@@ -231,16 +248,15 @@ export function evaluatePair(reg: Registry, x: MatchableIntent, y: MatchableInte
     const scope = nonRoot(own);
     const names = scope.map((p) => placeAr(reg, p)).join(' أو ');
     const req = owner.scopeStrength === 'required';
-    const inside = loc.every((l) => scope.some((s) => within(l, s)));
-    const disjoint = loc.every((l) => scope.every((s) => !within(l, s) && !within(s, l)));
-    if (inside) {
+    const r = relate(loc, scope);
+    if (r === 'inside') {
       if (req) plus('place_in_scope', there === names ? `نفس المنطقة: ${there}` : `${there} ضمن ${names}`, 'required');
       else plus('place_pref_satisfied', `${there} (منطقة مفضّلة)`, 'preferred', 600);
-    } else if (disjoint) {
+    } else if (r === 'disjoint') {
       if (req) exclude('place_out_of_scope', `المكان مختلف: ${there} خارج ${names}`);
       else minus('place_pref_unsatisfied', `منطقة مختلفة: ${there} (المفضّل ${names})`, 'preferred', 600);
-    } else if (req) {
-      unknown('place_unknown', `${there} أوسع من ${names} — يحتاج تأكيد المكان`, 'place');
+    } else {
+      unknown('place_unknown', `${there} أوسع من ${names} — يحتاج تأكيد المكان`, 'place', owner.scopeStrength);
     }
   }
 

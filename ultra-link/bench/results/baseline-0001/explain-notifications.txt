@@ -1,0 +1,104 @@
+-- heaviest recipient (user 665, 5245 notifications) — total
+SELECT count(*) FROM notifications WHERE recipient_id = '665';
+
+Aggregate  (cost=2.84..2.85 rows=1 width=8) (actual time=2.472..2.474 rows=1 loops=1)
+  Buffers: shared hit=474
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..2.82 rows=11 width=0) (actual time=0.037..2.077 rows=5245 loops=1)
+        Index Cond: (recipient_id = '665'::bigint)
+        Heap Fetches: 5201
+        Buffers: shared hit=474
+Planning Time: 0.124 ms
+Execution Time: 2.518 ms
+
+-- heaviest recipient (user 665, 5245 notifications) — unread
+SELECT count(*) FROM notifications WHERE recipient_id = '665' AND read_at IS NULL;
+
+Aggregate  (cost=2.68..2.69 rows=1 width=8) (actual time=2.051..2.051 rows=1 loops=1)
+  Buffers: shared hit=428
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..2.67 rows=3 width=0) (actual time=0.022..1.673 rows=5214 loops=1)
+        Index Cond: (recipient_id = '665'::bigint)
+        Heap Fetches: 5201
+        Buffers: shared hit=428
+Planning Time: 0.096 ms
+Execution Time: 2.076 ms
+
+-- heaviest recipient (user 665, 5245 notifications) — first page
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '665'   ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=0.42..13.87 rows=11 width=231) (actual time=0.020..0.032 rows=21 loops=1)
+  Buffers: shared hit=6
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..13.87 rows=11 width=231) (actual time=0.019..0.029 rows=21 loops=1)
+        Index Cond: (recipient_id = '665'::bigint)
+        Buffers: shared hit=6
+Planning Time: 0.076 ms
+Execution Time: 0.049 ms
+
+-- heaviest recipient (user 665, 5245 notifications) — first unread page
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '665' AND read_at IS NULL  ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=4.91..4.92 rows=3 width=231) (actual time=5.434..5.437 rows=21 loops=1)
+  Buffers: shared hit=438
+  ->  Sort  (cost=4.91..4.92 rows=3 width=231) (actual time=5.433..5.435 rows=21 loops=1)
+        Sort Key: created_at DESC, id DESC
+        Sort Method: top-N heapsort  Memory: 45kB
+        Buffers: shared hit=438
+        ->  Index Scan using notifications_unread_idx on notifications  (cost=0.42..4.89 rows=3 width=231) (actual time=0.016..2.670 rows=5214 loops=1)
+              Index Cond: (recipient_id = '665'::bigint)
+              Buffers: shared hit=438
+Planning Time: 0.057 ms
+Execution Time: 5.459 ms
+
+-- typical recipient (user 125047) — total
+SELECT count(*) FROM notifications WHERE recipient_id = '125047';
+
+Aggregate  (cost=2.84..2.85 rows=1 width=8) (actual time=0.063..0.064 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_recipient_idx on notifications  (cost=0.42..2.82 rows=11 width=0) (actual time=0.055..0.057 rows=7 loops=1)
+        Index Cond: (recipient_id = '125047'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.096 ms
+Execution Time: 0.088 ms
+
+-- typical recipient (user 125047) — unread
+SELECT count(*) FROM notifications WHERE recipient_id = '125047' AND read_at IS NULL;
+
+Aggregate  (cost=2.68..2.69 rows=1 width=8) (actual time=0.017..0.017 rows=1 loops=1)
+  Buffers: shared hit=4
+  ->  Index Only Scan using notifications_unread_idx on notifications  (cost=0.42..2.67 rows=3 width=0) (actual time=0.013..0.014 rows=4 loops=1)
+        Index Cond: (recipient_id = '125047'::bigint)
+        Heap Fetches: 0
+        Buffers: shared hit=4
+Planning Time: 0.063 ms
+Execution Time: 0.032 ms
+
+-- typical recipient (user 125047) — first page
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '125047'   ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=0.42..13.87 rows=11 width=231) (actual time=0.018..0.028 rows=7 loops=1)
+  Buffers: shared hit=6
+  ->  Index Scan using notifications_recipient_idx on notifications  (cost=0.42..13.87 rows=11 width=231) (actual time=0.017..0.026 rows=7 loops=1)
+        Index Cond: (recipient_id = '125047'::bigint)
+        Buffers: shared hit=6
+Planning Time: 0.070 ms
+Execution Time: 0.043 ms
+
+-- typical recipient (user 125047) — first unread page
+SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
+  WHERE recipient_id = '125047' AND read_at IS NULL  ORDER BY created_at DESC, id DESC LIMIT 21;
+
+Limit  (cost=4.91..4.92 rows=3 width=231) (actual time=0.028..0.029 rows=4 loops=1)
+  Buffers: shared hit=4
+  ->  Sort  (cost=4.91..4.92 rows=3 width=231) (actual time=0.027..0.028 rows=4 loops=1)
+        Sort Key: created_at DESC, id DESC
+        Sort Method: quicksort  Memory: 26kB
+        Buffers: shared hit=4
+        ->  Index Scan using notifications_unread_idx on notifications  (cost=0.42..4.89 rows=3 width=231) (actual time=0.014..0.017 rows=4 loops=1)
+              Index Cond: (recipient_id = '125047'::bigint)
+              Buffers: shared hit=4
+Planning Time: 0.080 ms
+Execution Time: 0.049 ms
+

@@ -30,7 +30,8 @@
     "bench:run": "node bench/run.ts",
     "advisor": "node src/advisor/run.ts",
     "ai:probe": "NODE_USE_ENV_PROXY=1 node src/ai/probe.ts",
-    "jev:mock": "node test/mocks/jev-mock-server.ts --port 8787"
+    "jev:mock": "node test/mocks/jev-mock-server.ts --port 8787",
+    "db:reset-demo": "node src/seed/seed.ts --reset-demo"
   },
   "dependencies": {
     "@fastify/static": "^10.1.5",

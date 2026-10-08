@@ -1,0 +1,62 @@
+-- job claim (SKIP LOCKED) (executed inside a rolled-back transaction)
+WITH next AS (
+  SELECT id FROM jobs
+  WHERE ((status = 'pending' AND run_at <= now()) OR (status = 'running' AND locked_until < now()))
+  AND (NULL::text[] IS NULL OR kind = ANY(NULL))
+  ORDER BY priority, run_at, id
+  FOR UPDATE SKIP LOCKED LIMIT 1)
+  UPDATE jobs j SET status = 'running', locked_by = 'bench', locked_until = now() + make_interval(secs => 60), attempts = j.attempts + 1, started_at = now()
+  FROM next WHERE j.id = next.id
+  RETURNING j.id, j.kind, j.payload, j.attempts, j.max_attempts;
+
+Update on jobs j  (cost=0.03..0.07 rows=1 width=122) (actual time=0.005..0.006 rows=0 loops=1)
+  CTE next
+    ->  Limit  (cost=0.01..0.03 rows=1 width=24) (never executed)
+          ->  LockRows  (cost=0.01..0.03 rows=1 width=24) (never executed)
+                ->  Sort  (cost=0.01..0.02 rows=1 width=24) (never executed)
+                      Sort Key: jobs.priority, jobs.run_at, jobs.id
+                      ->  Seq Scan on jobs  (cost=0.00..0.00 rows=1 width=24) (never executed)
+                            Filter: (((status = 'pending'::text) AND (run_at <= now())) OR ((status = 'running'::text) AND (locked_until < now())))
+  ->  Nested Loop  (cost=0.00..0.04 rows=1 width=122) (actual time=0.004..0.004 rows=0 loops=1)
+        Join Filter: (next.id = j.id)
+        ->  Seq Scan on jobs j  (cost=0.00..0.00 rows=1 width=18) (actual time=0.003..0.003 rows=0 loops=1)
+        ->  CTE Scan on next  (cost=0.00..0.02 rows=1 width=40) (never executed)
+Planning:
+  Buffers: shared hit=95
+Planning Time: 0.567 ms
+Execution Time: 0.069 ms
+
+-- expiry sweep
+SELECT vertical_id, id, user_id, title_ar FROM intents WHERE status = 'active' AND expires_at < now() ORDER BY expires_at LIMIT 500;
+
+Limit  (cost=2.27..53.42 rows=500 width=71) (actual time=0.066..0.150 rows=49 loops=1)
+  Buffers: shared hit=56
+  ->  Merge Append  (cost=2.27..21652.11 rows=211654 width=71) (actual time=0.065..0.144 rows=49 loops=1)
+        Sort Key: intents.expires_at
+        Buffers: shared hit=56
+        ->  Index Scan using intents_real_estate_expires_at_idx on intents_real_estate intents_1  (cost=0.42..5221.04 rows=61254 width=66) (actual time=0.018..0.041 rows=16 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=18
+        ->  Index Scan using intents_vehicles_expires_at_idx on intents_vehicles intents_2  (cost=0.29..4528.05 rows=52742 width=69) (actual time=0.009..0.023 rows=9 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=9
+        ->  Index Scan using intents_services_expires_at_idx on intents_services intents_3  (cost=0.29..2851.41 rows=36453 width=76) (actual time=0.008..0.013 rows=4 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=5
+        ->  Index Scan using intents_education_expires_at_idx on intents_education intents_4  (cost=0.29..1515.61 rows=16246 width=76) (actual time=0.008..0.013 rows=5 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=6
+        ->  Index Scan using intents_activities_expires_at_idx on intents_activities intents_5  (cost=0.29..638.72 rows=8349 width=74) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=2
+        ->  Index Scan using intents_goods_expires_at_idx on intents_goods intents_6  (cost=0.29..2575.94 rows=32502 width=71) (actual time=0.009..0.029 rows=14 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=13
+        ->  Index Scan using intents_other_expires_at_idx on intents_other intents_7  (cost=0.29..292.03 rows=4108 width=87) (actual time=0.007..0.008 rows=1 loops=1)
+              Index Cond: (expires_at < now())
+              Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=7
+Planning Time: 1.529 ms
+Execution Time: 0.212 ms
+
