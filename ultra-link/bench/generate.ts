@@ -1,4 +1,5 @@
 // npm run bench:generate -- [--n 1000000] [--seed 20261008] [--history-days 120] [--batch 10000] [--parallel 3]
+//                           [--migrations-upto 0001]   (baseline schema: stop after that migration)
 //
 // Builds a dedicated benchmark database `ultralink_bench` (cloned from ultralink_template, then the real
 // migrations + reference sync) and fills it with N synthetic-but-realistic intents:
@@ -29,6 +30,7 @@ const HISTORY_DAYS = argInt('history-days', 120);
 const BATCH = argInt('batch', 10_000);
 const PAR = Math.max(1, argInt('parallel', 3));
 const DB = argValue('db', BENCH_DB)!;
+const UPTO = argValue('migrations-upto'); // e.g. 0001 → baseline schema without later migrations
 const DAY = 86_400_000;
 
 // ───────────── distributions ─────────────
@@ -314,7 +316,7 @@ async function main(): Promise<void> {
     await a.query(`CREATE DATABASE ${DB} TEMPLATE ultralink_template`);
   });
   const pool = new pg.Pool({ connectionString: dbUrl(DB), max: PAR + 1 });
-  await migrate(pool, (s) => console.log(`  ${s}`));
+  await migrate(pool, (s) => console.log(`  ${s}`), { upTo: UPTO });
   await syncReference(pool);
   const reg = await loadRegistry(pool);
   t = lap('create_db_migrate_reference', t);
@@ -496,9 +498,9 @@ async function main(): Promise<void> {
   const topPlaces = (await pool.query(`SELECT p.code, count(*)::int AS n FROM intents i JOIN places p ON p.id = i.point_place_id GROUP BY p.code ORDER BY n DESC LIMIT 8`)).rows;
   const byCurrency = (await pool.query(`SELECT currency, price_unit, count(*)::int AS n FROM intents WHERE currency IS NOT NULL GROUP BY 1, 2 ORDER BY n DESC LIMIT 12`)).rows;
   const totalMs = Date.now() - t0;
-  const summary = { params: { n: N, seed: SEED, historyDays: HISTORY_DAYS, batch: BATCH, parallel: PAR, db: DB }, counts, bySide, byVertical, topPlaces, byCurrency, timingsMs: timings, totalMs, intentRowsPerSec: Math.round(N / (timings.intents_refs_scopes! / 1000)), scopeRows };
+  const summary = { params: { n: N, seed: SEED, historyDays: HISTORY_DAYS, batch: BATCH, parallel: PAR, db: DB, migrationsUpTo: UPTO ?? 'all' }, counts, bySide, byVertical, topPlaces, byCurrency, timingsMs: timings, totalMs, intentRowsPerSec: Math.round(N / (timings.intents_refs_scopes! / 1000)), scopeRows };
   mkdirSync(join(ROOT, 'bench', 'results'), { recursive: true });
-  writeFileSync(join(ROOT, 'bench', 'results', 'generate.json'), JSON.stringify(summary, null, 2) + '\n');
+  writeFileSync(join(ROOT, 'bench', 'results', `generate${UPTO ? `-upto-${UPTO}` : ''}.json`), JSON.stringify(summary, null, 2) + '\n');
   console.log(JSON.stringify(summary, null, 2));
   await pool.end();
 }

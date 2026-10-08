@@ -91,12 +91,13 @@ test('matching corpus: invariants of every verdict (score bands, exclusion code,
   }
 });
 
-test('matching corpus: the questioned labels still exist and still disagree only as documented', () => {
-  for (const id of Object.keys(QUESTIONED)) {
+test('matching corpus: the questioned labels still exist and still disagree only as documented', (t) => {
+  for (const [id, q] of Object.entries(QUESTIONED)) {
     const s = scenarios.find((x) => x.id === id);
     assert.ok(s, `${id} is gone from the corpus — drop it from QUESTIONED`);
     const v = run(s, false);
     const labelOk = v.verdict === s.expected.verdict && (s.expected.verdict !== 'excluded' || v.exclusion?.code === s.expected.exclusionCode);
     assert.ok(!labelOk, `${id} now agrees with its label — drop it from QUESTIONED`);
+    t.diagnostic(`questioned ${id}: label ${s.expected.verdict}/${s.expected.exclusionCode}, evaluator ${v.verdict}/${v.exclusion?.code ?? null} — ${q.reason}`);
   }
 });

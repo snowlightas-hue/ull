@@ -33,6 +33,31 @@ export async function runJob(pool: pg.Pool, reg: Registry, job: Job): Promise<'d
   throw new Error(`unknown job kind ${job.kind}`);
 }
 
+export interface Processed {
+  job: Job;
+  /** done/superseded = finished; retry = rescheduled with backoff; failed = max_attempts reached; lease_lost = fenced out. */
+  outcome: 'done' | 'superseded' | 'retry' | 'failed' | 'lease_lost';
+  ms: number;
+  error?: string;
+}
+
+/** One worker iteration: claim the next due job, run it, and record the outcome (fenced to this claim). */
+export async function processNext(pool: pg.Pool, reg: Registry, workerId: string, opts: { leaseSeconds?: number; kinds?: string[] } = {}): Promise<Processed | null> {
+  const job = await claim(pool, workerId, opts.leaseSeconds ?? 60, opts.kinds);
+  if (!job) return null;
+  const t0 = Date.now();
+  try {
+    const status = await runJob(pool, reg, job);
+    const kept = await complete(pool, job, status, { ms: Date.now() - t0 });
+    return { job, outcome: kept ? status : 'lease_lost', ms: Date.now() - t0 };
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    const recorded = await fail(pool, job, err).catch(() => false);
+    const outcome = !recorded ? 'lease_lost' : job.attempts >= job.max_attempts ? 'failed' : 'retry';
+    return { job, outcome, ms: Date.now() - t0, error: err.message };
+  }
+}
+
 /**
  * Expire active intents whose expires_at passed. Per intent, ONE transaction re-checks the row under a lock
  * (a concurrent resume/edit wins), flips the status, enqueues the versioned re-match job and the owner's
@@ -98,23 +123,21 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   process.on('SIGTERM', () => void shutdown());
 
   while (!stopping) {
-    let job: Job | null = null;
     try {
-      job = await claim(pool, workerId, 60);
-      if (!job) {
+      const p = await processNext(pool, reg, workerId);
+      if (!p) {
         await new Promise<void>((resolve) => { wake = resolve; setTimeout(resolve, 2000); });
         wake = null;
         continue;
       }
-      const t0 = Date.now();
-      const status = await runJob(pool, reg, job);
-      const kept = await complete(pool, job, status, { ms: Date.now() - t0 });
-      if (!kept) console.warn(`[worker] job ${job.id}: lease lost before completion (another worker owns it now)`);
-      console.log(`[worker] job ${job.id} ${job.kind} → ${status} (${Date.now() - t0} ms)`);
+      if (p.outcome === 'lease_lost') console.warn(`[worker] job ${p.job.id}: outcome not recorded — lease lost (another worker owns it now) or database error${p.error ? `: ${p.error}` : ''}`);
+      else if (p.error) console.error(`[worker] job ${p.job.id} ${p.job.kind} attempt ${p.job.attempts}/${p.job.max_attempts} → ${p.outcome}: ${p.error}`);
+      else console.log(`[worker] job ${p.job.id} ${p.job.kind} → ${p.outcome} (${p.ms} ms)`);
+      if (p.error) await new Promise((r) => setTimeout(r, 500));
     } catch (e) {
-      console.error(`[worker] job ${job?.id ?? '-'} failed: ${(e as Error).message}`);
-      if (job) await fail(pool, job, e as Error).catch(() => {});
-      await new Promise((r) => setTimeout(r, 500));
+      // claim itself failed (database unavailable): back off and try again
+      console.error(`[worker] claim failed: ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, 1000));
     }
   }
   await listener.end().catch(() => {});

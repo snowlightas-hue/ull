@@ -12,7 +12,12 @@ import { closePools, getPool } from './pool.ts';
 
 const DIR = join(ROOT, 'migrations');
 
-export async function migrate(pool: pg.Pool, log: (s: string) => void = console.log): Promise<string[]> {
+export interface MigrateOptions {
+  /** Apply migrations only up to and including this version (e.g. '0001'); used by bench/generate.ts for baselines. */
+  upTo?: string;
+}
+
+export async function migrate(pool: pg.Pool, log: (s: string) => void = console.log, opts: MigrateOptions = {}): Promise<string[]> {
   await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version text PRIMARY KEY, name text NOT NULL, checksum text NOT NULL,
     applied_at timestamptz NOT NULL DEFAULT now(), duration_ms integer NOT NULL)`);
@@ -23,6 +28,7 @@ export async function migrate(pool: pg.Pool, log: (s: string) => void = console.
   const done: string[] = [];
   for (const f of files) {
     const version = f.slice(0, 4);
+    if (opts.upTo !== undefined && version > opts.upTo) break;
     const sql = readFileSync(join(DIR, f), 'utf8');
     const checksum = createHash('sha256').update(sql).digest('hex');
     const prev = applied.get(version);

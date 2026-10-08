@@ -1,6 +1,8 @@
 // HTTP API + static frontend. Every data route is scoped to the session user (isolation by construction).
 // Hardening: CSRF guard, token-bucket rate limits, strict query/param validation, privacy-safe logging,
 // SSE hub with LISTEN auto-reconnect and per-user caps, health/metrics, lazy session cleanup.
+// Extension: feature route plugins (src/server/routes/*, see context.ts) are registered after the core API
+// and inherit every guard above.
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Writable } from 'node:stream';
@@ -23,9 +25,11 @@ import { emitUserEvent, listNotifications, markAllRead, markRead, notify } from 
 import { counts, createSession, deleteSession, personaUser, registerUser, userForToken, type SessionUser } from '../repo/users.ts';
 import { hydrateMatches, latestRun, listMatches, matchIntent } from '../matching/engine.ts';
 import { EventHub } from './events.ts';
+import { perMinuteRule, type RouteContext, type RouteRateLimit, type UlRoutePlugin } from './context.ts';
+import { FEATURE_ROUTES } from './routes/index.ts';
 import { health, isLocalRequest, metrics, newCounters, safeErr, SessionJanitor, type Counters } from './ops.ts';
 import { rateLimitConfig, TokenBuckets, type RateLimitConfig } from './ratelimit.ts';
-import { IntentsQuery, MatchesQuery, MatchRunQuery, NotificationsQuery, parseQuery, UUID_RE, uuidParam } from './validate.ts';
+import { IntentsQuery, MatchesQuery, MatchRunQuery, NotificationsQuery, parseQuery, TurnBody, uuidParam } from './validate.ts';
 
 const COOKIE = 'ul_session';
 
@@ -55,10 +59,24 @@ export interface AppDeps {
   logStream?: Writable;
   logLevel?: string;
   sessionCleanupMs?: number;
+  /** extra route plugins registered after the core API and FEATURE_ROUTES (tests, experiments) */
+  routes?: UlRoutePlugin[];
+  /** register src/server/routes/index.ts FEATURE_ROUTES (default true) */
+  featureRoutes?: boolean;
+  /**
+   * Number of trusted reverse-proxy hops in front of the server (default: env UL_TRUST_PROXY, unset = 0).
+   * With ≥1 (e.g. GitHub Codespaces port forwarding): client IP and protocol come from the X-Forwarded-*
+   * headers set by that proxy, and a mutation's Origin may match X-Forwarded-Host as well as Host.
+   */
+  trustProxy?: number;
 }
+
+export type { RouteContext, UlRoutePlugin } from './context.ts';
+export { defineRoutes } from './context.ts';
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { pool, reg } = deps;
+  const proxyHops = deps.trustProxy ?? trustProxyFromEnv(process.env.UL_TRUST_PROXY);
   const app = Fastify({
     logger: {
       level: deps.logLevel ?? process.env.UL_LOG_LEVEL ?? 'info',
@@ -72,7 +90,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       },
     },
     bodyLimit: 64 * 1024,
-    trustProxy: false,
+    // trust exactly `proxyHops` hops (not `true`): req.ip is the address the nearest trusted proxy saw, never a
+    // client-forged left-most X-Forwarded-For entry. 0 = no proxy: req.ip is the socket address.
+    trustProxy: proxyHops > 0 ? (_addr: string, hop: number) => hop < proxyHops : false,
     return503OnClosing: true,
   });
   app.decorateRequest('user', null);
@@ -110,36 +130,52 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ── CSRF guard → rate limits → session (all before the body is parsed)
   const OPEN = new Set(['/api/health', '/api/metrics', '/api/personas', '/api/ai/status', '/api/taxonomy', '/api/session']);
-  const tooMany = (reply: FastifyReply, bucket: keyof RateLimitConfig, retryAfterMs: number) => {
+  const tooMany = (reply: FastifyReply, bucket: string, retryAfterMs: number) => {
     counters.rateLimited[bucket] = (counters.rateLimited[bucket] ?? 0) + 1;
     return reply.code(429).header('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))))
       .send({ error: 'rate_limited', messageAr: 'طلبات كثيرة خلال وقت قصير. انتظر قليلًا ثم حاول مجددًا.' });
   };
+  const who = (req: FastifyRequest, by: 'session' | 'ip' = 'session') => (by === 'session' && req.sessionKey ? `s:${req.sessionKey}` : `ip:${req.ip}`);
+  /** feature buckets: perMinute from the route, overridable with UL_RL_<NAME>_PER_MIN (0 = off) */
+  const routeRule = (l: RouteRateLimit) => {
+    const env = process.env[`UL_RL_${l.name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_PER_MIN`];
+    const n = env === undefined || env === '' ? l.perMinute : Number(env);
+    return Number.isFinite(n) && n > 0 ? perMinuteRule(n) : null;
+  };
+  const takeNamed = (req: FastifyRequest, reply: FastifyReply, l: RouteRateLimit): boolean => {
+    const rule = routeRule(l);
+    if (!rule) return true;
+    const r = limiter.take(`${l.name}|${who(req, l.by)}`, rule);
+    if (!r.ok) { tooMany(reply, l.name, r.retryAfterMs); return false; }
+    return true;
+  };
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
     const route = req.routeOptions.url ?? '';
+    const cfg = req.routeOptions.config ?? {};
     const mutation = req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
     if (mutation) {
       const ct = String(req.headers['content-type'] ?? '').toLowerCase();
-      if (!ct.startsWith('application/json')) return reply.code(415).send({ error: 'json_required', messageAr: 'يجب إرسال JSON' });
-      if (!sameOrigin(req)) return reply.code(403).send({ error: 'bad_origin', messageAr: 'مصدر غير مسموح' });
+      const extra = cfg.contentTypes ?? [];
+      if (!ct.startsWith('application/json') && !extra.some((t) => ct.startsWith(t.toLowerCase()))) return reply.code(415).send({ error: 'json_required', messageAr: 'يجب إرسال JSON' });
+      if (!sameOrigin(req, proxyHops > 0)) return reply.code(403).send({ error: 'bad_origin', messageAr: 'مصدر غير مسموح' });
     }
     const token = parseCookies(req.headers.cookie)[COOKIE];
     req.sessionKey = token ? createHash('sha256').update(token).digest('base64url').slice(0, 22) : null;
-    const who = req.sessionKey ? `s:${req.sessionKey}` : `ip:${req.ip}`;
     if (route.startsWith('/api/auth/') && limits.auth) {
       const r = limiter.take(`auth|ip:${req.ip}`, limits.auth);
       if (!r.ok) return tooMany(reply, 'auth', r.retryAfterMs);
     } else if (route === '/api/conversations/:id/turns' && mutation && limits.turns) {
-      const r = limiter.take(`turns|${who}`, limits.turns);
+      const r = limiter.take(`turns|${who(req)}`, limits.turns);
       if (!r.ok) return tooMany(reply, 'turns', r.retryAfterMs);
     } else if (route === '/api/demo/simulate' && limits.simulate) {
-      const r = limiter.take(`simulate|${who}`, limits.simulate);
+      const r = limiter.take(`simulate|${who(req)}`, limits.simulate);
       if (!r.ok) return tooMany(reply, 'simulate', r.retryAfterMs);
     }
+    if (cfg.rateLimit && !takeNamed(req, reply, cfg.rateLimit)) return reply;
     req.user = await userForToken(pool, token);
     janitor.maybeRun();
-    if (!OPEN.has(route) && !route.startsWith('/api/auth/') && !req.url.startsWith('/api/auth/') && !req.user) {
+    if (!OPEN.has(route) && cfg.public !== true && !route.startsWith('/api/auth/') && !req.url.startsWith('/api/auth/') && !req.user) {
       return reply.code(401).send({ error: 'unauthorized', messageAr: 'سجّل الدخول أولًا' });
     }
   });
@@ -169,7 +205,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!r.success) throw new HttpError(400, 'bad_request', 'بيانات الطلب غير صالحة');
     return r.data;
   };
-  const setCookie = (reply: FastifyReply, token: string) => reply.header('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 86400}`);
+  // `Secure` only when the request really arrived over https (a trusted proxy's X-Forwarded-Proto); the local demo is plain http
+  const cookieAttrs = (req: FastifyRequest) => `HttpOnly; SameSite=Lax; Path=/${req.protocol === 'https' ? '; Secure' : ''}`;
+  const setCookie = (reply: FastifyReply, token: string) => reply.header('Set-Cookie', `${COOKIE}=${token}; ${cookieAttrs(reply.request)}; Max-Age=${30 * 86400}`);
 
   // ── public
   app.get('/api/health', async (_req, reply) => {
@@ -212,7 +250,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   app.post('/api/auth/logout', async (req, reply) => {
     await deleteSession(pool, parseCookies(req.headers.cookie)[COOKIE]);
-    reply.header('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+    reply.header('Set-Cookie', `${COOKIE}=; ${cookieAttrs(req)}; Max-Age=0`);
     return { ok: true };
   });
 
@@ -222,11 +260,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/me', async (req) => ({ user: publicUser(u(req)), counts: await counts(pool, u(req).id) }));
 
   // ── conversations
-  const TurnBody = z.object({
-    text: z.string().max(1000),
-    modality: z.enum(['voice', 'text']).default('text'),
-    clientTurnId: z.union([z.literal(''), z.string().regex(UUID_RE)]).default(''),
-  });
   app.post('/api/conversations', async (req) => ({ conversation: await startConversation(pool, u(req)) }));
   app.get('/api/conversations/current', async (req) => ({ conversation: await currentConversation(pool, reg, u(req)) }));
   app.post<{ Params: { id: string } }>('/api/conversations/:id/turns', async (req) => {
@@ -414,6 +447,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     reply.hijack();
     await events.attach(reply.raw, me.id, (cb) => reply.raw.on('close', cb));
   });
+  // ── feature route plugins (after every hook above, so they inherit CSRF/auth/limits/logging/errors)
+  const ctx: RouteContext = {
+    pool, reg, events, limiter,
+    user: (req) => { if (!req.user) throw new HttpError(401, 'unauthorized', 'سجّل الدخول أولًا'); return req.user; },
+    maybeUser: (req) => req.user, body, parseQuery, uuidParam, HttpError,
+    rateLimit: takeNamed,
+  };
+  for (const plugin of [...(deps.featureRoutes === false ? [] : FEATURE_ROUTES), ...(deps.routes ?? [])]) {
+    try {
+      await app.register(async (scope) => { await plugin.register(scope, ctx); });
+    } catch (e) {
+      throw new Error(`route plugin "${plugin.name}" failed to register: ${(e as Error).message}`);
+    }
+  }
+
   await events.start();
   app.addHook('preClose', async () => { events.endStreams(); });
   app.addHook('onClose', async () => { await events.stop(); });
@@ -421,13 +469,40 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   return app;
 }
 
-/** Mutations must come from our own origin (Origin, else Referer; Sec-Fetch-Site when the browser sends it). */
-function sameOrigin(req: FastifyRequest): boolean {
+export function trustProxyFromEnv(v: string | undefined): number {
+  if (v === undefined || v === '' || v === '0' || v.toLowerCase() === 'false') return 0;
+  if (v.toLowerCase() === 'true') return 1;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 && n <= 10 ? n : 0;
+}
+
+/**
+ * Mutations must come from our own origin (Origin, else Referer; Sec-Fetch-Site when the browser sends it).
+ * Strict mode: the origin's host:port must equal the Host header. Behind a trusted proxy (UL_TRUST_PROXY),
+ * the browser's origin is the public forwarded host (e.g. https://<name>-8080.app.github.dev) while Host
+ * may be localhost:8080, so the first X-Forwarded-Host value is accepted too.
+ */
+export function sameOrigin(req: Pick<FastifyRequest, 'headers'>, trustProxy = false): boolean {
   const site = req.headers['sec-fetch-site'];
   if (site === 'cross-site') return false;
   const src = req.headers.origin ?? (req.headers.referer ? String(req.headers.referer) : undefined);
   if (src === undefined) return site === undefined || site === 'same-origin' || site === 'none';
-  try { return new URL(String(src)).host === req.headers.host; } catch { return false; } // includes Origin: null
+  let o: URL;
+  try { o = new URL(String(src)); } catch { return false; } // "Origin: null" → refused
+  if (o.protocol !== 'http:' && o.protocol !== 'https:') return false;
+  const port = (u: URL) => u.port || (u.protocol === 'https:' ? '443' : '80');
+  const matches = (hostHeader: string | undefined) => {
+    if (!hostHeader) return false;
+    try {
+      const h = new URL(`${o.protocol}//${hostHeader.trim()}`);
+      return h.hostname === o.hostname && port(h) === port(o);
+    } catch { return false; }
+  };
+  if (matches(req.headers.host)) return true;
+  if (!trustProxy) return false;
+  const xfh = req.headers['x-forwarded-host'];
+  const first = (Array.isArray(xfh) ? xfh[0] : xfh)?.split(',')[0];
+  return matches(first);
 }
 
 function publicUser(u: SessionUser) { return { publicId: u.publicId, displayName: u.displayName, realm: u.realm }; }

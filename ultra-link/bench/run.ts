@@ -1,15 +1,20 @@
 // npm run bench:run -- [--db ultralink_bench] [--label after] [--samples 200] [--match-samples 200] [--inserts 2000]
-//                      [--skip-match] [--skip-insert] [--seed 7]
+//                      [--skip-match] [--skip-insert] [--seed 7] [--delete-samples 25]
 //
 // Measures, on the benchmark database built by bench/generate.ts (never the app DB):
-//   RANGE retrieval   — the engine's RANGE direction for intents with a required scope (one range scan per scope
-//                       place + the bounded "outside scope" count + the unknown-point sample), same SQL as
-//                       src/matching/engine.ts#retrieveCandidates
-//   PROBE retrieval   — intent_scopes equality probe with the point's ancestors
-//   BROAD retrieval   — recent counterparts in the category (no point, no hard scope)
+//   RANGE retrieval   — engine retrieveCandidates() for seekers with a required scope (direction 'range' only)
+//   PROBE retrieval   — engine retrieveCandidates() for intents with a point and no hard scope ('probe' only)
+//   BROAD retrieval   — engine retrieveCandidates() without point and hard scope ('broad')
+//                       (the real exported function is called through a recording Queryable, so the SQL that is
+//                       timed, plan-checked and EXPLAINed is always exactly the engine's current SQL)
 //   matchIntent()     — the real engine function (retrieval + evaluation + versioned upserts + notifications)
 //   owner list page   — the real listIntents() (first page, 20 cards, exact totals)
+//   match list page   — the real listMatches() (first page, 20 cards, exact totals, hydrated)
 //   notifications     — the real listNotifications() (first page, 20)
+//   contact respond   — the UPDATE … FROM match_refs statement of POST /api/contact-requests/:id/respond
+//                       (verbatim from src/server/app.ts), each inside a rolled-back transaction
+//   user delete       — DELETE FROM users (ON DELETE CASCADE through intents, refs, scopes, matches, runs,
+//                       notifications …) as done by `npm run db:reset-demo`, each inside a rolled-back transaction
 //   insert throughput — the real createIntent() (intent + intent_refs + intent_scopes) in its own transaction,
 //                       sequential and 4 concurrent connections
 // plus table/index sizes, EXPLAIN (ANALYZE, BUFFERS) per query shape (bench/results/<label>/explain-*.txt), and a
@@ -24,9 +29,9 @@ import { withTx } from '../src/db/pool.ts';
 import { ROOT } from '../src/lib/env.ts';
 import { loadRegistry } from '../src/seed/reference.ts';
 import type { Registry } from '../src/domain/registry.ts';
-import { INTENT_COLS, createIntent, intentToSpec, listIntents, loadIntent, rowToMatchable, type IntentRow } from '../src/repo/intents.ts';
+import { createIntent, intentToSpec, listIntents, loadIntent, rowToMatchable, type IntentRow } from '../src/repo/intents.ts';
 import { listNotifications } from '../src/repo/notifications.ts';
-import { CANDIDATE_LIMIT, matchIntent } from '../src/matching/engine.ts';
+import { CANDIDATE_LIMIT, listMatches, matchIntent, matchIntentTx, retrieveCandidates } from '../src/matching/engine.ts';
 import { BENCH_DB, argInt, argValue, dbUrl, fmtBytes, fmtMs, summarize } from './lib.ts';
 
 const DB = argValue('db', BENCH_DB)!;
@@ -35,75 +40,18 @@ const SAMPLES = argInt('samples', 200);
 const MATCH_SAMPLES = argInt('match-samples', 200);
 const INSERTS = argInt('inserts', 2000);
 const SEED = argInt('seed', 7);
+const DELETE_SAMPLES = argInt('delete-samples', 25);
 const SKIP_MATCH = process.argv.includes('--skip-match');
 const SKIP_INSERT = process.argv.includes('--skip-insert');
 const OUT = join(ROOT, 'bench', 'results', LABEL);
 
 type Q = { sql: string; params: unknown[] };
 
-// ───────────── the engine's retrieval SQL (verbatim from src/matching/engine.ts) ─────────────
-function counterpart(reg: Registry, row: IntentRow) {
-  const me = rowToMatchable(reg, row);
-  const counterSide = me.side === 'join' ? 'join' : me.side === 'seek' ? 'provide' : 'seek';
-  const cat = reg.categoryByCode.get(me.categoryCode)!;
-  const catSet = [...new Set([...cat.ancestors, ...cat.descendants])];
-  const scope = me.scopePlaceIds.filter((p) => p !== reg.rootPlaceId);
-  const hardScope = scope.length > 0 && me.scopeStrength === 'required';
-  return { me, counterSide, cat, catSet, scope, hardScope };
-}
-
-function rangeQueries(reg: Registry, row: IntentRow): Q[] {
-  const { me, counterSide, catSet, scope } = counterpart(reg, row);
-  const qs: Q[] = scope.map((s) => {
-    const p = reg.placeById.get(s)!;
-    return {
-      sql: `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-            AND status = 'active' AND point_lft BETWEEN $6 AND $7 AND user_id <> $8
-          ORDER BY created_at DESC LIMIT $9`,
-      params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, p.lft, p.rgt, me.userId, CANDIDATE_LIMIT],
-    };
-  });
-  qs.push({
-    sql: `SELECT count(*)::int AS n FROM (SELECT 1 FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4
-          AND category_id = ANY($5) AND status = 'active' AND user_id <> $6 AND point_lft IS NOT NULL
-          AND ${scope.map((_, k) => `NOT (point_lft BETWEEN $${7 + 2 * k} AND $${8 + 2 * k})`).join(' AND ')} LIMIT 1000) x`,
-    params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId, ...scope.flatMap((s) => [reg.placeById.get(s)!.lft, reg.placeById.get(s)!.rgt])],
-  });
-  qs.push({
-    sql: `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-          AND status = 'active' AND point_lft IS NULL AND user_id <> $6 ORDER BY created_at DESC LIMIT 200`,
-    params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId],
-  });
-  return qs;
-}
-
-function probeQuery(reg: Registry, row: IntentRow): Q {
-  const { me, counterSide, cat, catSet } = counterpart(reg, row);
-  const placeAnc = reg.placeById.get(me.pointPlaceId!)!.ancestors;
-  return {
-    sql: `SELECT DISTINCT s.intent_id AS id FROM intent_scopes s
-        WHERE s.vertical_id = $1 AND s.realm = $2 AND s.side = $3 AND s.deal_type_id = $4 AND s.category_id = ANY($5) AND s.place_id = ANY($6)
-        LIMIT $7`,
-    params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, me.side === 'join' ? catSet : cat.ancestors.concat(cat.descendants), placeAnc, CANDIDATE_LIMIT],
-  };
-}
-
-function broadQueries(reg: Registry, row: IntentRow): Q[] {
-  const { me, counterSide, catSet, scope } = counterpart(reg, row);
-  const qs: Q[] = scope.map((s) => {
-    const p = reg.placeById.get(s)!;
-    return {
-      sql: `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-              AND status = 'active' AND point_lft BETWEEN $6 AND $7 AND user_id <> $8 ORDER BY created_at DESC LIMIT $9`,
-      params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, p.lft, p.rgt, me.userId, CANDIDATE_LIMIT],
-    };
-  });
-  qs.push({
-    sql: `SELECT id FROM intents WHERE vertical_id = $1 AND realm = $2 AND side = $3 AND deal_type_id = $4 AND category_id = ANY($5)
-          AND status = 'active' AND user_id <> $6 ORDER BY created_at DESC LIMIT $7`,
-    params: [row.vertical_id, me.realm, counterSide, row.deal_type_id, catSet, me.userId, CANDIDATE_LIMIT],
-  });
-  return qs;
+/** A Queryable that records every statement (text + params) and forwards it. */
+function recorder(target: pg.Pool | pg.PoolClient): { db: pg.Pool; log: Q[] } {
+  const log: Q[] = [];
+  const db = { query: (sql: string, params?: unknown[]) => { log.push({ sql, params: params ?? [] }); return target.query(sql, params); } };
+  return { db: db as unknown as pg.Pool, log };
 }
 
 // ───────────── helpers ─────────────
@@ -115,7 +63,7 @@ async function timed<T>(fn: () => Promise<T>): Promise<[number, T]> {
 
 const lit = (v: unknown): string => {
   if (v === null || v === undefined) return 'NULL';
-  if (Array.isArray(v)) return `'{${v.join(',')}}'`;
+  if (Array.isArray(v)) return v.length > 12 ? `'{${v.slice(0, 6).join(',')},…}' /* ${v.length} elements, abbreviated here only */` : `'{${v.join(',')}}'`;
   if (typeof v === 'number') return String(v);
   return `'${String(v).replace(/'/g, "''")}'`;
 };
@@ -178,20 +126,28 @@ async function main(): Promise<void> {
   // ── samples (deterministic)
   const sc = await pool.connect();
   const hard = `scope_strength = 'required' AND cardinality(scope_place_ids) > 0`;
-  const rangeIds = await sampleIds(sc, `status = 'active' AND side IN ('seek','join') AND ${hard}`, SAMPLES + 20);
-  const probeIds = await sampleIds(sc, `status = 'active' AND point_place_id IS NOT NULL AND (NOT (${hard}) OR side = 'join')`, SAMPLES + 20);
+  const rangeIds = await sampleIds(sc, `status = 'active' AND side = 'seek' AND ${hard}`, SAMPLES + 20);
+  const probeIds = await sampleIds(sc, `status = 'active' AND point_place_id IS NOT NULL AND side <> 'join' AND NOT (${hard})`, SAMPLES + 20);
   const broadIds = await sampleIds(sc, `status = 'active' AND point_place_id IS NULL AND NOT (${hard})`, SAMPLES + 20);
   const matchIds = await sampleIds(sc, `status = 'active'`, MATCH_SAMPLES);
   await sc.query('SELECT setseed(0.31)');
   const owners = (await sc.query(`SELECT user_id::text AS u, side FROM intents ORDER BY random() LIMIT $1`, [SAMPLES + 20])).rows as { u: string; side: string }[];
   const recipients = (await sc.query(`SELECT recipient_id::text AS u FROM notifications ORDER BY random() LIMIT $1`, [SAMPLES + 20])).rows as { u: string }[];
+  const matchUsers = (await sc.query(`SELECT CASE WHEN random() < 0.5 THEN a_user_id ELSE b_user_id END::text AS u FROM matches ORDER BY random() LIMIT $1`, [SAMPLES + 20])).rows as { u: string }[];
+  const pendingContacts = (await sc.query(`SELECT public_id::text AS p, recipient_id::text AS u FROM contact_requests WHERE status = 'pending' ORDER BY random() LIMIT $1`, [SAMPLES + 20])).rows as { p: string; u: string }[];
+  // users to delete (rolled back): owners of random intents (activity-weighted, like owners above), excluding the
+  // few bulk "dealer" accounts so one sample is not dominated by a 5,000-intent cascade
+  const deleteUsers = (await sc.query(
+    `SELECT u FROM (SELECT DISTINCT user_id AS u FROM (SELECT user_id FROM intents ORDER BY random() LIMIT $1) s) d
+      WHERE (SELECT count(*) FROM intents i WHERE i.user_id = d.u) < 200 LIMIT $2`, [DELETE_SAMPLES * 4, DELETE_SAMPLES + 3])).rows.map((r) => String(r.u));
   sc.release();
   const load = async (xs: { vertical_id: number; id: string }[]) => (await Promise.all(xs.map((x) => loadIntent(pool, x.vertical_id, String(x.id))))).filter((r): r is IntentRow => !!r);
   const rangeRows = await load(rangeIds);
   const probeRows = await load(probeIds);
   const broadRows = await load(broadIds);
 
-  // ── retrieval shapes (warm-up on the first 20 samples, then measure)
+  // ── retrieval directions: the engine's exported retrieveCandidates() through a recording Queryable
+  //    (warm-up on the first 20 samples, then measure; every recorded statement is plan-checked)
   const planCheck: Record<string, { checked: number; seqScans: string[] }> = {};
   const checkPlan = async (shape: string, q: Q) => {
     const { rows } = await pool.query(`EXPLAIN (FORMAT JSON) ${q.sql}`, q.params);
@@ -199,59 +155,56 @@ async function main(): Promise<void> {
     pc.checked++;
     pc.seqScans.push(...seqScans(rows[0]['QUERY PLAN'][0].Plan));
   };
-  const shapes: { name: string; rows: IntentRow[]; build: (r: IntentRow) => Q[] }[] = [
-    { name: 'range', rows: rangeRows, build: (r) => rangeQueries(reg, r) },
-    { name: 'probe', rows: probeRows, build: (r) => [probeQuery(reg, r)] },
-    { name: 'broad', rows: broadRows, build: (r) => broadQueries(reg, r) },
-  ];
-  for (const s of shapes) {
+  const directionsSeen: Record<string, Record<string, number>> = {};
+  for (const [name, rows] of [['range', rangeRows], ['probe', probeRows], ['broad', broadRows]] as const) {
     const times: number[] = [];
     const counts: number[] = [];
-    let worst = { ms: -1, row: s.rows[0]! };
-    for (const [i, row] of s.rows.entries()) {
-      const qs = s.build(row);
-      let n = 0;
-      const [ms] = await timed(async () => { for (const q of qs) n += (await pool.query(q.sql, q.params)).rowCount ?? 0; });
+    let worst = { ms: -1, log: [] as Q[], row: rows[0]! };
+    let typical: { log: Q[]; row: IntentRow } | null = null;
+    for (const [i, row] of rows.entries()) {
+      const rec = recorder(pool);
+      const [ms, out] = await timed(() => retrieveCandidates(rec.db, reg, row, rowToMatchable(reg, row)));
+      const dirs = out.directions.join('+');
+      (directionsSeen[name] ??= {})[dirs] = (directionsSeen[name]![dirs] ?? 0) + 1;
       if (i < 20) continue; // warm-up
       times.push(ms);
-      counts.push(n);
-      if (ms > worst.ms) worst = { ms, row };
-      for (const q of qs) await checkPlan(s.name, q);
+      counts.push(out.ids.size);
+      typical ??= { log: rec.log, row };
+      if (ms > worst.ms) worst = { ms, log: rec.log, row };
+      for (const q of rec.log) await checkPlan(name, q);
     }
-    lat[s.name] = { ...summarize(times), rowsP50: summarize(counts).p50, rowsMax: Math.max(...counts) };
-    const first = s.rows[20] ?? s.rows[0]!;
-    for (const [k, q] of s.build(first).entries()) await explainAnalyze(pool, s.name, `typical sample (intent ${first.vertical_id}:${first.id}), query ${k + 1}`, q);
-    for (const [k, q] of s.build(worst.row).entries()) await explainAnalyze(pool, s.name, `slowest sample (intent ${worst.row.vertical_id}:${worst.row.id}, ${fmtMs(worst.ms)} ms), query ${k + 1}`, q);
-    console.log(`  ${s.name.padEnd(6)} ${JSON.stringify(lat[s.name])}`);
+    lat[name] = { ...summarize(times), candidatesP50: summarize(counts).p50, candidatesMax: Math.max(...counts) };
+    for (const [k, q] of typical!.log.entries()) await explainAnalyze(pool, name, `typical sample (intent ${typical!.row.vertical_id}:${typical!.row.id}), statement ${k + 1}/${typical!.log.length}`, q);
+    for (const [k, q] of worst.log.entries()) await explainAnalyze(pool, name, `slowest sample (intent ${worst.row.vertical_id}:${worst.row.id}, ${fmtMs(worst.ms)} ms), statement ${k + 1}/${worst.log.length}`, q);
+    console.log(`  ${name.padEnd(6)} ${JSON.stringify(lat[name])} directions ${JSON.stringify(directionsSeen[name])}`);
   }
+  results.directionsSeen = directionsSeen;
 
-  // matchIntent's other statements (EXPLAIN only): candidate fetch, existing matches, upsert, notification insert
-  {
-    const row = rangeRows[20]!;
-    const ids = (await pool.query(rangeQueries(reg, row)[0]!.sql, rangeQueries(reg, row)[0]!.params)).rows.map((r) => String(r.id));
-    const cand: Q = { sql: `SELECT ${INTENT_COLS} FROM intents i WHERE i.vertical_id = $1 AND i.id = ANY($2::bigint[])`, params: [row.vertical_id, ids] };
-    const existing: Q = { sql: `SELECT id, public_id, a_intent_id, b_intent_id, state, a_user_id, b_user_id FROM matches WHERE vertical_id = $1 AND (a_intent_id = $2 OR b_intent_id = $2)`, params: [row.vertical_id, row.id] };
-    await checkPlan('candidates', cand);
-    await checkPlan('existing_matches', existing);
-    await explainAnalyze(pool, 'match_statements', `candidate rows by primary key (${ids.length} ids)`, cand);
-    await explainAnalyze(pool, 'match_statements', 'existing matches of the intent', existing);
-    const other = ids[0] ?? row.id;
-    const otherRow = await loadIntent(pool, row.vertical_id, other);
-    await explainAnalyze(pool, 'match_statements', 'versioned match upsert', {
-      sql: `INSERT INTO matches (vertical_id, kind, a_intent_id, b_intent_id, a_user_id, b_user_id, state, score, reasons, missing, a_version, b_version, eval_seq)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-         ON CONFLICT (vertical_id, a_intent_id, b_intent_id) DO UPDATE SET
-           state = EXCLUDED.state, score = EXCLUDED.score, reasons = EXCLUDED.reasons, missing = EXCLUDED.missing,
-           a_version = EXCLUDED.a_version, b_version = EXCLUDED.b_version, eval_seq = EXCLUDED.eval_seq, invalid_reason_ar = NULL, updated_at = now()
-         WHERE matches.eval_seq < EXCLUDED.eval_seq AND matches.a_version <= EXCLUDED.a_version AND matches.b_version <= EXCLUDED.b_version
-         RETURNING id, public_id, (first_matched_at = now()) AS inserted`,
-      params: [row.vertical_id, 'exchange', row.id, other, row.user_id, otherRow!.user_id === row.user_id ? '1' : otherRow!.user_id, 'confirmed', 7000, '[]', '[]', row.version, otherRow!.version, '999999999'],
-    }, true);
-    await explainAnalyze(pool, 'match_statements', 'notification insert (dedupe)', {
-      sql: `INSERT INTO notifications (recipient_id, kind, title_ar, body_ar, payload, dedupe_key) VALUES ($1,$2,$3,$4,$5,$6)
-     ON CONFLICT (recipient_id, dedupe_key) DO NOTHING RETURNING id`,
-      params: [row.user_id, 'match_new', 'مطابقة جديدة مناسبة', 'x', '{}', `bench:${Date.now()}`],
-    }, true);
+  // ── one complete matchIntentTx() with every statement EXPLAIN ANALYZEd in place: before each statement runs for
+  //    real, it is executed once under EXPLAIN inside a savepoint that is rolled back; the whole run is rolled back too
+  for (const [title, row] of [['RANGE-direction intent', rangeRows[20]!], ['PROBE-direction intent', probeRows[20]!]] as const) {
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      let k = 0;
+      const db = {
+        query: async (sql: string, params: unknown[] = []) => {
+          k++;
+          if (!/^\s*select\s+(pg_advisory_xact_lock|pg_notify|nextval)/i.test(sql)) {
+            await c.query('SAVEPOINT bench_explain');
+            const { rows: plan } = await c.query(`EXPLAIN (ANALYZE, BUFFERS) ${sql}`, params);
+            await c.query('ROLLBACK TO SAVEPOINT bench_explain');
+            (explains.match_statements ??= []).push(`-- ${title} ${row.vertical_id}:${row.id} — matchIntentTx statement ${k} (executed in a rolled-back savepoint)\n${inline({ sql, params }).replace(/\n\s+/g, '\n  ')};\n\n${plan.map((r) => r['QUERY PLAN']).join('\n')}\n`);
+            if (/^\s*select/i.test(sql)) await checkPlan('match_statements', { sql, params });
+          }
+          return c.query(sql, params);
+        },
+      };
+      await matchIntentTx(db as unknown as pg.Pool, reg, { verticalId: row.vertical_id, intentId: String(row.id), trigger: 'job' });
+    } finally {
+      await c.query('ROLLBACK').catch(() => {});
+      c.release();
+    }
   }
 
   // ── owner list page (real listIntents) and notifications page (real listNotifications)
@@ -266,9 +219,9 @@ async function main(): Promise<void> {
     const heavy = (await pool.query('SELECT user_id::text AS u, count(*)::int AS n FROM intents GROUP BY 1 ORDER BY 2 DESC LIMIT 1')).rows[0];
     for (const [title, u] of [[`heaviest owner (user ${heavy.u}, ${heavy.n} intents)`, heavy.u], [`typical owner (user ${owners[20]!.u})`, owners[20]!.u]] as const) {
       for (const sides of [['provide'], ['seek', 'join']]) {
-        const statuses = ['active', 'paused', 'fulfilled', 'closed', 'expired'];
-        await explainAnalyze(pool, 'owner_list', `${title} — total, sides ${sides}`, { sql: 'SELECT count(*) FROM intents WHERE user_id = $1 AND side = ANY($2) AND status = ANY($3)', params: [u, sides, statuses] });
-        await explainAnalyze(pool, 'owner_list', `${title} — first page, sides ${sides}`, { sql: `SELECT ${INTENT_COLS} FROM intents i WHERE i.user_id = $1 AND i.side = ANY($2) AND i.status = ANY($3)  ORDER BY i.created_at DESC, i.id DESC LIMIT $4`, params: [u, sides, statuses, 21] });
+        const rec = recorder(pool);
+        await listIntents(rec.db, reg, u, { sides: sides as ('seek' | 'provide' | 'join')[], limit: 20 });
+        for (const [k, q] of rec.log.entries()) await explainAnalyze(pool, 'owner_list', `${title} — sides ${sides}, listIntents statement ${k + 1}/${rec.log.length}`, q);
       }
     }
     console.log(`  owner_list ${JSON.stringify(lat.owner_list)} (heaviest owner has ${heavy.n} intents)`);
@@ -281,14 +234,76 @@ async function main(): Promise<void> {
     lat.notifications = summarize(ntimes);
     const hn = (await pool.query('SELECT recipient_id::text AS u, count(*)::int AS n FROM notifications GROUP BY 1 ORDER BY 2 DESC LIMIT 1')).rows[0];
     for (const [title, u] of [[`heaviest recipient (user ${hn.u}, ${hn.n} notifications)`, hn.u], [`typical recipient (user ${recipients[20]!.u})`, recipients[20]!.u]] as const) {
-      await explainAnalyze(pool, 'notifications', `${title} — total`, { sql: 'SELECT count(*) FROM notifications WHERE recipient_id = $1', params: [u] });
-      await explainAnalyze(pool, 'notifications', `${title} — unread`, { sql: 'SELECT count(*) FROM notifications WHERE recipient_id = $1 AND read_at IS NULL', params: [u] });
-      await explainAnalyze(pool, 'notifications', `${title} — first page`, { sql: `SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
-      WHERE recipient_id = $1   ORDER BY created_at DESC, id DESC LIMIT $2`, params: [u, 21] });
-      await explainAnalyze(pool, 'notifications', `${title} — first unread page`, { sql: `SELECT id, public_id, kind, title_ar, body_ar, payload, created_at, created_at::text AS created_key, read_at FROM notifications
-      WHERE recipient_id = $1 AND read_at IS NULL  ORDER BY created_at DESC, id DESC LIMIT $2`, params: [u, 21] });
+      for (const unreadOnly of [false, true]) {
+        const rec = recorder(pool);
+        await listNotifications(rec.db, u, { limit: 20, unreadOnly });
+        for (const [k, q] of rec.log.entries()) await explainAnalyze(pool, 'notifications', `${title}${unreadOnly ? ' — unread only' : ''}, listNotifications statement ${k + 1}/${rec.log.length}`, q);
+      }
     }
     console.log(`  notifications ${JSON.stringify(lat.notifications)} (heaviest recipient has ${hn.n})`);
+
+    // match list page (real listMatches: exact total, keyset page, rangeStart, hydration with both intents + contacts)
+    const mtimes: number[] = [];
+    for (const [i, mu] of matchUsers.entries()) {
+      const [ms] = await timed(() => listMatches(pool, reg, mu.u, { states: ['confirmed', 'possible'], limit: 20 }));
+      if (i >= 20) mtimes.push(ms);
+    }
+    lat.match_list = summarize(mtimes);
+    const hm = (await pool.query(`SELECT u::text AS u, count(*)::int AS n FROM (SELECT a_user_id AS u FROM matches UNION ALL SELECT b_user_id FROM matches) x GROUP BY 1 ORDER BY 2 DESC LIMIT 1`)).rows[0];
+    for (const [title, u] of [[`heaviest match user (user ${hm.u}, ${hm.n} matches)`, hm.u], [`typical match user (user ${matchUsers[20]!.u})`, matchUsers[20]!.u]] as const) {
+      const rec = recorder(pool);
+      await listMatches(rec.db, reg, u, { states: ['confirmed', 'possible'], limit: 20 });
+      for (const [k, q] of rec.log.entries()) await explainAnalyze(pool, 'match_list', `${title}, listMatches statement ${k + 1}/${rec.log.length}`, q);
+    }
+    console.log(`  match_list ${JSON.stringify(lat.match_list)} (heaviest user has ${hm.n} matches)`);
+  }
+
+  // ── contact respond (statement verbatim from src/server/app.ts), rolled back
+  if (pendingContacts.length) {
+    const respond = (p: { p: string; u: string }): Q => ({
+      sql: `UPDATE contact_requests c SET status = $3, responded_at = now() FROM match_refs r
+        WHERE c.public_id = $1 AND c.recipient_id = $2 AND c.status = 'pending' AND r.vertical_id = c.vertical_id AND r.match_id = c.match_id
+        RETURNING c.public_id, c.status, c.requester_id, r.public_id AS match_public_id`,
+      params: [p.p, p.u, 'accepted'],
+    });
+    const times: number[] = [];
+    const c = await pool.connect();
+    try {
+      for (let i = 0; i < SAMPLES + 20; i++) {
+        const q = respond(pendingContacts[i % pendingContacts.length]!);
+        await c.query('BEGIN');
+        const [ms, r] = await timed(() => c.query(q.sql, q.params));
+        await c.query('ROLLBACK');
+        if (r.rowCount !== 1) throw new Error('contact respond sample did not update exactly one row');
+        if (i >= 20) times.push(ms);
+      }
+    } finally {
+      c.release();
+    }
+    lat.contact_respond = summarize(times);
+    await explainAnalyze(pool, 'contact_respond', 'accept a pending contact request', respond(pendingContacts[0]!), true);
+    console.log(`  contact_respond ${JSON.stringify(lat.contact_respond)}`);
+  }
+
+  // ── user delete with ON DELETE CASCADE (demo reset path), rolled back
+  if (deleteUsers.length > 3) {
+    const times: number[] = [];
+    const owned: number[] = [];
+    const c = await pool.connect();
+    try {
+      for (const [i, u] of deleteUsers.entries()) {
+        await c.query('BEGIN');
+        const n = (await c.query('SELECT count(*)::int AS n FROM intents WHERE user_id = $1', [u])).rows[0].n;
+        const [ms] = await timed(() => c.query('DELETE FROM users WHERE id = $1', [u]));
+        await c.query('ROLLBACK');
+        if (i >= 3) { times.push(ms); owned.push(n); }
+      }
+    } finally {
+      c.release();
+    }
+    lat.user_delete = { ...summarize(times), intentsPerUserP50: summarize(owned).p50, intentsPerUserMax: Math.max(...owned) };
+    await explainAnalyze(pool, 'user_delete', `delete user ${deleteUsers[3]} (cascade; trigger lines show where the time goes)`, { sql: 'DELETE FROM users WHERE id = $1', params: [deleteUsers[3]] }, true);
+    console.log(`  user_delete ${JSON.stringify(lat.user_delete)}`);
   }
 
   // ── worker statements (EXPLAIN only): job claim and expiry sweep

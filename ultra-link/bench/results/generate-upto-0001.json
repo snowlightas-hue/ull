@@ -1,0 +1,174 @@
+{
+  "params": {
+    "n": 1000000,
+    "seed": 20261008,
+    "historyDays": 120,
+    "batch": 10000,
+    "parallel": 4,
+    "db": "ultralink_bench",
+    "migrationsUpTo": "0001"
+  },
+  "counts": {
+    "intents": 1000000,
+    "active": 455355,
+    "intent_refs": 1000000,
+    "intent_scopes": 472596,
+    "matches": 289156,
+    "notifications": 773413,
+    "users": 166667
+  },
+  "bySide": [
+    {
+      "side": "join",
+      "n": 50083,
+      "pct": 5
+    },
+    {
+      "side": "provide",
+      "n": 600071,
+      "pct": 60
+    },
+    {
+      "side": "seek",
+      "n": 349846,
+      "pct": 35
+    }
+  ],
+  "byVertical": [
+    {
+      "code": "real_estate",
+      "n": 285240
+    },
+    {
+      "code": "vehicles",
+      "n": 246990
+    },
+    {
+      "code": "services",
+      "n": 170508
+    },
+    {
+      "code": "goods",
+      "n": 152112
+    },
+    {
+      "code": "education",
+      "n": 75989
+    },
+    {
+      "code": "activities",
+      "n": 50083
+    },
+    {
+      "code": "help",
+      "n": 19078
+    }
+  ],
+  "topPlaces": [
+    {
+      "code": "sy.aleppo.aleppo",
+      "n": 165298
+    },
+    {
+      "code": "sy.aleppo.azaz",
+      "n": 105339
+    },
+    {
+      "code": "sy.idlib.idlib",
+      "n": 75202
+    },
+    {
+      "code": "tr.gaziantep",
+      "n": 60112
+    },
+    {
+      "code": "tr.istanbul",
+      "n": 45083
+    },
+    {
+      "code": "sy.aleppo.afrin",
+      "n": 37467
+    },
+    {
+      "code": "sy.aleppo.al_bab",
+      "n": 29866
+    },
+    {
+      "code": "sy.damascus.damascus",
+      "n": 22614
+    }
+  ],
+  "byCurrency": [
+    {
+      "currency": "USD",
+      "price_unit": "total",
+      "n": 214960
+    },
+    {
+      "currency": "TRY",
+      "price_unit": "total",
+      "n": 89465
+    },
+    {
+      "currency": "USD",
+      "price_unit": "month",
+      "n": 86849
+    },
+    {
+      "currency": "USD",
+      "price_unit": "session",
+      "n": 61938
+    },
+    {
+      "currency": "USD",
+      "price_unit": "hour",
+      "n": 48688
+    },
+    {
+      "currency": "TRY",
+      "price_unit": "month",
+      "n": 36026
+    },
+    {
+      "currency": "SYP",
+      "price_unit": "total",
+      "n": 35405
+    },
+    {
+      "currency": "TRY",
+      "price_unit": "session",
+      "n": 25267
+    },
+    {
+      "currency": "TRY",
+      "price_unit": "hour",
+      "n": 20577
+    },
+    {
+      "currency": "USD",
+      "price_unit": "day",
+      "n": 19008
+    },
+    {
+      "currency": "EUR",
+      "price_unit": "total",
+      "n": 17985
+    },
+    {
+      "currency": "SYP",
+      "price_unit": "month",
+      "n": 14354
+    }
+  ],
+  "timingsMs": {
+    "create_db_migrate_reference": 2714,
+    "users": 1770,
+    "intents_refs_scopes": 107970,
+    "generate_matches_in_memory": 5084,
+    "matches_notifications": 57703,
+    "vacuum_analyze": 7260
+  },
+  "totalMs": 183436,
+  "intentRowsPerSec": 9262,
+  "scopeRows": 472596
+}

@@ -64,6 +64,25 @@ export const NotificationsQuery = z.object({
 
 export const MatchRunQuery = z.object({ limit });
 
+/** Optional device position sent with a turn ("near me"); validated ranges, accuracy in metres. */
+export const Geo = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  accuracyM: z.number().min(0).max(100_000).optional(),
+});
+export type GeoInput = z.infer<typeof Geo>;
+
+/**
+ * POST /api/conversations/:id/turns body. Unknown optional fields pass through untouched (newer clients can
+ * send more context without being rejected); `geo: null` means "no position".
+ */
+export const TurnBody = z.looseObject({
+  text: z.string().max(1000),
+  modality: z.enum(['voice', 'text']).default('text'),
+  clientTurnId: z.union([z.literal(''), z.string().regex(UUID_RE)]).default(''),
+  geo: z.preprocess((v) => (v === null ? undefined : v), Geo.optional()),
+});
+
 /** Parse a query string with a schema; a bad cursor gets its own code so the client can restart paging. */
 export function parseQuery<T extends z.ZodTypeAny>(schema: T, q: unknown): z.infer<T> {
   const r = schema.safeParse(q ?? {});
